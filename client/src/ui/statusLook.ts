@@ -81,28 +81,29 @@ export const CVD_PALETTES: Record<Exclude<Palette, 'standard'>, Record<StatusKin
 
 // The standard palette: exactly the colours the office has always used.
 const STANDARD_FILL: Record<StatusName, string> = {
-  idle: '#e9ecef',
-  unconfigured: '#e9ecef',
-  stopped: '#dee2e6',
-  preparing: '#ffe066',
-  installing: '#ffe066',
-  starting: '#ffe066',
-  queued: '#ffe066',
-  working: '#74c0fc',
-  testing: '#74c0fc',
-  fixing: '#74c0fc',
-  done: '#8ce99a',
-  running: '#8ce99a',
-  passed: '#8ce99a',
-  'needs-human': '#ffa8a8',
-  error: '#ffa8a8',
-  failed: '#ffa8a8',
+  idle: '#DCE3EA',
+  unconfigured: '#DCE3EA',
+  stopped: '#CDD6E0',
+  preparing: '#F5EDD8',
+  installing: '#F5EDD8',
+  starting: '#F5EDD8',
+  queued: '#F5EDD8',
+  working: '#DDE8F4',
+  testing: '#DDE8F4',
+  fixing: '#DDE8F4',
+  done: '#E4F1EA',
+  running: '#E4F1EA',
+  passed: '#E4F1EA',
+  'needs-human': '#F5DEDC',
+  error: '#F5DEDC',
+  failed: '#F5DEDC',
 };
-const STANDARD_STRONG: Record<StatusKind, string> = { idle: '#adb5bd', waiting: '#fab005', busy: '#339af0', ok: '#2dc653', attention: '#ffb703', bad: '#ef476f' };
-/** Kanban card backgrounds in the panel, and sticky colours on the 3D whiteboard (lighter on screen, warmer on paper). */
+// attention is the crit ink, matching its crit fill and standing apart from waiting's amber; shapes (⏳ and !) carry the meaning.
+const STANDARD_STRONG: Record<StatusKind, string> = { idle: '#8A96A3', waiting: '#C9A24B', busy: '#6699CC', ok: '#4C9A76', attention: '#8C3A34', bad: '#C25B54' };
+/** Kanban card backgrounds in the panel, and sticky colours on the 3D whiteboard (a step stronger: they sit on a white board). */
 const STANDARD_TONE: Record<'card' | 'board', Record<CardTone, string>> = {
-  card: { warn: '#fff3d6', bad: '#ffe0e6', good: '#e3fbe7' },
-  board: { warn: '#ffd8a8', bad: '#ffc9c9', good: '#d8f9df' },
+  card: { warn: '#F5EDD8', bad: '#F5DEDC', good: '#E4F1EA' },
+  board: { warn: '#EBDDB8', bad: '#EDCBC8', good: '#CFE6DA' },
 };
 
 /** A status's background colour. */

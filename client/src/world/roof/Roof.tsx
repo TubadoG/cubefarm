@@ -33,7 +33,7 @@ export default function Roof({ top }: { top: number }) {
   return (
     <group>
       <RoofDeck top={top} />
-      <Elevator floorLabel="▲ R · Roof terrace" accent="#ff8a5b" />
+      <Elevator floorLabel="▲ R · Roof terrace" accent="#6699CC" />
       <Garden />
       <StringLights />
       <DeckChairs />

@@ -268,8 +268,8 @@ interface QaReport {
 
 // ---------- flavour ----------
 
-const FLOOR_COLORS = ['#ff8a5b', '#4fb3e8', '#8fd14f', '#c77dff', '#ffc93c', '#ff6fb5', '#2ec4b6', '#f25f5c'];
-const SHIRTS = ['#e63946', '#457b9d', '#2a9d8f', '#f4a261', '#9b5de5', '#f15bb5', '#00bbf9', '#06d6a0', '#ffbe0b', '#8338ec', '#fb5607', '#3a86ff'];
+const FLOOR_COLORS = ['#6699cc', '#5fa8a0', '#8c9fd9', '#7fb7d9', '#9c8fc4', '#86b39a', '#aabfd5', '#b4a7d6'];
+const SHIRTS = ['#6699cc', '#4d7399', '#26394d', '#5fa8a0', '#8c9fd9', '#9c8fc4', '#7fb7d9', '#3d6b8c', '#86b39a', '#aabfd5', '#6b7580', '#b4a7d6'];
 const HAIR = HAIR_COLORS;
 const SKIN = SKIN_TONES;
 // New agents are named after computing pioneers, then fictional detectives.
@@ -3671,7 +3671,7 @@ export class Swarm {
         look: lookFor(CEO_NAME),
         task: null,
         desk: 0,
-        color: '#e63946',
+        color: '#4d7399',
         hair: '#2b2118',
         skin: pick(SKIN),
         style: null,

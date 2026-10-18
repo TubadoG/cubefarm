@@ -6,19 +6,20 @@ import { PARTS } from './characterParts';
 import { EYES, MORPHS, MORPH_AT, type FaceState } from './face';
 import { Piece } from './Batched';
 import { mix, shade } from './materials';
+import { INK } from './palette';
 
 // What a person wears and their face, drawn the same by Character.tsx (at their desk, walking about) and by the look
 // editor's preview (LookPreview.tsx): the clothes (and the CEO's suit) on the torso, and the head's parts. Shared
 // geometry (characterParts.ts) as Pieces, which a floor draws in instanced batches (Batched.tsx); applyFace writes an
 // expression into the face's morph targets.
 
-export const INK = '#1f1d2b';
+export { INK };
 // Glasses frames, picked by the same accent index as hats and stripes.
-const FRAMES = ['#1f1d2b', '#7f5539', '#1f1d2b', '#c1121f', '#355070', '#1f1d2b'];
-const WHITE = '#f8f9fa';
-const GOLD = '#ffd166';
-const SUIT = '#2b2d42';
-const LAPEL = '#1d1f30';
+const FRAMES = ['#26394D', '#5C6B7A', '#26394D', '#4D7399', '#8A96A3', '#26394D'];
+const WHITE = '#F6F9FC';
+const GOLD = '#D4B483';
+const SUIT = '#26394D';
+const LAPEL = '#1B2732';
 
 type Who = { role: AgentRole; color: string; look: AgentLook };
 

@@ -35,9 +35,9 @@ const drawTetrisThumb = (ctx: CanvasRenderingContext2D) => {
   const s = 13;
   const block = (x: number, y: number, c: string) => toonBlock(ctx, 2 + x * s, 2 + y * s, s, s, c, 3.5, 1.8);
   const pieces: [string, number[][]][] = [
-    ['#ffc93c', [[0, 2], [1, 2], [0, 3], [1, 3]]],
-    ['#ff8a5b', [[3, 1], [3, 2], [3, 3], [2, 3]]],
-    ['#c77dff', [[0, 0], [1, 0], [2, 0], [1, 1]]],
+    ['#E2C26E', [[0, 2], [1, 2], [0, 3], [1, 3]]],
+    ['#D4B483', [[3, 1], [3, 2], [3, 3], [2, 3]]],
+    ['#9C8FC4', [[0, 0], [1, 0], [2, 0], [1, 1]]],
   ];
   for (const [c, cells] of pieces) for (const [x, y] of cells) block(x, y, c);
   eyes(ctx, 2 + 1.5 * s, 2 + 0.5 * s, 7, 2.4, 0, 0.5);
@@ -55,22 +55,22 @@ const drawSnakeThumb = (ctx: CanvasRenderingContext2D) => {
   ctx.strokeStyle = INK;
   ctx.lineWidth = 11;
   ctx.stroke();
-  ctx.strokeStyle = '#4fb3e8';
+  ctx.strokeStyle = '#7FC4A0';
   ctx.lineWidth = 7;
   ctx.stroke();
   ctx.beginPath();
   ctx.roundRect(33, 9, 14, 14, 3);
-  ctx.fillStyle = '#e4f4ff';
+  ctx.fillStyle = '#EAF0F6';
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = INK;
   ctx.stroke();
-  ctx.fillStyle = '#ffc93c';
+  ctx.fillStyle = '#D4B483';
   for (let i = 0; i < 3; i++) ctx.fillRect(44, 11 + i * 3.6, 2.5, 1.8);
   eyes(ctx, 39, 15, 6, 2.4, 1, 0);
   ctx.beginPath();
   ctx.ellipse(46, 44, 5, 6, 0, 0, Math.PI * 2);
-  ctx.fillStyle = '#f25f5c';
+  ctx.fillStyle = '#E07A72';
   ctx.fill();
   ctx.lineWidth = 1.6;
   ctx.stroke();

@@ -34,7 +34,7 @@ export default function Ufo({ run, elevation }: SceneProps) {
       car: carAt,
       from: { x: s * 380, y: 160, z: -carAt.z * 2 - 150 },
       to: { x: s * 300, y: 260, z: carAt.z + 400 },
-      carColor: ['#e85d75', '#4a90d9', '#f2c94c', '#6fcf97'][Math.floor(r() * 4)],
+      carColor: ['#6699CC', '#4D7399', '#AABFD5', '#5FA8A0'][Math.floor(r() * 4)],
     };
   }, [run.seed, s]);
   const sound = useMemo(() => ({ hum: null as ReturnType<typeof loop> | null, beamed: false, zipped: false, came: false }), []);
@@ -117,17 +117,17 @@ export default function Ufo({ run, elevation }: SceneProps) {
     }
   });
 
-  const hull = toonOut('#b8c0cc');
+  const hull = toonOut('#AEB8C2');
   return (
     <group>
       <group ref={ufo}>
         <mesh material={hull} scale={[1, 0.26, 1]}>
           <sphereGeometry args={[7, 28, 14]} />
         </mesh>
-        <mesh material={toonOut('#8ecae6', { emissive: '#3a86ff', emissiveIntensity: 0.4 })} position={[0, 1.2, 0]}>
+        <mesh material={toonOut('#8FB5DD', { emissive: '#6699CC', emissiveIntensity: 0.4 })} position={[0, 1.2, 0]}>
           <sphereGeometry args={[2.6, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
         </mesh>
-        <mesh material={toonOut('#8d99ae')} position={[0, -1.3, 0]} scale={[1, 0.35, 1]}>
+        <mesh material={toonOut('#8A96A3')} position={[0, -1.3, 0]} scale={[1, 0.35, 1]}>
           <sphereGeometry args={[3, 18, 8]} />
         </mesh>
         <mesh material={glowOut('#b6ff9e')} position={[0, -2.25, 0]} rotation-x={Math.PI / 2}>
@@ -137,7 +137,7 @@ export default function Ufo({ run, elevation }: SceneProps) {
           {Array.from({ length: LIGHTS }, (_, i) => {
             const a = (i / LIGHTS) * Math.PI * 2;
             return (
-              <mesh key={i} material={glowOut(['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#ff70a6'][i % 5])} position={[Math.cos(a) * 6.3, -0.3, Math.sin(a) * 6.3]}>
+              <mesh key={i} material={glowOut(['#6699CC', '#D4B483', '#5FA8A0', '#8C9FD9', '#4D7399'][i % 5])} position={[Math.cos(a) * 6.3, -0.3, Math.sin(a) * 6.3]}>
                 <sphereGeometry args={[0.38, 8, 6]} />
               </mesh>
             );
@@ -157,7 +157,7 @@ export default function Ufo({ run, elevation }: SceneProps) {
         <mesh material={toonOut(p.carColor)} position={[0, 0.5, 0]}>
           <boxGeometry args={[1.9, 0.6, 4.2]} />
         </mesh>
-        <mesh material={toonOut('#2b3a55')} position={[0, 1.05, -0.2]}>
+        <mesh material={toonOut('#26394D')} position={[0, 1.05, -0.2]}>
           <boxGeometry args={[1.6, 0.5, 2.2]} />
         </mesh>
       </group>

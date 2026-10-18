@@ -52,7 +52,7 @@ const clone = (p: Pose): Pose => ({ ...p, l: { ...p.l }, r: { ...p.r } });
 const lerp = THREE.MathUtils.lerp;
 /** Marks a person's root, so High's contact-shadow bake (gfx/ContactShadows.tsx) can leave people out of it. */
 const PERSON = { person: true };
-const PANTS = '#3d4a6b';
+const PANTS = '#3D4F63';
 
 // Hips go from the seat (y 0.5) to the top of straight legs; the knee is `thigh` below the hip (characterParts.ts).
 const HIP = { x: 0.11, seatY: 0.5, seatZ: -0.04, standY: 0.815, thigh: 0.32 };
@@ -640,7 +640,7 @@ export function Character({
                   <group ref={grip} position={[0, 0.03, -0.56]} />
                   <group ref={phone} position={[-0.03, 0.06, -0.52]} rotation={[0.7, -0.55, 0]} visible={false}>
                     <Piece geometry={PARTS.phone} color={INK} />
-                    <mesh geometry={PARTS.phoneScreen} material={toon('#8ecae6', { emissive: '#8ecae6', emissiveIntensity: 0.5 })} />
+                    <mesh geometry={PARTS.phoneScreen} material={toon('#6699CC', { emissive: '#6699CC', emissiveIntensity: 0.5 })} />
                   </group>
                   {food && (
                     <group position={HAND_MUG.at}>
@@ -656,16 +656,16 @@ export function Character({
                   )}
                   {/* a ping-pong paddle while they play (toys/pongState.ts): the blade stays square to the way they face */}
                   <group ref={bat} position={[0, 0, BAT.hand]} visible={false}>
-                    <Cyl r={0.014} h={0.1} position={[0, 0, -0.05]} rotation={[Math.PI / 2, 0, 0]} color="#d4a373" shadow={false} />
+                    <Cyl r={0.014} h={0.1} position={[0, 0, -0.05]} rotation={[Math.PI / 2, 0, 0]} color="#B9C3CC" shadow={false} />
                     <group ref={batBlade} position={[0, 0, BAT.blade]}>
                       <PaddleLook handle={false} />
                     </group>
                   </group>
                   {/* the gong's mallet, in the right hand while they have it (gongRunner.ts); the handle tips up from the fist */}
                   <group ref={mallet} position={[0, 0, -0.5]} rotation={[0.5, 0, 0]} visible={false}>
-                    <Cyl r={0.025} h={0.55} position={[0, 0, -0.27]} rotation={[Math.PI / 2, 0, 0]} color="#f1d19b" shadow={false} />
-                    <Ball r={0.12} position={[0, 0, -0.56]} color="#e76f51" outline shadow={false} />
-                    <Cyl r={0.125} h={0.05} position={[0, 0, -0.56]} rotation={[Math.PI / 2, 0, 0]} color="#f4a261" shadow={false} />
+                    <Cyl r={0.025} h={0.55} position={[0, 0, -0.27]} rotation={[Math.PI / 2, 0, 0]} color="#B9C3CC" shadow={false} />
+                    <Ball r={0.12} position={[0, 0, -0.56]} color="#4D7399" outline shadow={false} />
+                    <Cyl r={0.125} h={0.05} position={[0, 0, -0.56]} rotation={[Math.PI / 2, 0, 0]} color="#AABFD5" shadow={false} />
                   </group>
                 </>
               )}

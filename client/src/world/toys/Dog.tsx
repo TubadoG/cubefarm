@@ -35,11 +35,11 @@ import { CHARGE, holdPoint, type View } from './throwing';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const ZERO = { x: 0, y: 0, z: 0 };
-const INK = '#1f1d2b';
+const INK = '#26394D';
 const COAT = '#d9a066';
 const CREAM = '#f6e3c3';
 const EARS = '#a8673a';
-const DARK = '#2b2d42';
+const DARK = '#26394D';
 
 /**
  * The collider round its body: balls bounce off it. It's off while it carries a ball, which would otherwise catch on it
@@ -64,7 +64,7 @@ function heart() {
   ctx.lineWidth = 8;
   ctx.lineJoin = 'round';
   ctx.strokeStyle = INK;
-  ctx.fillStyle = '#ff4d6d';
+  ctx.fillStyle = '#E07A72';
   ctx.beginPath();
   ctx.moveTo(32, 54);
   ctx.bezierCurveTo(6, 36, 6, 12, 22, 12);
@@ -210,10 +210,10 @@ function DogLook({ brain, gait, carrying }: { brain: Brain; gait: { phase: numbe
           <Leg legRef={fl} at={[0.17, 0.3, -0.085]} />
           <Leg legRef={fr} at={[0.17, 0.3, 0.085]} />
           {/* collar and its round name tag */}
-          <mesh position={[0.21, 0.45, 0]} rotation={[0, Math.PI / 2, -0.55]} material={toon('#e63946')}>
+          <mesh position={[0.21, 0.45, 0]} rotation={[0, Math.PI / 2, -0.55]} material={toon('#6699CC')}>
             <torusGeometry args={[0.105, 0.022, 8, 20]} />
           </mesh>
-          <mesh position={[0.29, 0.34, 0]} rotation={[0, 0, Math.PI / 2]} material={toon('#ffd166')}>
+          <mesh position={[0.29, 0.34, 0]} rotation={[0, 0, Math.PI / 2]} material={toon('#D4B483')}>
             <cylinderGeometry args={[0.032, 0.032, 0.01, 14]} />
           </mesh>
           {/* the tail, wagging from its base */}

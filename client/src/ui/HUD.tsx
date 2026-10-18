@@ -151,7 +151,7 @@ export function HUD() {
 
   return (
     <div className="hud">
-      <div className="hud-floor" style={{ ['--accent' as string]: roof ? '#7cc6fe' : (repo?.color ?? '#ff8a5b') }}>
+      <div className="hud-floor" style={{ ['--accent' as string]: roof ? '#7FB7D9' : (repo?.color ?? '#6699CC') }}>
         <div className="floor-num">{roof ? 'R' : repo ? repo.floor : 'G'}</div>
         <div>
           <div className="floor-name">{roof ? `${settings.companyName || 'cubefarm'} · Roof terrace` : repo ? repo.fullName : `${settings.companyName || 'cubefarm'} · Lobby`}</div>
@@ -214,7 +214,7 @@ export function HUD() {
       )}
       {started && !overlay && !travel && onFoot && <HeldHint />}
       {started && !overlay && !locked && !travel && onFoot && <div className="hud-resume">Click to look around</div>}
-      {started && !(settings.setupDone && settings.tutorialStep >= 0) && (
+      {started && onFoot && !(settings.setupDone && settings.tutorialStep >= 0) && (
         <div className="hud-help">
           <MoveKeys joined /> move · <Key action="run" /> run · <Key action="interact" /> / <kbd>Click</kbd> interact · <Key action="phone" /> phone · <Key action="emote" /> emote · <Key action="ping" /> ping · <Key action="photo" /> photo ·{' '}
           <Key action="overview" /> overview · <Key action="workers" /> workers · <Key action="mute" /> mute · <Key action="help" /> help · <kbd>Esc</kbd> free mouse

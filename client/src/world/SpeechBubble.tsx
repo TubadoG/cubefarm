@@ -4,7 +4,7 @@ import { Billboard } from '@react-three/drei';
 import { BILLBOARD } from './viewTags';
 import * as THREE from 'three';
 import { BUBBLE, SIGN_SIZE } from './activitySign';
-import { SANS, wrap } from './draw';
+import { BODY, wrap } from './draw';
 import { saying } from './people';
 import { drawBubble } from './useHitReaction';
 
@@ -19,7 +19,8 @@ const H = 176;
 const PAD = 8;
 const TAIL = 34;
 const TIP = 28; // the tail's tip, from the canvas's left edge: the group's origin, beside the head
-const INK = '#1f1d2b';
+const INK = '#26394D';
+const OUTLINE = '#AABFD5';
 const KEEP = 40;
 /** The highest a bubble's top may reach (m): the bottom of an activity sign moved up out of a bubble's way. */
 export const BUBBLE_TOP = BUBBLE.clear - SIGN_SIZE.h / 2;
@@ -43,11 +44,11 @@ const isEmoji = (text: string) => !/[\p{L}\p{N}]/u.test(text) && [...text].lengt
 
 /** The lines a text fills, and the font size: one big line if it fits, else two of about the same width. */
 function layout(ctx: CanvasRenderingContext2D, text: string): { lines: string[]; size: number } {
-  ctx.font = `600 60px ${SANS}`;
+  ctx.font = `700 60px ${BODY}`;
   if (ctx.measureText(text).width <= 560) return { lines: [text], size: 60 };
   const words = text.split(/\s+/).join(' ');
   for (const size of [48, 42]) {
-    ctx.font = `600 ${size}px ${SANS}`;
+    ctx.font = `700 ${size}px ${BODY}`;
     const half = ctx.measureText(text).width / 2;
     // as narrow as two lines allow, so they come out about the same width
     for (let w = Math.max(160, half + 24); w <= 600; w += 24) {
@@ -63,7 +64,7 @@ function drawLine(text: string): HTMLCanvasElement {
   measure ??= document.createElement('canvas').getContext('2d')!;
   const m = measure;
   const { lines, size } = layout(m, text);
-  m.font = `600 ${size}px ${SANS}`;
+  m.font = `700 ${size}px ${BODY}`;
   const textW = Math.max(...lines.map((l) => m.measureText(l).width));
   const w = Math.ceil(Math.max(200, textW + 2 * PAD + 56) / 8) * 8;
   const canvas = document.createElement('canvas');
@@ -71,10 +72,10 @@ function drawLine(text: string): HTMLCanvasElement {
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
   const bottom = H - PAD - TAIL;
-  ctx.lineWidth = 8;
+  ctx.lineWidth = 6;
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = INK;
-  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = OUTLINE;
+  ctx.fillStyle = '#FFFFFF';
   ctx.beginPath();
   ctx.roundRect(PAD, PAD, w - PAD * 2, bottom - PAD, 40);
   ctx.fill();
@@ -90,7 +91,7 @@ function drawLine(text: string): HTMLCanvasElement {
   ctx.lineTo(104, bottom);
   ctx.stroke();
   ctx.fillStyle = INK;
-  ctx.font = `600 ${size}px ${SANS}`;
+  ctx.font = `700 ${size}px ${BODY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const mid = (PAD + bottom) / 2 + 3;

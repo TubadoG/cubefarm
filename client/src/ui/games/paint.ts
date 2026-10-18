@@ -1,14 +1,19 @@
-import { SANS, roundRect } from '../../world/draw';
+import { MONO, SANS, roundRect } from '../../world/draw';
 
-// Canvas painters shared by the phone games, in the office's look: flat pastel colours, a light top edge, a darker
-// bottom edge and a thick ink outline, like the toon-shaded furniture and people in the 3D office.
+// Canvas painters shared by the phone games, in the office's look: game pieces are toon blocks (flat colour, a light
+// top edge, a darker bottom edge, a navy outline) like the 3D office's furniture; the chrome around them is flat white
+// cards on hairlines, like the HTML panels.
 
-export { SANS, roundRect };
-export const INK = '#1f1d2b';
-export const PAPER = '#fffdf6';
-export const MUTED = '#6c7086';
+export { MONO, SANS, roundRect };
+export const INK = '#26394D';
+export const PAPER = '#FFFFFF';
+export const MUTED = '#436688';
+/** Card edges: the stylesheet's --border-hairline. */
+export const HAIRLINE = '#E0E8F1';
+/** The games' wells (Tetris board, Snake floor): the dark-screen navy. */
+export const WELL = '#1B2732';
 /** The office floor colours (server/swarm.ts FLOOR_COLORS). */
-export const FLOOR = ['#ff8a5b', '#4fb3e8', '#8fd14f', '#c77dff', '#ffc93c', '#ff6fb5', '#2ec4b6', '#f25f5c'];
+export const FLOOR = ['#6699CC', '#5FA8A0', '#8C9FD9', '#7FB7D9', '#9C8FC4', '#86B39A', '#AABFD5', '#B4A7D6'];
 
 /** A rounded toon block: fill, a lighter top, a darker bottom and an ink outline. */
 export function toonBlock(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, r = Math.min(w, h) * 0.24, line = 2) {
@@ -19,7 +24,7 @@ export function toonBlock(ctx: CanvasRenderingContext2D, x: number, y: number, w
   ctx.clip();
   ctx.fillStyle = 'rgba(255,255,255,0.38)';
   ctx.fillRect(x, y, w, h * 0.26);
-  ctx.fillStyle = 'rgba(0,0,0,0.13)';
+  ctx.fillStyle = 'rgba(27,39,50,0.13)';
   ctx.fillRect(x, y + h * 0.74, w, h * 0.26);
   ctx.restore();
   ctx.lineWidth = line;
@@ -27,21 +32,19 @@ export function toonBlock(ctx: CanvasRenderingContext2D, x: number, y: number, w
   ctx.stroke();
 }
 
-/** A white card with an ink outline and a drop shadow, like the office's buttons and panels. */
-export function card(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill = '#ffffff', r = 10) {
-  roundRect(ctx, x, y + 3, w, h, r);
-  ctx.fillStyle = INK;
-  ctx.fill();
+/** A flat card on a hairline, like the office's cards and panels (radius 9 by default, the controls' radius). */
+export function card(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill = PAPER, r = 9, edge = HAIRLINE) {
   roundRect(ctx, x, y, w, h, r);
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = edge;
   ctx.stroke();
 }
 
-export function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color = INK, weight = 700, align: CanvasTextAlign = 'center') {
-  ctx.font = `${weight} ${size}px ${SANS}`;
+/** Text in the display face (Komet: 400 or 700 only); pass MONO as `family` for labels and numbers. */
+export function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color = INK, weight = 700, align: CanvasTextAlign = 'center', family = SANS) {
+  ctx.font = `${weight} ${size}px ${family}`;
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
@@ -153,19 +156,18 @@ export function drawParticles(ctx: CanvasRenderingContext2D, ps: Particle[], dt:
 
 /** The "paused / game over / press start" card drawn over a game. */
 export function messageCard(ctx: CanvasRenderingContext2D, w: number, h: number, title: string, lines: string[], accent: string) {
-  ctx.fillStyle = 'rgba(31,29,43,0.45)';
+  ctx.fillStyle = 'rgba(27,39,50,0.45)';
   ctx.fillRect(0, 0, w, h);
   const cw = Math.min(w - 36, 250);
   const ch = 70 + lines.length * 22;
   const x = (w - cw) / 2;
   const y = (h - ch) / 2;
-  card(ctx, x, y, cw, ch, PAPER, 16);
+  card(ctx, x, y, cw, ch, PAPER, 14);
   ctx.save();
   ctx.clip();
   ctx.fillStyle = accent;
-  ctx.fillRect(x, y, cw, 10);
+  ctx.fillRect(x, y, cw, 4);
   ctx.restore();
-  ctx.stroke();
-  outlinedText(ctx, title, w / 2, y + 36, 24, accent);
-  lines.forEach((l, i) => text(ctx, l, w / 2, y + 68 + i * 22, i === lines.length - 1 ? 13 : 15, i === lines.length - 1 ? MUTED : INK, i === lines.length - 1 ? 600 : 700));
+  text(ctx, title, w / 2, y + 36, 22, INK, 700);
+  lines.forEach((l, i) => text(ctx, l, w / 2, y + 68 + i * 22, i === lines.length - 1 ? 13 : 15, i === lines.length - 1 ? MUTED : INK, i === lines.length - 1 ? 400 : 700));
 }

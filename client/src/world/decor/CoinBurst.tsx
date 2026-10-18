@@ -10,6 +10,7 @@ import { reduceMotion } from '../../ui/a11y';
 import { canBurst } from '../confetti';
 import { BOARD, deskPosition } from '../layout';
 import { toon } from '../materials';
+import { GOLD } from '../palette';
 import { pling } from './actions';
 import { onReward } from './rewards';
 
@@ -121,5 +122,5 @@ export function CoinBurst({ repo, agents }: { repo: RepoView; agents: Agent[] })
     if (!live) m.visible = false;
   });
 
-  return <instancedMesh ref={mesh} args={[sim.geometry, toon('#ffd43b', { emissive: '#7a5a00', emissiveIntensity: 0.6 }), SLOTS * COINS]} frustumCulled={false} />;
+  return <instancedMesh ref={mesh} args={[sim.geometry, toon(GOLD, { emissive: '#6B5A3A', emissiveIntensity: 0.6 }), SLOTS * COINS]} frustumCulled={false} />;
 }

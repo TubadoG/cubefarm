@@ -22,27 +22,24 @@ export function Kiosk() {
     512,
     360,
     (ctx) => {
-      const g = ctx.createLinearGradient(0, 0, 0, 360);
-      g.addColorStop(0, '#3a0ca3');
-      g.addColorStop(1, '#7209b7');
-      ctx.fillStyle = g;
+      ctx.fillStyle = '#26394D';
       ctx.fillRect(0, 0, 512, 360);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#ffd166';
+      ctx.fillStyle = '#FFFFFF';
       ctx.font = `700 52px ${SANS}`;
       ctx.fillText('🛍️ Catalogue', 256, 64);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `600 34px ${SANS}`;
+      ctx.fillStyle = '#EAF0F6';
+      ctx.font = `400 34px ${SANS}`;
       ctx.fillText('Decorate your floors', 256, 132);
-      roundRect(ctx, 96, 176, 320, 70, 35);
+      roundRect(ctx, 96, 176, 320, 70, 14);
       ctx.fillStyle = 'rgba(255,255,255,0.14)';
       ctx.fill();
-      ctx.fillStyle = '#ffe066';
+      ctx.fillStyle = '#D4B483';
       ctx.font = `700 40px ${SANS}`;
       ctx.fillText(`🪙 ${coins}`, 256, 212);
-      ctx.fillStyle = '#c9c9ee';
-      ctx.font = `500 26px ${SANS}`;
+      ctx.fillStyle = '#AABFD5';
+      ctx.font = `400 26px ${SANS}`;
       ctx.fillText(floors ? `across ${floors} floor${floors === 1 ? '' : 's'} · press ${use}` : 'merges earn coins', 256, 300);
     },
     [coins, floors, use],
@@ -69,25 +66,25 @@ const trophySpot = (i: number) => ({ x: -S.w / 2 + 0.24 + (i % COLS) * ((S.w - 0
 
 const shelfModel = () =>
   model('trophy-shelf', () => {
-    const wood = '#8d5a3b';
+    const wood = '#5C6B7A';
     const parts: Part[] = [
       box(0.06, S.h, S.d, wood, [-S.w / 2 + 0.03, S.h / 2, 0]),
       box(0.06, S.h, S.d, wood, [S.w / 2 - 0.03, S.h / 2, 0]),
-      box(S.w, S.h, 0.04, '#d4b48c', [0, S.h / 2, -S.d / 2 + 0.02]), // a light back, so the gold stands out
+      box(S.w, S.h, 0.04, '#DCE3EA', [0, S.h / 2, -S.d / 2 + 0.02]), // a light back, so the gold stands out
       box(S.w, 0.06, S.d, wood, [0, S.h - 0.03, 0]),
-      box(S.w, 0.12, S.d, '#6f4530', [0, 0.06, 0]),
+      box(S.w, 0.12, S.d, '#3D454D', [0, 0.06, 0]),
     ];
-    for (const y of ROWS_Y) parts.push(box(S.w - 0.1, 0.04, S.d - 0.04, '#b08968', [0, y - 0.02, 0.02]));
+    for (const y of ROWS_Y) parts.push(box(S.w - 0.1, 0.04, S.d - 0.04, '#B9C3CC', [0, y - 0.02, 0.02]));
     return parts;
   });
 
 const cupModel = () =>
   model('trophy-cup', () => [
-    box(0.12, 0.05, 0.12, '#2b2d42', [0, 0.025, 0]),
-    cyl(0.02, 0.03, 0.08, '#e9c46a', [0, 0.09, 0]),
-    cyl(0.085, 0.04, 0.13, '#ffd43b', [0, 0.195, 0]),
-    torus(0.04, 0.008, '#ffd43b', [-0.085, 0.2, 0], [0, Math.PI / 2, 0]),
-    torus(0.04, 0.008, '#ffd43b', [0.085, 0.2, 0], [0, Math.PI / 2, 0]),
+    box(0.12, 0.05, 0.12, '#26394D', [0, 0.025, 0]),
+    cyl(0.02, 0.03, 0.08, '#A88E5E', [0, 0.09, 0]),
+    cyl(0.085, 0.04, 0.13, '#D4B483', [0, 0.195, 0]),
+    torus(0.04, 0.008, '#D4B483', [-0.085, 0.2, 0], [0, Math.PI / 2, 0]),
+    torus(0.04, 0.008, '#D4B483', [0.085, 0.2, 0], [0, Math.PI / 2, 0]),
   ]);
 
 /** The plaque strip on a shelf's lip: the icon and name of each trophy that's been won there. */
@@ -98,13 +95,13 @@ function Plaques({ row, won }: { row: number; won: Map<string, AchievementView> 
     1024,
     64,
     (ctx) => {
-      ctx.fillStyle = '#e9d8a6';
+      ctx.fillStyle = '#DCE3EA';
       ctx.fillRect(0, 0, 1024, 64);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       defs.forEach((d, c) => {
         const x = ((0.24 + c * ((S.w - 0.48) / (COLS - 1))) / S.w) * 1024;
-        ctx.fillStyle = won.has(d.id) ? '#5c3d2e' : 'rgba(92,61,46,0.35)';
+        ctx.fillStyle = won.has(d.id) ? '#26394D' : 'rgba(38,57,77,0.35)';
         ctx.font = `700 22px ${SANS}`;
         ctx.fillText(won.has(d.id) ? `${d.icon} ${d.name}` : '🔒 ???', x, 33);
       });
@@ -157,11 +154,11 @@ export function TrophyShelf() {
     128,
     (ctx) => {
       roundRect(ctx, 0, 0, 768, 128, 26);
-      ctx.fillStyle = '#ffd166';
+      ctx.fillStyle = '#D4B483';
       ctx.fill();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#5c3d2e';
+      ctx.fillStyle = '#26394D';
       ctx.font = `700 58px ${SANS}`;
       ctx.fillText(`🏆 Trophies · ${won.size}/${ACHIEVEMENTS.length}`, 384, 68);
     },

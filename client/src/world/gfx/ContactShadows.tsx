@@ -25,7 +25,7 @@ const noRaycast = () => null;
 function shadowDepthMaterial() {
   const m = new THREE.MeshDepthMaterial();
   m.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace('vec4( vec3( 1.0 - fragCoordZ ), opacity );', 'vec4( vec3( 0.0 ), ( 1.0 - fragCoordZ ) * 0.85 );');
+    shader.fragmentShader = shader.fragmentShader.replace('vec4( vec3( 1.0 - fragCoordZ ), opacity );', 'vec4( vec3( 0.106, 0.153, 0.196 ), ( 1.0 - fragCoordZ ) * 0.85 );');
   };
   return m;
 }
@@ -136,9 +136,9 @@ function blobTexture() {
   c.width = c.height = 64;
   const ctx = c.getContext('2d')!;
   const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, 'rgba(0,0,0,0.38)');
-  g.addColorStop(0.55, 'rgba(0,0,0,0.2)');
-  g.addColorStop(1, 'rgba(0,0,0,0)');
+  g.addColorStop(0, 'rgba(27,39,50,0.38)');
+  g.addColorStop(0.55, 'rgba(27,39,50,0.2)');
+  g.addColorStop(1, 'rgba(27,39,50,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(c);

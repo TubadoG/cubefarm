@@ -12,7 +12,35 @@ import type { Pair } from './whiteboard';
 // the Kanban whiteboard, signs and name tags.
 
 export const MONO = '"JetBrains Mono", Consolas, "Cascadia Mono", monospace';
-export const SANS = 'Fredoka, "Segoe UI", system-ui, sans-serif';
+/** Signs, tags, titles, scoreboards: Komet (400/700 only). */
+export const SANS = '"komet", Mulish, "Segoe UI", system-ui, sans-serif';
+/** Small multi-line text: note bodies, speech bubbles, browser copy, plaques' small print. */
+export const BODY = 'Mulish, "Segoe UI", system-ui, sans-serif';
+
+/** Light signs, tags and notes: opaque white, navy ink, the floor's or agent's colour as a stripe. */
+export const PAPER_SIGN = { bg: '#FFFFFF', ink: '#26394D', sub: '#436688', hairline: '#E0E8F1', outline: '#AABFD5' } as const;
+
+/** Dark screens (terminals, the app monitor, mission control); the signal tints are the on-dark ok/warn/crit. */
+export const SCREEN = {
+  bg: '#1B2732',
+  bar: '#26394D',
+  grid: 'rgba(170,191,213,0.08)',
+  line: '#3D5470',
+  title: '#8FB5DD',
+  text: '#EAF0F6',
+  dim: '#8A96A3',
+  good: '#7FC4A0',
+  warn: '#E2C26E',
+  bad: '#E07A72',
+  idle: '#4D6680',
+  ceo: '#B4A7D6',
+} as const;
+
+/** Inverse signs (MANAGER, CEO, the lobby's company sign, floor numbers): Deep Navy, white text. */
+export const INVERSE_SIGN = { bg: '#26394D', text: '#FFFFFF', eyebrow: '#AABFD5' } as const;
+
+/** Text on a floor or agent colour: N900 or white, whichever reads better. */
+export const inkOnColor = (bg: string) => inkOn(bg, '#1B2732', '#FFFFFF');
 
 export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
@@ -44,17 +72,18 @@ export function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: numb
 
 // ---------- terminal ----------
 
+// the same colours as LiveTerminal, so a desk's laptop matches the terminal panel
 const TERM = {
-  bg: '#1b1b29',
-  bar: '#2a2a3d',
-  text: '#e8e8f2',
-  tool: '#8be9fd',
-  result: '#8d8da8',
-  system: '#bd93f9',
-  error: '#ff6b6b',
-  manager: '#ffb86c',
-  done: '#50fa7b',
-  thinking: '#f1fa8c',
+  bg: '#1B2732',
+  bar: '#26394D',
+  text: '#EAF0F6',
+  tool: '#8FB5DD',
+  result: '#8A96A3',
+  system: '#B4A7D6',
+  error: '#E07A72',
+  manager: '#E2C26E',
+  done: '#7FC4A0',
+  thinking: '#AABFD5',
 };
 
 const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
@@ -88,13 +117,13 @@ export function drawTerminal(
   const barH = 30;
   ctx.fillStyle = TERM.bar;
   ctx.fillRect(0, 0, w, barH);
-  ['#ff5f57', '#febc2e', '#28c840'].forEach((c, i) => {
+  ['#AABFD5', '#8A96A3', '#6B7580'].forEach((c, i) => {
     ctx.fillStyle = c;
     ctx.beginPath();
     ctx.arc(18 + i * 20, barH / 2, 6, 0, Math.PI * 2);
     ctx.fill();
   });
-  ctx.fillStyle = '#b8b8cc';
+  ctx.fillStyle = '#AABFD5';
   ctx.font = `600 14px ${MONO}`;
   ctx.textBaseline = 'middle';
   const job =
@@ -146,7 +175,7 @@ export function drawTerminal(
       ctx.fillStyle = TERM.tool;
       ctx.fillText(r.text.slice(1), 10 + charW, y);
     } else if (r.kind === 'text' && r.text.startsWith('●')) {
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = '#FFFFFF';
       ctx.fillText('●', 10, y);
       ctx.fillStyle = TERM.text;
       ctx.fillText(r.text.slice(1), 10 + charW, y);
@@ -162,7 +191,7 @@ export function drawTerminal(
     const verb = agent.status === 'preparing' ? (agent.currentTool ?? 'Setting up worktree') : toolVerb(agent.currentTool) || VERBS[Math.floor(now / 6000) % VERBS.length];
     const secs = agent.startedAt ? Math.max(0, Math.floor((officeNow() - agent.startedAt) / 1000)) : 0;
     const mm = Math.floor(secs / 60);
-    ctx.fillStyle = '#ff9e64';
+    ctx.fillStyle = TERM.manager;
     ctx.font = `600 ${fontSize}px ${MONO}`;
     ctx.fillText(`${SPINNER[frame]} ${verb}… (${mm}m ${secs % 60}s)`, 10, h - 14);
   }
@@ -172,35 +201,33 @@ export function drawTerminal(
 
 function drawScreensaver(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, agent: Agent, now: number) {
   const t = now / 1000;
-  const g = ctx.createLinearGradient(x, y, x + w, y + h);
-  g.addColorStop(0, '#26264a');
-  g.addColorStop(1, '#3b2a55');
-  ctx.fillStyle = g;
+  ctx.fillStyle = SCREEN.bar;
   ctx.fillRect(x, y, w, h);
   const bx = x + w / 2 + Math.sin(t * 0.7) * w * 0.25;
   const by = y + h / 2 + Math.cos(t * 0.9) * h * 0.18;
   ctx.textAlign = 'center';
+  ctx.fillStyle = '#6699CC';
   ctx.font = `64px ${SANS}`;
   ctx.fillText('✻', bx, by - 20);
-  ctx.fillStyle = '#ffd6a5';
-  ctx.font = `600 26px ${SANS}`;
+  ctx.fillStyle = SCREEN.text;
+  ctx.font = `700 26px ${SANS}`;
   ctx.fillText(`${agent.name} is free`, bx, by + 34);
-  ctx.fillStyle = '#b8b8dd';
-  ctx.font = `18px ${SANS}`;
+  ctx.fillStyle = '#AABFD5';
+  ctx.font = `18px ${BODY}`;
   ctx.fillText(agent.role === 'ceo' ? 'thinking about the company…' : 'waiting for work…', bx, by + 62);
   ctx.textAlign = 'left';
 }
 
 function drawBrowser(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, url: string | null, shot: HTMLImageElement | null) {
-  ctx.fillStyle = '#e9ecf2';
+  ctx.fillStyle = '#EEF3F8';
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = '#d5d9e2';
+  ctx.fillStyle = '#DCE3EA';
   ctx.fillRect(x, y, w, 34);
-  roundRect(ctx, x + 10, y + 6, w - 20, 22, 11);
-  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, x + 10, y + 6, w - 20, 22, 6);
+  ctx.fillStyle = '#FFFFFF';
   ctx.fill();
-  ctx.fillStyle = '#4a5160';
-  ctx.font = `13px ${SANS}`;
+  ctx.fillStyle = '#3D454D';
+  ctx.font = `13px ${BODY}`;
   ctx.textBaseline = 'middle';
   const u = (url ?? 'about:blank').replace(/^https?:\/\//, '');
   ctx.fillText(`🔒 ${u.length > 42 ? `${u.slice(0, 41)}…` : u}`, x + 20, y + 18);
@@ -211,9 +238,9 @@ function drawBrowser(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
     const dh = shot.naturalHeight * s;
     ctx.drawImage(shot, area.x + (area.w - dw) / 2, area.y, dw, dh);
   } else {
-    ctx.fillStyle = '#9aa1b2';
+    ctx.fillStyle = '#8A96A3';
     ctx.textAlign = 'center';
-    ctx.font = `16px ${SANS}`;
+    ctx.font = `16px ${BODY}`;
     ctx.fillText('🌐 loading page…', area.x + area.w / 2, area.y + area.h / 2);
     ctx.textAlign = 'left';
   }
@@ -222,11 +249,11 @@ function drawBrowser(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
 // ---------- kanban whiteboard ----------
 
 const COLS: { key: keyof KanbanColumns; title: string; chip: string; note: string }[] = [
-  { key: 'backlog', title: '📋 Backlog', chip: '#ffd166', note: '#fff3b0' },
-  { key: 'progress', title: '🔨 In progress', chip: '#4cc9f0', note: '#cfeefd' },
-  { key: 'qa', title: '🔍 In QA', chip: '#ff9f68', note: '#ffe3cf' },
-  { key: 'ready', title: '✅ Ready to merge', chip: '#80ed99', note: '#d8f9df' },
-  { key: 'merged', title: '🎉 Merged', chip: '#c77dff', note: '#eadcff' },
+  { key: 'backlog', title: '📋 Backlog', chip: '#AEB8C2', note: '#EEF3F8' },
+  { key: 'progress', title: '🔨 In progress', chip: '#6699CC', note: '#DDE8F4' },
+  { key: 'qa', title: '🔍 In QA', chip: '#4D7399', note: '#E3EAF2' },
+  { key: 'ready', title: '✅ Ready to merge', chip: '#4C9A76', note: '#E4F1EA' },
+  { key: 'merged', title: '🎉 Merged', chip: '#26394D', note: '#DCE3EA' },
 ];
 
 /** The whiteboard's columns, left to right. */
@@ -251,7 +278,7 @@ export function kanbanNoteRect(ci: number, i: number, w: number) {
 }
 
 /** A column's sticky-note colour. */
-export const kanbanNoteColor = (key: keyof KanbanColumns) => COLS.find((c) => c.key === key)?.note ?? '#fff3b0';
+export const kanbanNoteColor = (key: keyof KanbanColumns) => COLS.find((c) => c.key === key)?.note ?? '#EEF3F8';
 
 /** A card's sticky colour where it is: its tone's (in the viewer's status palette), else its column's. */
 export const kanbanCardColor = (card: KanbanCard, key: keyof KanbanColumns, look: StatusLook = STANDARD_LOOK) => (card.tone ? toneFill(card.tone, look.palette, 'board') : kanbanNoteColor(key));
@@ -265,9 +292,9 @@ function drawStatusBadge(ctx: CanvasRenderingContext2D, x: number, y: number, r:
   ctx.fillStyle = fill;
   ctx.fill();
   ctx.lineWidth = Math.max(2, r * 0.16);
-  ctx.strokeStyle = '#1f1d2b';
+  ctx.strokeStyle = '#26394D';
   ctx.stroke();
-  ctx.fillStyle = inkOn(fill);
+  ctx.fillStyle = inkOn(fill, '#1B2732');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `700 ${Math.round(r * 1.25)}px ${SANS}`;
@@ -282,9 +309,9 @@ export function drawSticky(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = color;
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-  ctx.fillStyle = 'rgba(0,0,0,0.07)';
+  ctx.fillStyle = 'rgba(27,39,50,0.07)';
   ctx.fillRect(x + 4, y + 4, w - 8, h * 0.14);
-  ctx.fillStyle = '#2d3142';
+  ctx.fillStyle = '#26394D';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `700 ${Math.round(h * 0.42)}px ${SANS}`;
@@ -306,26 +333,26 @@ export interface KanbanExtras {
 }
 
 export function drawKanban(ctx: CanvasRenderingContext2D, w: number, h: number, repo: RepoView, cols: KanbanColumns, extras: KanbanExtras = {}) {
-  ctx.fillStyle = '#fbfbf8';
+  ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, w, h);
   // faint marker smudges
-  ctx.fillStyle = 'rgba(120,140,170,0.05)';
+  ctx.fillStyle = 'rgba(170,191,213,0.06)';
   for (let i = 0; i < 6; i++) ctx.fillRect((i * 431) % w, (i * 97) % h, 260, 40);
 
   ctx.textBaseline = 'middle';
   const statsLeft = extras.stats ? drawStatsCorner(ctx, w - 40, 48, extras.stats) : w - 40;
-  ctx.font = `500 26px ${SANS}`;
+  ctx.font = `400 26px ${SANS}`;
   const synced = repo.lastSync ? `synced ${new Date(repo.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'syncing…';
   const status = `${repo.autoAssign ? '⚡ auto-assign on · ' : ''}${synced}`;
   const statusW = ctx.measureText(status).width;
   ctx.font = `700 46px ${SANS}`;
   const nameW = Math.min(ctx.measureText(repo.fullName).width, statsLeft - 40 - 40);
-  ctx.fillStyle = '#2d3142';
+  ctx.fillStyle = '#26394D';
   ctx.fillText(fitText(ctx, repo.fullName, nameW), 40, 48);
   // the sync line beside the name, when the stats corner leaves room for it
   if (40 + nameW + 28 + statusW <= statsLeft - 28) {
-    ctx.font = `500 26px ${SANS}`;
-    ctx.fillStyle = '#6c7086';
+    ctx.font = `400 26px ${SANS}`;
+    ctx.fillStyle = '#436688';
     ctx.fillText(status, 40 + nameW + 28, 52);
   }
 
@@ -337,11 +364,11 @@ export function drawKanban(ctx: CanvasRenderingContext2D, w: number, h: number, 
     roundRect(ctx, x0 + 8, top, colW - 16, 52, 26);
     ctx.fillStyle = c.chip;
     ctx.fill();
-    ctx.fillStyle = '#1f2233';
-    ctx.font = `600 30px ${SANS}`;
+    ctx.fillStyle = inkOnColor(c.chip);
+    ctx.font = `700 30px ${SANS}`;
     ctx.fillText(`${c.title}  ${cards.length}`, x0 + 30, top + 27);
     if (ci > 0) {
-      ctx.strokeStyle = '#d9dbe3';
+      ctx.strokeStyle = '#E0E8F1';
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(x0, top);
@@ -356,14 +383,14 @@ export function drawKanban(ctx: CanvasRenderingContext2D, w: number, h: number, 
       drawNote(ctx, n.x, n.y, n.w, n.h, card, kanbanCardColor(card, c.key, extras.look), now, extras.look);
     });
     if (cards.length > shown.length) {
-      ctx.fillStyle = '#6c7086';
-      ctx.font = `600 26px ${SANS}`;
+      ctx.fillStyle = '#436688';
+      ctx.font = `700 26px ${SANS}`;
       const n = kanbanNoteRect(ci, shown.length, w);
       ctx.fillText(`+${cards.length - shown.length} more`, n.x + 14, n.y + n.h / 2);
     }
     if (cards.length === 0) {
-      ctx.fillStyle = '#b4b7c5';
-      ctx.font = `italic 500 26px ${SANS}`;
+      ctx.fillStyle = '#8A96A3';
+      ctx.font = `italic 400 26px ${SANS}`;
       ctx.fillText(c.key === 'backlog' ? 'no open issues' : 'nothing here yet', x0 + 30, top + 110);
     }
   });
@@ -372,18 +399,18 @@ export function drawKanban(ctx: CanvasRenderingContext2D, w: number, h: number, 
 
 /** The stats corner, right-aligned at `right`: one chip per figure, "needs you" in red. Returns its left edge. */
 function drawStatsCorner(ctx: CanvasRenderingContext2D, right: number, cy: number, stats: BoardStats) {
-  ctx.font = `600 28px ${SANS}`;
+  ctx.font = `700 28px ${SANS}`;
   let x = right;
   for (const chip of statsChips(stats).reverse()) {
     const cw = ctx.measureText(chip.text).width + 36;
     x -= cw;
     roundRect(ctx, x, cy - 26, cw, 52, 26);
-    ctx.fillStyle = chip.alarm ? '#e63946' : '#eef1f7';
+    ctx.fillStyle = chip.alarm ? '#C25B54' : '#EEF3F8';
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = chip.alarm ? '#b5172a' : '#d4d8e3';
+    ctx.strokeStyle = chip.alarm ? '#8C3A34' : '#DCE3EA';
     ctx.stroke();
-    ctx.fillStyle = chip.alarm ? '#ffffff' : '#2d3142';
+    ctx.fillStyle = chip.alarm ? '#FFFFFF' : '#26394D';
     ctx.fillText(chip.text, x + 18, cy + 1);
     x -= 12;
   }
@@ -408,30 +435,30 @@ function drawString(ctx: CanvasRenderingContext2D, w: number, p: Pair) {
   };
   ctx.lineCap = 'round';
   path(3, 5);
-  ctx.strokeStyle = 'rgba(0,0,0,0.16)';
+  ctx.strokeStyle = 'rgba(27,39,50,0.16)';
   ctx.lineWidth = 6;
   ctx.stroke();
   path(0, 0);
-  ctx.strokeStyle = '#c1121f';
+  ctx.strokeStyle = '#C25B54';
   ctx.lineWidth = 5;
   ctx.stroke();
   // a lighter strand twisted along it, so it reads as yarn
   ctx.setLineDash([7, 9]);
   path(0, -1);
-  ctx.strokeStyle = '#ff6b6b';
+  ctx.strokeStyle = '#E07A72';
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.setLineDash([]);
   for (const q of [a, b]) {
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillStyle = 'rgba(27,39,50,0.2)';
     ctx.beginPath();
     ctx.arc(q.x + 2, q.y + 3, 10, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#d62828';
+    ctx.fillStyle = '#8C3A34';
     ctx.beginPath();
     ctx.arc(q.x, q.y, 10, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#ffadad';
+    ctx.fillStyle = '#F5DEDC';
     ctx.beginPath();
     ctx.arc(q.x - 3, q.y - 3, 3.5, 0, Math.PI * 2);
     ctx.fill();
@@ -448,7 +475,7 @@ export function drawLiftedNote(ctx: CanvasRenderingContext2D, card: KanbanCard, 
   ctx.save();
   ctx.scale(scale, scale);
   if (!card.ghost) {
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.fillStyle = 'rgba(27,39,50,0.28)';
     roundRect(ctx, pad + 3, pad + 7, nw + 2, nh + 2, 6);
     ctx.fill();
   }
@@ -458,7 +485,7 @@ export function drawLiftedNote(ctx: CanvasRenderingContext2D, card: KanbanCard, 
 
 function drawNote(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, card: KanbanCard, color: string, now: number, look: StatusLook = STANDARD_LOOK) {
   const tilt = (((card.number * 37) % 7) - 3) * 0.006;
-  const ink = card.agent && /^#[0-9a-f]{6}$/i.test(card.agent.color) ? card.agent.color : '#8a8fa3';
+  const ink = card.agent && /^#[0-9a-f]{6}$/i.test(card.agent.color) ? card.agent.color : '#8A96A3';
   ctx.save();
   ctx.translate(x + w / 2, y + h / 2);
   ctx.rotate(tilt);
@@ -473,21 +500,21 @@ function drawNote(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
     ctx.strokeRect(2, 2, w - 4, h - 4);
     ctx.setLineDash([]);
   } else {
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillStyle = 'rgba(27,39,50,0.12)';
     ctx.fillRect(4, 6, w, h);
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.fillStyle = 'rgba(27,39,50,0.06)';
     ctx.fillRect(0, 0, w, 10);
   }
 
-  ctx.fillStyle = '#2d3142';
+  ctx.fillStyle = '#26394D';
   ctx.font = `700 22px ${SANS}`;
   ctx.textBaseline = 'top';
   const header = `${card.prNumber ? 'PR ' : ''}#${card.number}`;
   ctx.fillText(header, 14, 12);
   const headerW = ctx.measureText(header).width;
-  ctx.font = `500 19px ${SANS}`;
+  ctx.font = `600 19px ${BODY}`;
   const lines = wrap(ctx, card.title, w - 28, 2);
   lines.forEach((l, i) => ctx.fillText(l, 14, 38 + i * 21));
 
@@ -498,14 +525,14 @@ function drawNote(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
     ctx.beginPath();
     ctx.arc(22, h - 15, 8, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#2d3142';
-    ctx.font = `600 17px ${SANS}`;
+    ctx.fillStyle = '#26394D';
+    ctx.font = `700 17px ${SANS}`;
     ctx.fillText(label.who, 36, h - 14, w - 46);
-    ctx.font = `600 15px ${SANS}`;
+    ctx.font = `600 15px ${BODY}`;
     const room = w - 12 - (14 + headerW + 12);
     const meta = label.meta.find((m) => ctx.measureText(m).width <= room);
     if (meta) {
-      ctx.fillStyle = '#5c6078';
+      ctx.fillStyle = '#436688';
       ctx.textAlign = 'right';
       ctx.fillText(meta, w - 12, 24);
       ctx.textAlign = 'left';
@@ -515,13 +542,13 @@ function drawNote(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
     ctx.beginPath();
     ctx.arc(22, h - 15, 8, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#2d3142';
-    ctx.font = `600 17px ${SANS}`;
+    ctx.fillStyle = '#26394D';
+    ctx.font = `700 17px ${SANS}`;
     ctx.fillText(card.agent.name, 36, h - 14);
   }
   if (card.note && !card.ghost) {
-    ctx.font = `500 16px ${SANS}`;
-    ctx.fillStyle = '#5c6078';
+    ctx.font = `600 16px ${BODY}`;
+    ctx.fillStyle = '#436688';
     ctx.textAlign = 'right';
     ctx.fillText(card.note, w - 12, h - 14);
     ctx.textAlign = 'left';
@@ -555,16 +582,22 @@ export function drawTag(ctx: CanvasRenderingContext2D, w: number, h: number, age
               : agent.role === 'ceo'
                 ? '🏛️'
                 : '☕';
-  roundRect(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.94)';
+  roundRect(ctx, 4, 4, w - 8, h - 8, 18);
+  ctx.fillStyle = PAPER_SIGN.bg;
   ctx.fill();
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = agent.color;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = PAPER_SIGN.outline;
   ctx.stroke();
+  // the agent's colour as a stripe down the left edge
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = agent.color;
+  ctx.fillRect(4, 4, 10, h - 8);
+  ctx.restore();
   ctx.textBaseline = 'middle';
   ctx.font = `38px ${SANS}`;
   ctx.fillText(icon, 22, h / 2 + 2);
-  ctx.fillStyle = '#23263a';
+  ctx.fillStyle = PAPER_SIGN.ink;
   ctx.font = `700 40px ${SANS}`;
   const busy = agent.status !== 'idle';
   let label =
@@ -587,10 +620,10 @@ export function drawTag(ctx: CanvasRenderingContext2D, w: number, h: number, age
 /** Name tag for a candidate in the waiting room: who they are, a detail (their coding agent, say) and their floor. */
 export function drawCandidateTag(ctx: CanvasRenderingContext2D, w: number, h: number, name: string, detail: string, floor: number | null, color: string) {
   ctx.clearRect(0, 0, w, h);
-  roundRect(ctx, 4, 4, w - 8, h - 8, 28);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  roundRect(ctx, 4, 4, w - 8, h - 8, 18);
+  ctx.fillStyle = PAPER_SIGN.bg;
   ctx.fill();
-  ctx.lineWidth = 6;
+  ctx.lineWidth = 5;
   ctx.strokeStyle = color;
   ctx.setLineDash([14, 8]);
   ctx.stroke();
@@ -603,15 +636,15 @@ export function drawCandidateTag(ctx: CanvasRenderingContext2D, w: number, h: nu
     while (t.length > 4 && ctx.measureText(t).width > max) t = `${t.slice(0, -2)}…`;
     return t;
   };
-  ctx.fillStyle = '#23263a';
+  ctx.fillStyle = PAPER_SIGN.ink;
   ctx.font = `700 40px ${SANS}`;
   ctx.fillText(fit(`Candidate: ${name}`, w - 100), 80, h * 0.36);
-  ctx.fillStyle = '#5c6078';
-  ctx.font = `600 28px ${SANS}`;
+  ctx.fillStyle = PAPER_SIGN.sub;
+  ctx.font = `600 28px ${BODY}`;
   ctx.fillText(fit(`${detail}${floor ? ` · Floor ${floor}` : ''}`, w - 100), 80, h * 0.72);
 }
 
-export function drawSign(ctx: CanvasRenderingContext2D, w: number, h: number, lines: { text: string; size: number; color?: string; weight?: number }[], bg: string, fg = '#ffffff') {
+export function drawSign(ctx: CanvasRenderingContext2D, w: number, h: number, lines: { text: string; size: number; color?: string; weight?: number }[], bg: string, fg = '#FFFFFF') {
   roundRect(ctx, 0, 0, w, h, 28);
   ctx.fillStyle = bg;
   ctx.fill();
@@ -622,7 +655,8 @@ export function drawSign(ctx: CanvasRenderingContext2D, w: number, h: number, li
   for (const l of lines) {
     y += (l.size * 1.25) / 2;
     ctx.fillStyle = l.color ?? fg;
-    ctx.font = `${l.weight ?? 700} ${l.size}px ${SANS}`;
+    // Komet has 400 and 700 only: lighter asks get 400, heavier 700
+    ctx.font = `${(l.weight ?? 700) >= 600 ? 700 : 400} ${l.size}px ${SANS}`;
     let text = l.text;
     while (text.length > 3 && ctx.measureText(text).width > w - 40) text = `${text.slice(0, -2)}…`;
     ctx.fillText(text, w / 2, y);
@@ -633,7 +667,7 @@ export function drawSign(ctx: CanvasRenderingContext2D, w: number, h: number, li
 
 /** Window glass: a faint blue tint you see straight through, with two diagonal glints. */
 export function drawGlass(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.fillStyle = 'rgba(205, 236, 255, 0.16)';
+  ctx.fillStyle = 'rgba(214, 228, 242, 0.16)';
   ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
   for (const [x0, bw] of [[0.18, 0.07], [0.3, 0.025]] as const) {
@@ -651,12 +685,12 @@ export function drawGlass(ctx: CanvasRenderingContext2D, w: number, h: number) {
  * and the slab between floors along the top. `wall` is the fraction of the storey that's wall (the rest is slab).
  */
 export function drawFacade(ctx: CanvasRenderingContext2D, w: number, h: number, wall: number, win: { x0: number; x1: number; y0: number; y1: number }) {
-  ctx.fillStyle = '#f6ecda';
+  ctx.fillStyle = '#E8EEF4';
   ctx.fillRect(0, 0, w, h);
   const slab = h * (1 - wall);
-  ctx.fillStyle = '#dccbb0';
+  ctx.fillStyle = '#C9D4DF';
   ctx.fillRect(0, 0, w, slab);
-  ctx.fillStyle = '#b9a68a';
+  ctx.fillStyle = '#AEB8C2';
   ctx.fillRect(0, slab - 3, w, 3);
   // fractions of the storey, from its floor up
   const x0 = w * win.x0;
@@ -666,8 +700,8 @@ export function drawFacade(ctx: CanvasRenderingContext2D, w: number, h: number, 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(x0 - 5, top - 5, x1 - x0 + 10, bottom - top + 12);
   const g = ctx.createLinearGradient(0, top, 0, bottom);
-  g.addColorStop(0, '#8fc9ef');
-  g.addColorStop(1, '#c4e6fb');
+  g.addColorStop(0, '#8FB5DD');
+  g.addColorStop(1, '#D6E4F2');
   ctx.fillStyle = g;
   ctx.fillRect(x0, top, x1 - x0, bottom - top);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
@@ -679,7 +713,7 @@ export function drawFacade(ctx: CanvasRenderingContext2D, w: number, h: number, 
   ctx.fill();
   ctx.fillStyle = '#ffffff';
   ctx.fillRect((x0 + x1) / 2 - 3, top, 6, bottom - top);
-  ctx.fillStyle = '#1f1d2b';
+  ctx.fillStyle = '#26394D';
   ctx.fillRect(x0 - 5, bottom + 5, x1 - x0 + 10, 2);
 }
 
@@ -692,13 +726,13 @@ const APP_STEPS: { status: PreviewStatus; label: string }[] = [
 ];
 
 const APP_BADGE: Record<PreviewStatus, { text: string; bg: string }> = {
-  unconfigured: { text: 'NOT SET UP', bg: '#5c6078' },
-  stopped: { text: 'STOPPED', bg: '#5c6078' },
-  preparing: { text: 'STARTING', bg: '#f4a261' },
-  installing: { text: 'STARTING', bg: '#f4a261' },
-  starting: { text: 'STARTING', bg: '#f4a261' },
-  running: { text: '● LIVE', bg: '#ef233c' },
-  error: { text: 'ERROR', bg: '#e63946' },
+  unconfigured: { text: 'NOT SET UP', bg: '#6B7580' },
+  stopped: { text: 'STOPPED', bg: '#6B7580' },
+  preparing: { text: 'STARTING', bg: '#C9A24B' },
+  installing: { text: 'STARTING', bg: '#C9A24B' },
+  starting: { text: 'STARTING', bg: '#C9A24B' },
+  running: { text: '● LIVE', bg: '#C25B54' },
+  error: { text: 'ERROR', bg: '#C25B54' },
 };
 
 /** Shorten text with an ellipsis until it fits in max pixels, in the context's current font. */
@@ -715,7 +749,7 @@ export interface ScreenChip {
   led: 'live' | 'busy' | 'bad' | 'off';
 }
 
-const CHIP_LED: Record<ScreenChip['led'], string> = { live: '#7CFFB2', busy: '#ffd166', bad: '#ff6b6b', off: '#6c6c88' };
+const CHIP_LED: Record<ScreenChip['led'], string> = { live: SCREEN.good, busy: SCREEN.warn, bad: SCREEN.bad, off: SCREEN.idle };
 
 export interface AppScreenInfo {
   floor: number;
@@ -746,23 +780,24 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
   ctx.font = `700 34px ${SANS}`;
   const chip = `FLOOR ${info.floor}`;
   const chipW = ctx.measureText(chip).width + 44;
-  roundRect(ctx, 40, 30, chipW, 54, 27);
+  roundRect(ctx, 40, 30, chipW, 54, 14);
   ctx.fillStyle = info.color;
   ctx.fill();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = inkOnColor(info.color);
   ctx.fillText(chip, 62, 58);
 
   const badge = APP_BADGE[p.status];
   ctx.font = `700 38px ${SANS}`;
   const badgeW = ctx.measureText(badge.text).width + 52;
-  roundRect(ctx, w - 40 - badgeW, 28, badgeW, 58, 29);
+  roundRect(ctx, w - 40 - badgeW, 28, badgeW, 58, 14);
   ctx.fillStyle = badge.bg;
   ctx.fill();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = inkOnColor(badge.bg);
   ctx.textAlign = 'center';
   ctx.fillText(badge.text, w - 40 - badgeW / 2, 58);
   ctx.textAlign = 'left';
 
+  ctx.fillStyle = TERM.text;
   ctx.font = `700 50px ${SANS}`;
   const nameX = 40 + chipW + 26;
   ctx.fillText(fitText(ctx, info.name, w - 40 - badgeW - 26 - nameX), nameX, 58);
@@ -777,7 +812,7 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
   // With a channel strip along the bottom, the footer line sits above it.
   const strip = info.channels && info.channels.length > 1 ? info.channels : null;
   const footH = strip ? 200 : 100;
-  const footer = (text: string, color = '#8d8da8') => centred(text, h - footH + 50, 32, color, 600);
+  const footer = (text: string, color = TERM.result) => centred(text, h - footH + 50, 32, color, 700);
 
   const bodyTop = headH;
   const midY = bodyTop + (h - headH - footH) / 2;
@@ -790,33 +825,33 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
     ctx.beginPath();
     ctx.arc(w / 2, cy, 84, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = inkOnColor(info.color);
     ctx.beginPath();
     ctx.moveTo(w / 2 - 26, cy - 42);
     ctx.lineTo(w / 2 - 26, cy + 42);
     ctx.lineTo(w / 2 + 44, cy);
     ctx.closePath();
     ctx.fill();
-    centred(`Press ${info.use} to open the app`, midY + 80, 70, '#ffffff');
+    centred(`Press ${info.use} to open the app`, midY + 80, 70, TERM.text);
     footer("The app isn't running. Start it from the viewer.");
   } else if (p.status === 'unconfigured') {
-    centred('⚙️', midY - 90, 110, '#ffffff', 400);
-    centred('No run command yet.', midY + 40, 66, '#ffffff');
-    centred("Set one in the manager's console.", midY + 120, 44, '#b8b8cc', 600);
+    centred('⚙️', midY - 90, 110, TERM.text, 400);
+    centred('No run command yet.', midY + 40, 66, TERM.text);
+    centred("Set one in the manager's console.", midY + 120, 44, '#AABFD5', 400);
     footer(`Press ${info.use} to open the app`);
   } else if (p.status === 'error') {
     const firstLine = (p.error ?? '').split(/\r?\n/).find((l) => l.trim())?.trim() || 'The app stopped unexpectedly.';
-    ctx.fillStyle = '#e63946';
+    ctx.fillStyle = '#C25B54';
     ctx.fillRect(0, midY - 120, w, 130);
     ctx.font = `700 44px ${SANS}`;
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#FFFFFF';
     ctx.fillText(fitText(ctx, `⚠ ${firstLine}`, w - 100), 50, midY - 55);
-    centred("The app couldn't start.", midY + 90, 52, '#ffffff');
-    footer(`Press ${info.use} to see the log and try again`, '#ffb4ba');
+    centred("The app couldn't start.", midY + 90, 52, TERM.text);
+    footer(`Press ${info.use} to see the log and try again`, '#EBA09A');
   } else if (p.status !== 'running') {
     const at = Math.max(0, APP_STEPS.findIndex((s) => s.status === p.status));
-    centred(`Getting ${ref} ready…`, bodyTop + 80, 46, '#b8b8cc', 600);
-    centred(`${APP_STEPS[at].label}…`, midY - 20, 72, '#ffffff');
+    centred(`Getting ${ref} ready…`, bodyTop + 80, 46, '#AABFD5', 400);
+    centred(`${APP_STEPS[at].label}…`, midY - 20, 72, TERM.text);
     // a three-step progress bar
     const gap = 18;
     const segW = (w - 200 - gap * (APP_STEPS.length - 1)) / APP_STEPS.length;
@@ -824,10 +859,10 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
       const x = 100 + i * (segW + gap);
       const y = midY + 90;
       roundRect(ctx, x, y, segW, 34, 17);
-      ctx.fillStyle = i < at ? TERM.done : i === at ? '#f4a261' : '#3a3a52';
+      ctx.fillStyle = i < at ? TERM.done : i === at ? SCREEN.warn : SCREEN.line;
       ctx.fill();
-      ctx.font = `600 28px ${SANS}`;
-      ctx.fillStyle = i <= at ? TERM.text : '#6c6c88';
+      ctx.font = `700 28px ${SANS}`;
+      ctx.fillStyle = i <= at ? TERM.text : SCREEN.dim;
       ctx.textAlign = 'center';
       ctx.fillText(`${i < at ? '✓ ' : ''}${s.label}`, x + segW / 2, y + 70);
       ctx.textAlign = 'left';
@@ -837,8 +872,8 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
     // running: where it's served and what's deployed, plus the latest thing an agent on this floor looked at
     const left = 56;
     const colW = info.shot ? w * 0.5 : w - 2 * left;
-    ctx.font = `600 34px ${SANS}`;
-    ctx.fillStyle = '#b8b8cc';
+    ctx.font = `700 34px ${SANS}`;
+    ctx.fillStyle = '#AABFD5';
     ctx.fillText('Serving at', left, bodyTop + 72);
     ctx.font = `700 50px ${MONO}`;
     ctx.fillStyle = TERM.tool;
@@ -846,10 +881,10 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
 
     ctx.font = `700 42px ${SANS}`;
     const refW = ctx.measureText(ref).width + 48;
-    roundRect(ctx, left, bodyTop + 208, refW, 64, 32);
+    roundRect(ctx, left, bodyTop + 208, refW, 64, 14);
     ctx.fillStyle = info.color;
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = inkOnColor(info.color);
     ctx.fillText(ref, left + 24, bodyTop + 241);
     if (p.commit) {
       ctx.font = `600 42px ${MONO}`;
@@ -857,8 +892,8 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
       ctx.fillText(p.commit, left + refW + 24, bodyTop + 241);
     }
     if (p.startedAt) {
-      ctx.font = `500 32px ${SANS}`;
-      ctx.fillStyle = '#8d8da8';
+      ctx.font = `400 32px ${SANS}`;
+      ctx.fillStyle = TERM.result;
       ctx.fillText(`up since ${new Date(p.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, left, bodyTop + 330);
     }
 
@@ -867,14 +902,14 @@ export function drawAppScreen(ctx: CanvasRenderingContext2D, w: number, h: numbe
       const th = Math.round(tw * 0.5625);
       const tx = w - 40 - tw;
       const ty = bodyTop + 50;
-      ctx.fillStyle = '#3a3a52';
+      ctx.fillStyle = SCREEN.line;
       ctx.fillRect(tx - 6, ty - 6, tw + 12, th + 12);
       // cover-fit, anchored to the top left like a browser viewport
       const img = info.shot;
       const scale = Math.max(tw / img.width, th / img.height);
       ctx.drawImage(img, 0, 0, tw / scale, th / scale, tx, ty, tw, th);
-      ctx.font = `500 26px ${SANS}`;
-      ctx.fillStyle = '#8d8da8';
+      ctx.font = `400 26px ${BODY}`;
+      ctx.fillStyle = TERM.result;
       ctx.fillText(fitText(ctx, info.shotCaption ?? 'latest agent screenshot', tw), tx, ty + th + 36);
     }
     footer(`Press ${info.use} to open the app`, TERM.done);
@@ -891,11 +926,11 @@ function drawChannelStrip(ctx: CanvasRenderingContext2D, w: number, h: number, c
   chips.forEach((c, i) => {
     const r = rects[i];
     roundRect(ctx, r.x, r.y, r.w, r.h, 18);
-    ctx.fillStyle = c.on ? color : '#3a3a52';
+    ctx.fillStyle = c.on ? color : SCREEN.line;
     ctx.fill();
     if (c.on) {
       ctx.lineWidth = 4;
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = '#FFFFFF';
       ctx.stroke();
     }
     ctx.fillStyle = CHIP_LED[c.led];
@@ -903,7 +938,7 @@ function drawChannelStrip(ctx: CanvasRenderingContext2D, w: number, h: number, c
     ctx.arc(r.x + 26, r.y + r.h / 2, 9, 0, Math.PI * 2);
     ctx.fill();
     ctx.font = `700 30px ${SANS}`;
-    ctx.fillStyle = c.on ? '#ffffff' : '#c8c8dc';
+    ctx.fillStyle = c.on ? inkOnColor(color) : '#DCE3EA';
     ctx.textAlign = 'center';
     ctx.fillText(fitText(ctx, c.label, r.w - 56), r.x + r.w / 2 + 14, r.y + r.h / 2 + 1);
     ctx.textAlign = 'left';

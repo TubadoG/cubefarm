@@ -29,8 +29,8 @@ export function useLeavers(agents: Agent[]) {
 const BOX = (
   <group position={[0, 0.2, -0.44]}>
     <Box size={[0.42, 0.24, 0.3]} color="#c99a5b" outline />
-    <Ball r={0.07} position={[0.1, 0.16, 0.02]} color="#52b788" />
-    <Box size={[0.06, 0.16, 0.04]} position={[-0.1, 0.16, 0]} color="#e07a5f" />
+    <Ball r={0.07} position={[0.1, 0.16, 0.02]} color="#5E9C7E" />
+    <Box size={[0.06, 0.16, 0.04]} position={[-0.1, 0.16, 0]} color="#6699CC" />
   </group>
 );
 

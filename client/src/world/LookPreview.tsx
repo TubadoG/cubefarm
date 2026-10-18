@@ -56,10 +56,10 @@ function Person({ id }: { id: string }) {
     applyFace(faceMesh, face.s, blink(t, face.seed));
   });
   if (!agent || !look) return null;
-  const pants = toon('#3d4a6b');
+  const pants = toon('#3D4F63');
   return (
     <>
-      <hemisphereLight args={['#fffaf0', '#a48a6a', 0.95]} />
+      <hemisphereLight args={['#F6F9FC', '#BAC6D3', 0.95]} />
       <ambientLight intensity={0.2} />
       <directionalLight position={[1.5, 3, 4]} intensity={1.7} />
       <group ref={turn}>

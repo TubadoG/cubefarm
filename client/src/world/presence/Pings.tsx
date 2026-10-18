@@ -4,7 +4,7 @@ import { Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStore } from '../../store';
 import { tone } from '../../ui/sfx';
-import { SANS, roundRect } from '../draw';
+import { inkOnColor, SANS, roundRect } from '../draw';
 import { useCanvasTexture } from '../interact';
 import { activePings, ping, presenceVersion, subscribePresence, type Ping } from './presenceState';
 import { pingNoun } from './presenceMath';
@@ -79,21 +79,22 @@ function drawLabel(ctx: CanvasRenderingContext2D, w: number, h: number, p: Ping)
   const text = p.label ? `look here: ${p.label}` : 'look here';
   ctx.font = `700 34px ${SANS}`;
   const nameW = Math.min(w - 40, ctx.measureText(p.name).width + 40);
-  ctx.font = `600 38px ${SANS}`;
+  ctx.font = `700 38px ${SANS}`;
   const textW = Math.min(w - 8, ctx.measureText(text).width + 44);
   // who, on a chip of their colour, over what
-  roundRect(ctx, (w - nameW) / 2, 4, nameW, 46, 23);
+  roundRect(ctx, (w - nameW) / 2, 4, nameW, 46, 9);
   ctx.fillStyle = p.color;
   ctx.fill();
-  roundRect(ctx, (w - textW) / 2, 56, textW, 64, 32);
-  ctx.fillStyle = 'rgba(20,22,34,0.86)';
+  roundRect(ctx, (w - textW) / 2, 56, textW, 64, 14);
+  ctx.fillStyle = '#26394D';
   ctx.fill();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = inkOnColor(p.color);
   ctx.font = `700 34px ${SANS}`;
   ctx.fillText(p.name, w / 2, 28, w - 60);
-  ctx.font = `600 38px ${SANS}`;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `700 38px ${SANS}`;
   ctx.fillText(text, w / 2, 89, w - 40);
 }
 

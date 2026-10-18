@@ -7,11 +7,11 @@ import { floorPrCounts, type Agent } from '../../store';
 export type ChipKind = 'working' | 'testing' | 'fixing' | 'error' | 'idle';
 
 export const CHIP_COLORS: Record<ChipKind, string> = {
-  working: '#2dc653',
-  testing: '#4cc9f0',
-  fixing: '#ff9f1c',
-  error: '#ef476f',
-  idle: '#adb5bd',
+  working: '#6699CC',
+  testing: '#4D7399',
+  fixing: '#C9A24B',
+  error: '#C25B54',
+  idle: '#AEB8C2',
 };
 
 /** The chip for someone: in trouble, testing a PR, fixing one, on an issue, or not busy. */

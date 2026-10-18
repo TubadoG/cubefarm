@@ -10,9 +10,9 @@ import { eyeAbove, glowOut, inOut, lerp, sign, toonOut, type SceneProps } from '
 
 const GORES = 10;
 const PALETTES = [
-  ['#e63946', '#f1faee', '#ffb703'],
-  ['#2a9d8f', '#e9c46a', '#f4a261'],
-  ['#7209b7', '#f72585', '#4cc9f0'],
+  ['#6699CC', '#F6F9FC', '#AABFD5'],
+  ['#5FA8A0', '#D4B483', '#7FB7D9'],
+  ['#3D454D', '#8C9FD9', '#4D7399'],
 ];
 
 export default function Balloon({ run, elevation }: SceneProps) {

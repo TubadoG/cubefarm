@@ -1,15 +1,15 @@
 import { useRef, useState } from 'react';
 import { GameCanvas, GameHeader, PadButton, arrowOf, isStartKey, useGameKeys, useOnAway, type Arrow } from './kit';
-import { FLOOR, INK, MUTED, burst, card, drawParticles, eyes, messageCard, popText, shade, text, toonBlock, type Particle } from './paint';
+import { FLOOR, INK, MONO, MUTED, WELL, burst, card, drawParticles, eyes, messageCard, popText, shade, text, toonBlock, type Particle } from './paint';
 import { randomSeed } from './rng';
 import { newSnake, step, stepMs, turn, type Pt, type SnakeEnd, type SnakeState } from './snake';
 import { blip } from './sounds';
 import { bestScore, recordScore } from './storage';
 
-// Cable Snake on the phone: a blue network cable with googly eyes crawling over the office carpet, eating bugs and
+// Cable Snake on the phone: a green network cable with googly eyes crawling over the office carpet, eating bugs and
 // the odd coffee, around four desks.
 
-export const SNAKE_COLOR = '#4fb3e8';
+export const SNAKE_COLOR = '#5FA8A0';
 
 const C = 20;
 const GX = 6;
@@ -18,7 +18,7 @@ const COLS = 16;
 const ROWS = 16;
 const W = GX * 2 + COLS * C;
 const H = GY + ROWS * C + 6;
-const CABLE = '#4fb3e8';
+const CABLE = '#7FC4A0';
 
 type Status = 'ready' | 'playing' | 'paused' | 'over';
 
@@ -63,8 +63,8 @@ export function Snake({ onBack }: { onBack: () => void }) {
       if (next.ate === 'coffee') blip.slurp();
       else blip.chomp();
       s.chomp = 0.18;
-      burst(s.particles, cx(head), cy(head), next.ate === 'coffee' ? ['#8d5524', '#ffffff', '#ffc93c'] : ['#f25f5c', '#8fd14f', '#ffffff'], 8, 90);
-      popText(s.particles, cx(head), cy(head) - 12, next.ate === 'coffee' ? '+50 ☕' : '+10', next.ate === 'coffee' ? '#ffc93c' : '#ffffff', 15);
+      burst(s.particles, cx(head), cy(head), next.ate === 'coffee' ? ['#8d5524', '#ffffff', '#E2C26E'] : ['#E07A72', '#7FC4A0', '#ffffff'], 8, 90);
+      popText(s.particles, cx(head), cy(head) - 12, next.ate === 'coffee' ? '+50 ☕' : '+10', next.ate === 'coffee' ? '#E2C26E' : '#ffffff', 15);
     }
     if (next.over && !prev.over) {
       s.newBest = recordScore('snake', next.score);
@@ -149,13 +149,13 @@ export function Snake({ onBack }: { onBack: () => void }) {
     const g = s.game;
 
     // the scores along the top
-    card(ctx, GX, 4, 96, 26, '#ffffff', 9);
+    card(ctx, GX, 4, 96, 26);
     text(ctx, `🐛 ${g.eaten} eaten`, GX + 48, 17, 12, INK, 700);
-    card(ctx, W / 2 - 50, 4, 100, 26, '#ffffff', 9);
-    text(ctx, `SCORE ${g.score}`, W / 2, 17, 12, INK, 700);
-    card(ctx, W - GX - 96, 4, 96, 26, '#ffffff', 9);
+    card(ctx, W / 2 - 50, 4, 100, 26);
+    text(ctx, `SCORE ${g.score}`, W / 2, 17, 11, INK, 600, 'center', MONO);
+    card(ctx, W - GX - 96, 4, 96, 26);
     const best = Math.max(s.best, g.score);
-    text(ctx, `BEST ${best}`, W - GX - 48, 17, 12, g.score > s.best ? '#e05a2b' : MUTED, 700);
+    text(ctx, `BEST ${best}`, W - GX - 48, 17, 11, g.score > s.best ? '#3D6B54' : MUTED, 600, 'center', MONO);
 
     ctx.save();
     if (s.shake > 0) {
@@ -164,12 +164,12 @@ export function Snake({ onBack }: { onBack: () => void }) {
     }
 
     // office carpet tiles
-    card(ctx, GX - 3, GY - 3, COLS * C + 6, ROWS * C + 6, '#e6ebf3', 8);
+    card(ctx, GX - 3, GY - 3, COLS * C + 6, ROWS * C + 6, WELL, 9, WELL);
     ctx.save();
     ctx.beginPath();
     ctx.roundRect(GX, GY, COLS * C, ROWS * C, 6);
     ctx.clip();
-    ctx.fillStyle = '#dce3ee';
+    ctx.fillStyle = '#22303F';
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if ((x + y) % 2) ctx.fillRect(GX + x * C, GY + y * C, C, C);
     ctx.restore();
 
@@ -178,8 +178,8 @@ export function Snake({ onBack }: { onBack: () => void }) {
       const a = g.desks[i];
       const x = GX + a.x * C;
       const y = GY + a.y * C;
-      toonBlock(ctx, x + 1, y + 2, C * 2 - 2, C - 3, '#f1d19b', 5);
-      toonBlock(ctx, x + C - 8, y - 3, 16, 12, '#2b2d42', 3, 1.5);
+      toonBlock(ctx, x + 1, y + 2, C * 2 - 2, C - 3, '#E4E9EE', 5);
+      toonBlock(ctx, x + C - 8, y - 3, 16, 12, '#3D454D', 3, 1.5);
       ctx.fillStyle = FLOOR[(i / 2) % FLOOR.length];
       ctx.fillRect(x + C - 5, y, 10, 5);
     }
@@ -193,7 +193,7 @@ export function Snake({ onBack }: { onBack: () => void }) {
 
     if (s.status === 'ready') messageCard(ctx, W, H, 'Cable Snake', ['Eat bugs 🐛, sip coffee ☕', 'Dodge desks, walls & yourself', 'Arrows, swipe or tap to start'], SNAKE_COLOR);
     else if (s.status === 'paused') messageCard(ctx, W, H, 'Coffee break ☕', [`Score ${g.score}`, 'Space or tap to resume'], SNAKE_COLOR);
-    else if (s.status === 'over') messageCard(ctx, W, H, ENDS[g.over ?? 'self'], [`Score ${g.score} · ${g.body.length} long`, s.newBest ? '🏆 New best!' : `Best ${s.best}`, 'Space or tap to play again'], g.over === 'won' ? '#8fd14f' : '#f25f5c');
+    else if (s.status === 'over') messageCard(ctx, W, H, ENDS[g.over ?? 'self'], [`Score ${g.score} · ${g.body.length} long`, s.newBest ? '🏆 New best!' : `Best ${s.best}`, 'Space or tap to play again'], g.over === 'won' ? '#4C9A76' : '#C25B54');
   };
 
   const pad = (d: Arrow, glyph: string, label: string) => (
@@ -235,7 +235,7 @@ function drawFood(ctx: CanvasRenderingContext2D, g: SnakeState, now: number) {
     const pulse = 0.5 + Math.sin(now / 200) * 0.5;
     ctx.beginPath();
     ctx.arc(0, 0, 10 + pulse * 2, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255,201,60,${0.25 + pulse * 0.2})`;
+    ctx.fillStyle = `rgba(226,194,110,${0.25 + pulse * 0.2})`;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = INK;
@@ -251,7 +251,7 @@ function drawFood(ctx: CanvasRenderingContext2D, g: SnakeState, now: number) {
     ctx.ellipse(-1, -4, 5, 1.6, 0, 0, Math.PI * 2);
     ctx.fillStyle = '#8d5524';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(31,29,43,0.5)';
+    ctx.strokeStyle = 'rgba(234,240,246,0.6)';
     ctx.lineWidth = 1.2;
     for (const sx of [-3, 1]) {
       const t = (now / 400 + sx) % 1;
@@ -287,7 +287,7 @@ function drawFood(ctx: CanvasRenderingContext2D, g: SnakeState, now: number) {
     ctx.fill();
     ctx.beginPath();
     ctx.ellipse(0, 1, 5.5, 6.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#f25f5c';
+    ctx.fillStyle = '#E07A72';
     ctx.fill();
     ctx.lineWidth = 1.8;
     ctx.stroke();
@@ -360,12 +360,12 @@ function drawCable(ctx: CanvasRenderingContext2D, g: SnakeState, chomp: number, 
   ctx.scale(bite, bite);
   ctx.beginPath();
   ctx.roundRect(-8, -8, 16, 16, 3.5);
-  ctx.fillStyle = '#e4f4ff';
+  ctx.fillStyle = '#EAF0F6';
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = INK;
   ctx.stroke();
-  ctx.fillStyle = '#ffc93c';
+  ctx.fillStyle = '#D4B483';
   for (let i = 0; i < 4; i++) ctx.fillRect(5, -6 + i * 3.3, 3, 1.8);
   ctx.restore();
   const [lx, ly] = LOOK[dir];

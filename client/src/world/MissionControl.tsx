@@ -46,8 +46,8 @@ function useScreen<T>(name: string, px: [number, number], data: T, draw: (ctx: C
   );
 }
 
-const BEZEL = '#23263a';
-const POST = '#3d4057';
+const BEZEL = '#1B2732';
+const POST = '#3D454D';
 const TOP_PX: [number, number] = [1024, 602];
 const BOTTOM_PX: [number, number] = [1024, 494];
 
@@ -63,12 +63,12 @@ function Face({ tex, w, h, y }: { tex: THREE.Texture; w: number; h: number; y: n
 
 const additive = (color: string, opacity: number) =>
   new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false });
-const BEAM = additive('#ff3048', 0.45);
+const BEAM = additive('#E07A72', 0.45);
 
 /** The rotating mirror inside a lit beacon: two beams sweeping round, and a red glow that throbs with them. */
 function Sweep({ size }: { size: number }) {
   const ref = useRef<THREE.Group>(null);
-  const halo = useMemo(() => additive('#ff2d43', 0.3), []);
+  const halo = useMemo(() => additive('#E07A72', 0.3), []);
   useFrame((state, dt) => {
     if (ref.current) ref.current.rotation.y += dt * 4.5;
     halo.opacity = 0.22 + 0.2 * Math.abs(Math.sin(state.clock.elapsedTime * 4.5));
@@ -81,7 +81,7 @@ function Sweep({ size }: { size: number }) {
             <planeGeometry args={[size * 5, size * 1.4]} />
           </mesh>
         ))}
-        <mesh material={glow('#ffe1e5')} position={[0, 0, size * 0.25]}>
+        <mesh material={glow('#F5DEDC')} position={[0, 0, size * 0.25]}>
           <boxGeometry args={[size * 0.5, size * 0.5, size * 0.12]} />
         </mesh>
       </group>
@@ -99,7 +99,7 @@ export function Beacon({ on, size = 0.11 }: { on: boolean; size?: number }) {
   return (
     <group>
       <Cyl r={size * 1.25} h={size * 0.5} position={[0, size * 0.25, 0]} color={POST} outline shadow={false} />
-      <mesh position={[0, size * 0.5, 0]} material={on ? glow('#ff2d43') : toon('#7a3440')}>
+      <mesh position={[0, size * 0.5, 0]} material={on ? glow('#C25B54') : toon('#5A3A3A')}>
         <sphereGeometry args={[size, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
       </mesh>
       {on && (
@@ -128,7 +128,7 @@ export function MissionControl() {
     () =>
       ops.floors.map((f) => {
         const r = repos.find((x) => x.id === f.repoId);
-        const tag: FloorTag = { floor: f.floor, name: r ? (r.fullName.split('/')[1] ?? r.fullName) : f.repoId, color: r?.color ?? '#8d99ae' };
+        const tag: FloorTag = { floor: f.floor, name: r ? (r.fullName.split('/')[1] ?? r.fullName) : f.repoId, color: r?.color ?? '#AEB8C2' };
         return { tag, n: f };
       }),
     [ops.floors, repos],

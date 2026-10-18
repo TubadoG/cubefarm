@@ -12,8 +12,8 @@ export interface BlasterDef {
 
 /** The two blasters on every floor's rack, top slot first. */
 export const BLASTERS: BlasterDef[] = [
-  { id: 'blaster-orange', body: '#ff8c1a', trim: '#3a86ff', foam: '#3a86ff' },
-  { id: 'blaster-blue', body: '#3a86ff', trim: '#ff8c1a', foam: '#ff8c1a' },
+  { id: 'blaster-orange', body: '#6699CC', trim: '#4D7399', foam: '#4D7399' },
+  { id: 'blaster-blue', body: '#4D7399', trim: '#6699CC', foam: '#6699CC' },
 ];
 
 export const isBlasterId = (id: string) => BLASTERS.some((b) => b.id === id);
@@ -102,7 +102,7 @@ export interface LooseDart {
   x: number;
   y: number;
   z: number;
-  /** Its foam colour, e.g. '#3a86ff', and its orientation, so something tidying it up can draw it. */
+  /** Its foam colour, e.g. '#6699CC', and its orientation, so something tidying it up can draw it. */
   color: string;
   q: { x: number; y: number; z: number; w: number };
 }

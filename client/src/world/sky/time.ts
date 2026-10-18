@@ -99,13 +99,13 @@ export interface SkyPalette {
 type Key = [t: number, palette: SkyPalette];
 
 const NIGHT: SkyPalette = {
-  zenith: 0x0d1638,
-  horizon: 0x26346b,
-  fog: 0x1d2850,
+  zenith: 0x121d2b,
+  horizon: 0x1b2732,
+  fog: 0x26394d,
   sunColor: 0x8fa6ff, // moonlight
   sunIntensity: 0.25,
-  hemiSky: 0x4a5a9a,
-  hemiGround: 0x2a2440,
+  hemiSky: 0x4d6290,
+  hemiGround: 0x262f3c,
   ambient: 0.22,
   exposure: 0.9,
   starsOpacity: 1,
@@ -114,13 +114,13 @@ const NIGHT: SkyPalette = {
 
 /** Afternoon is the office as it was before the sky had a clock (Game.tsx, Shell.tsx's Lights). */
 const AFTERNOON: SkyPalette = {
-  zenith: 0x8ccaf5,
-  horizon: 0xbfe3ff,
-  fog: 0xf3ece2,
+  zenith: 0x92c0ea,
+  horizon: 0xcfe0f0,
+  fog: 0xeef3f8,
   sunColor: 0xffffff,
   sunIntensity: 1.55,
-  hemiSky: 0xfffaf0,
-  hemiGround: 0xa48a6a,
+  hemiSky: 0xf6f9fc,
+  hemiGround: 0xbac6d3,
   ambient: 0.18,
   exposure: 1,
   starsOpacity: 0,
@@ -129,18 +129,18 @@ const AFTERNOON: SkyPalette = {
 
 const KEYS: Key[] = [
   [0, NIGHT],
-  [0.2, { ...NIGHT, horizon: 0x2c3a74 }],
+  [0.2, { ...NIGHT, horizon: 0x24344a }],
   // dawn blue hour, then a pink-peach sunrise
-  [0.235, { zenith: 0x24336e, horizon: 0x6a72b0, fog: 0x4e5590, sunColor: 0xff9a7a, sunIntensity: 0.35, hemiSky: 0x6f78b8, hemiGround: 0x3a3048, ambient: 0.2, exposure: 0.92, starsOpacity: 0.5, cityLights: 0.7 }],
-  [0.27, { zenith: 0x6f8fd0, horizon: 0xffb4a0, fog: 0xf0c4b4, sunColor: 0xffb48a, sunIntensity: 0.8, hemiSky: 0xffe0d0, hemiGround: 0x7a6560, ambient: 0.18, exposure: 0.96, starsOpacity: 0, cityLights: 0.15 }],
-  [0.33, { zenith: 0x86c0f0, horizon: 0xcfe6ff, fog: 0xf0ebe6, sunColor: 0xfff1e0, sunIntensity: 1.35, hemiSky: 0xfff6ee, hemiGround: 0x9c8670, ambient: 0.18, exposure: 1, starsOpacity: 0, cityLights: 0 }],
-  [0.5, { zenith: 0x7cc2f7, horizon: 0xc4e6ff, fog: 0xf2eee6, sunColor: 0xffffff, sunIntensity: 1.65, hemiSky: 0xfffcf4, hemiGround: 0xa48a6a, ambient: 0.18, exposure: 1, starsOpacity: 0, cityLights: 0 }],
+  [0.235, { zenith: 0x2d3865, horizon: 0x7379a7, fog: 0x565b88, sunColor: 0xeea38b, sunIntensity: 0.35, hemiSky: 0x787faf, hemiGround: 0x3a3345, ambient: 0.2, exposure: 0.92, starsOpacity: 0.5, cityLights: 0.7 }],
+  [0.27, { zenith: 0x7b93c4, horizon: 0xf3bbac, fog: 0xe8c8bc, sunColor: 0xf0b899, sunIntensity: 0.8, hemiSky: 0xf9e2d6, hemiGround: 0x776763, ambient: 0.18, exposure: 0.96, starsOpacity: 0, cityLights: 0.15 }],
+  [0.33, { zenith: 0x8cbce8, horizon: 0xd4e3f2, fog: 0xeef1f4, sunColor: 0xfff1e0, sunIntensity: 1.35, hemiSky: 0xfaf7f2, hemiGround: 0xb0bcc9, ambient: 0.18, exposure: 1, starsOpacity: 0, cityLights: 0 }],
+  [0.5, { zenith: 0x88bdec, horizon: 0xcfe0f0, fog: 0xeef3f8, sunColor: 0xffffff, sunIntensity: 1.65, hemiSky: 0xf8fafc, hemiGround: 0xbac6d3, ambient: 0.18, exposure: 1, starsOpacity: 0, cityLights: 0 }],
   [AFTERNOON_T, AFTERNOON],
   // golden hour, warm orange and pink, peaking at sunset
-  [0.71, { zenith: 0x7fa8e0, horizon: 0xffc888, fog: 0xf6d6b0, sunColor: 0xffc070, sunIntensity: 1.35, hemiSky: 0xffe6c0, hemiGround: 0x9a7458, ambient: 0.18, exposure: 1.02, starsOpacity: 0, cityLights: 0 }],
-  [SUNSET_T, { zenith: 0x5f6fb8, horizon: 0xff9a6a, fog: 0xf2a88a, sunColor: 0xff8a50, sunIntensity: 0.9, hemiSky: 0xffb8a0, hemiGround: 0x6e5060, ambient: 0.19, exposure: 1, starsOpacity: 0, cityLights: 0.25 }],
+  [0.71, { zenith: 0x8baad4, horizon: 0xf0c797, fog: 0xedd5b9, sunColor: 0xedbe82, sunIntensity: 1.35, hemiSky: 0xf7e4c8, hemiGround: 0x927560, ambient: 0.18, exposure: 1.02, starsOpacity: 0, cityLights: 0 }],
+  [SUNSET_T, { zenith: 0x6a76ad, horizon: 0xeca17d, fog: 0xe5ae97, sunColor: 0xe99166, sunIntensity: 0.9, hemiSky: 0xf3beac, hemiGround: 0x6a5460, ambient: 0.19, exposure: 1, starsOpacity: 0, cityLights: 0.25 }],
   // blue hour
-  [0.775, { zenith: 0x2a3a80, horizon: 0x7a6ab8, fog: 0x5a5a96, sunColor: 0xb0a0ff, sunIntensity: 0.35, hemiSky: 0x7a7ac0, hemiGround: 0x3a3050, ambient: 0.21, exposure: 0.94, starsOpacity: 0.35, cityLights: 0.8 }],
+  [0.775, { zenith: 0x354175, horizon: 0x8074ae, fog: 0x62628e, sunColor: 0xb8acf3, sunIntensity: 0.35, hemiSky: 0x8383b7, hemiGround: 0x3b344c, ambient: 0.21, exposure: 0.94, starsOpacity: 0.35, cityLights: 0.8 }],
   [0.81, NIGHT],
   [1, NIGHT],
 ];

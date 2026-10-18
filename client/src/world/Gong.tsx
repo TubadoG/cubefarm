@@ -9,6 +9,7 @@ import { malletHolder, pumpGongRuns, resetGongRuns } from './gongRunner';
 import { useInteractable } from './interact';
 import { GONG } from './layout';
 import { toon } from './materials';
+import { BRASS, DARK, GOLD, INK, WOOD_DARK as SLATE_WOOD, WOOD_LIGHT } from './palette';
 import { Ball, Box, Cyl } from './Toon';
 import { onPoke } from './toys/poke';
 
@@ -16,12 +17,11 @@ import { onPoke } from './toys/poke';
 // A merge on this floor (store.ts) or E at the gong strikes it (gongState.ts); this draws the swing and the flash on the
 // disc, read from gongState.ts each frame without allocating. A merge's confetti over the gong is MergeConfetti.tsx's.
 
-const INK = '#1f1d2b';
-const WOOD = '#a0522d';
-const WOOD_DARK = '#7f3b1d';
-const BRONZE = '#e0a53a';
-const BRONZE_DARK = '#b5752a';
-const BRONZE_LIGHT = '#f7d27a';
+const WOOD = SLATE_WOOD;
+const WOOD_DARK = '#3D4F63';
+const BRONZE = GOLD;
+const BRONZE_DARK = BRASS;
+const BRONZE_LIGHT = '#E8D3AE';
 
 const { w, d, h, r, y } = GONG;
 const POST = 0.14;
@@ -30,7 +30,7 @@ const HANG_Y = h - 0.18; // the crossbar's underside, where the disc's ropes han
 const DROP = HANG_Y - y; // pivot to the disc's centre
 
 // Shared by every floor's gong (only one is drawn at a time), so nothing is made per strike.
-const glowMat = markBloom(new THREE.MeshBasicMaterial({ color: '#fff3b0', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+const glowMat = markBloom(new THREE.MeshBasicMaterial({ color: '#F2E3C4', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
 const ringMat = glowMat.clone();
 const discGeo = new THREE.CylinderGeometry(r, r, 0.07, 40);
 const faceGeo = new THREE.CylinderGeometry(r * 0.86, r * 0.86, 0.09, 40);
@@ -121,16 +121,16 @@ export function Gong({ repoId }: { repoId: string }) {
       ))}
       <Box size={[w + 0.2, 0.17, 0.2]} position={[0, h - 0.085, 0]} color={WOOD} outline />
       {[-1, 1].map((s) => (
-        <Box key={s} size={[0.1, 0.21, 0.24]} position={[s * (w / 2 + 0.1), h - 0.085, 0]} color="#d62828" outline shadow={false} />
+        <Box key={s} size={[0.1, 0.21, 0.24]} position={[s * (w / 2 + 0.1), h - 0.085, 0]} color="#6699CC" outline shadow={false} />
       ))}
       <Box size={[w - POST * 2, 0.08, 0.1]} position={[0, 0.42, 0]} color={WOOD_DARK} shadow={false} />
       <Disc />
       {/* the padded mallet, hanging on a hook on the right-hand post */}
       <group ref={mallet} position={[POST_X, 1.45, POST / 2 + 0.05]}>
-        <Box size={[0.05, 0.05, 0.1]} position={[0, 0, -0.03]} color="#495057" shadow={false} />
-        <Cyl r={0.025} h={0.72} position={[0, -0.36, 0.03]} color="#f1d19b" outline />
-        <Ball r={0.13} position={[0, -0.78, 0.03]} color="#e76f51" outline />
-        <Cyl r={0.135} h={0.05} position={[0, -0.78, 0.03]} color="#f4a261" shadow={false} />
+        <Box size={[0.05, 0.05, 0.1]} position={[0, 0, -0.03]} color={DARK} shadow={false} />
+        <Cyl r={0.025} h={0.72} position={[0, -0.36, 0.03]} color={WOOD_LIGHT} outline />
+        <Ball r={0.13} position={[0, -0.78, 0.03]} color="#4D7399" outline />
+        <Cyl r={0.135} h={0.05} position={[0, -0.78, 0.03]} color="#AABFD5" shadow={false} />
       </group>
     </group>
   );

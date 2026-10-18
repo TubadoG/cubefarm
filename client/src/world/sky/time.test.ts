@@ -120,8 +120,8 @@ describe('skyAt', () => {
 
   it('matches the office as it looked before the clock in the afternoon', () => {
     const p = skyAt(AFTERNOON_T);
-    expect(p.horizon).toBe(0xbfe3ff);
-    expect(p.fog).toBe(0xf3ece2);
+    expect(p.horizon).toBe(0xcfe0f0);
+    expect(p.fog).toBe(0xeef3f8);
     expect(p.sunIntensity).toBe(1.55);
     expect(p.exposure).toBe(1);
   });

@@ -18,12 +18,13 @@ import { PaintedTexture } from './paint/painter';
 import { BLOOM } from './gfx/bloomMarks';
 import { DeskGlow } from './gfx/ScreenGlow';
 import { shade, toon } from './materials';
+import { BEZEL, CHAIR, DARK, DESK_LEG, DESK_TOP, LED_ON, METAL, PLANT, POT_TINT } from './palette';
 import { deskMug, subscribeMugs } from './people';
 import { MUG_SIZE, MugLook, mugColor } from './toys/mugLook';
 import { useKeyName } from '../ui/controls';
 
 const SCREEN = { w: 1.0, h: 0.6, px: 896, py: 538 };
-const WOOD = '#f1d19b';
+const WOOD = DESK_TOP;
 
 /**
  * The live terminal texture for one agent's laptop. Only repaints when something changed and the player is nearby, in
@@ -119,8 +120,7 @@ export function NameTag({ agent }: { agent: Agent }) {
 }
 
 const MONITOR = { y: 1.31, z: -0.3, tilt: -0.06 };
-const BEZEL = '#2b2d42';
-const STAND = '#3d4152';
+const STAND = DARK;
 // Shapes every desk shares, so a floor's desks draw them in one batch each (Batched.tsx).
 const LOGO = look(new THREE.CircleGeometry(0.06, 24), { shading: 'glow' });
 const LED = look(new THREE.CircleGeometry(0.008, 10), { shading: 'glow' });
@@ -138,7 +138,7 @@ function Monitor({ accent, children }: { accent: string; children: React.ReactNo
         <Box size={[0.6, 0.36, 0.07]} position={[0, 0, -0.055]} color={STAND} />
         {children}
         <Part look={LOGO} color={accent} position={[0, 0, -0.091]} rotation={[0, Math.PI, 0]} />
-        <Part look={LED} color="#7CFFB2" position={[SCREEN.w / 2 - 0.02, -SCREEN.h / 2 - 0.018, 0.026]} />
+        <Part look={LED} color={LED_ON} position={[SCREEN.w / 2 - 0.02, -SCREEN.h / 2 - 0.018, 0.026]} />
       </group>
     </group>
   );
@@ -164,13 +164,13 @@ function VacantMonitor({ accent, full }: { accent: string; full: number }) {
     640,
     384,
     (ctx) => {
-      ctx.fillStyle = '#151621';
+      ctx.fillStyle = '#1B2732';
       ctx.fillRect(0, 0, 640, 384);
       drawSign(ctx, 640, 384, [
         { text: '🪑', size: 70 },
-        { text: 'VACANT', size: 70, color: '#ffd6a5' },
-        { text: full ? `Team is full (${full})` : `press ${use} or click to add an agent`, size: 36, color: '#a9adc6', weight: 500 },
-      ], 'rgba(0,0,0,0)');
+        { text: 'VACANT', size: 70, color: '#AABFD5' },
+        { text: full ? `Team is full (${full})` : `press ${use} or click to add an agent`, size: 36, color: '#8A96A3', weight: 400 },
+      ], 'transparent');
     },
     [full, use],
   );
@@ -192,13 +192,13 @@ function keyboardKeys() {
   canvas.width = 512;
   canvas.height = 176;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#d7dbe3';
+  ctx.fillStyle = '#DCE3EA';
   ctx.fillRect(0, 0, 512, 176);
   const rows = [14, 13, 12, 11];
   rows.forEach((n, r) => {
     const kw = (496 - (n - 1) * 5) / n;
     for (let i = 0; i < n; i++) {
-      ctx.fillStyle = r === 0 && (i === 0 || i === n - 1) ? '#ffb4a2' : '#ffffff';
+      ctx.fillStyle = r === 0 && (i === 0 || i === n - 1) ? '#AABFD5' : '#ffffff';
       ctx.beginPath();
       ctx.roundRect(8 + i * (kw + 5), 8 + r * 34, kw, 28, 6);
       ctx.fill();
@@ -218,11 +218,11 @@ function keyboardKeys() {
 function Keyboard() {
   return (
     <group position={[0, 0.77, 0.27]}>
-      <Box size={[0.52, 0.03, 0.18]} position={[0, 0.015, 0]} color="#c3c8d3" outline />
+      <Box size={[0.52, 0.03, 0.18]} position={[0, 0.015, 0]} color={METAL} outline />
       <Part look={keyboardKeys()} color="#ffffff" position={[0, 0.031, 0]} rotation={[-Math.PI / 2, 0, 0]} />
       {/* mouse + pad */}
-      <Part look={PAD} color="#3d4152" position={[0.46, 0.002, 0.02]} rotation={[-Math.PI / 2, 0, 0]} />
-      <Part look={MOUSE} color="#f4f4f8" position={[0.46, 0.022, 0.02]} scale={[0.75, 0.5, 1]} />
+      <Part look={PAD} color={DARK} position={[0.46, 0.002, 0.02]} rotation={[-Math.PI / 2, 0, 0]} />
+      <Part look={MOUSE} color="#F6F9FC" position={[0.46, 0.022, 0.02]} scale={[0.75, 0.5, 1]} />
     </group>
   );
 }
@@ -264,10 +264,10 @@ function Envelope({ requestId, name }: { requestId: string; name: string }) {
     (ctx) => {
       ctx.beginPath();
       ctx.arc(64, 64, 56, 0, Math.PI * 2);
-      ctx.fillStyle = '#fffdf6';
+      ctx.fillStyle = '#FFFFFF';
       ctx.fill();
       ctx.lineWidth = 8;
-      ctx.strokeStyle = '#e07a5f';
+      ctx.strokeStyle = '#6699CC';
       ctx.stroke();
       ctx.font = '64px sans-serif';
       ctx.textAlign = 'center';
@@ -281,10 +281,10 @@ function Envelope({ requestId, name }: { requestId: string; name: string }) {
   });
   return (
     <group ref={ref} position={[-0.45, 0.775, 0.18]} rotation={[0, 0.3, 0]}>
-      <Box size={[0.3, 0.012, 0.2]} color="#fffdf6" outline />
-      <Box size={[0.3, 0.004, 0.012]} position={[0, 0.008, 0.02]} rotation={[0, 0.55, 0]} color="#e9e2d0" shadow={false} />
-      <Box size={[0.3, 0.004, 0.012]} position={[0, 0.008, 0.02]} rotation={[0, -0.55, 0]} color="#e9e2d0" shadow={false} />
-      <Cyl r={0.028} h={0.012} position={[0, 0.012, 0.02]} color="#c1121f" />
+      <Box size={[0.3, 0.012, 0.2]} color="#FFFFFF" outline />
+      <Box size={[0.3, 0.004, 0.012]} position={[0, 0.008, 0.02]} rotation={[0, 0.55, 0]} color="#DCE3EA" shadow={false} />
+      <Box size={[0.3, 0.004, 0.012]} position={[0, 0.008, 0.02]} rotation={[0, -0.55, 0]} color="#DCE3EA" shadow={false} />
+      <Cyl r={0.028} h={0.012} position={[0, 0.012, 0.02]} color="#6699CC" />
       <group ref={marker} position={[0, 0.42, 0]}>
         <Billboard userData={BILLBOARD}>
           <mesh>
@@ -354,7 +354,7 @@ export const Desk = memo(function Desk({
         [-0.88, 0.42],
         [0.88, 0.42],
       ].map(([x, z]) => (
-        <Box key={`${x}${z}`} size={[0.06, 0.71, 0.06]} position={[x, 0.355, z]} color="#5c677d" />
+        <Box key={`${x}${z}`} size={[0.06, 0.71, 0.06]} position={[x, 0.355, z]} color={DESK_LEG} />
       ))}
       <Box size={[1.76, 0.4, 0.03]} position={[0, 0.5, -0.44]} color={shade(WOOD, -0.08)} />
 
@@ -375,17 +375,17 @@ export const Desk = memo(function Desk({
       {(!agent || agent.role === 'ceo') && (
         // a team member's plant grows with them (desk/DeskStory.tsx)
         <>
-          <Cyl r={0.06} rTop={0.07} h={0.09} position={[-0.76, 0.815, -0.22]} color="#e07a5f" outline />
-          <Ball r={0.09} position={[-0.76, 0.92, -0.22]} color="#52b788" outline />
+          <Cyl r={0.06} rTop={0.07} h={0.09} position={[-0.76, 0.815, -0.22]} color={POT_TINT} outline />
+          <Ball r={0.09} position={[-0.76, 0.92, -0.22]} color={PLANT} outline />
         </>
       )}
 
       {/* chair (it rolls back when its owner gets up) */}
       <group ref={chairRef} position={[0, 0, agent ? 0.8 : 0.6]}>
-        <Box size={[0.52, 0.08, 0.5]} position={[0, 0.44, 0]} color={accent} outline />
-        <Box size={[0.48, 0.42, 0.07]} position={[0, 0.72, 0.28]} color={accent} outline />
-        <Cyl r={0.035} h={0.36} position={[0, 0.22, 0]} color="#444a5c" />
-        <Cyl r={0.26} h={0.04} position={[0, 0.03, 0]} color="#444a5c" />
+        <Box size={[0.52, 0.08, 0.5]} position={[0, 0.44, 0]} color={CHAIR} outline />
+        <Box size={[0.48, 0.42, 0.07]} position={[0, 0.72, 0.28]} color={CHAIR} outline />
+        <Cyl r={0.035} h={0.36} position={[0, 0.22, 0]} color={DARK} />
+        <Cyl r={0.26} h={0.04} position={[0, 0.03, 0]} color={DARK} />
       </group>
       {agent && (
         <group position={[0, 0, 0.8]}>

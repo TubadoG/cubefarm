@@ -17,24 +17,24 @@ import { Box, Cyl } from './Toon';
 // the south wall (kept by the server, shared/pong.ts). Drawn with the floor, so it's there before the toys load; the
 // game itself is the toy world's (toys/PingPong.tsx).
 
-const INK = '#1f1d2b';
+const INK = '#26394D';
 const T = PONG_TABLE;
 const TOP_T = 0.03; // the playing surface's thickness
-const LINE = '#f8f9fa';
+const LINE = '#F6F9FC';
 
 /** A paddle: a red rubber face on a dark back, round, with a wooden handle below (or none, held by the arm). Faces -Z. */
 export function PaddleLook({ handle = true }: { handle?: boolean }) {
   return (
     <group>
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.004]} material={toon('#e63946')} castShadow>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.004]} material={toon('#4D7399')} castShadow>
         <cylinderGeometry args={[0.078, 0.078, 0.008, 24]} />
         <Outlines thickness={0.006} color={INK} />
       </mesh>
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.004]} material={toon('#22223b')}>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.004]} material={toon('#26394D')}>
         <cylinderGeometry args={[0.078, 0.078, 0.008, 24]} />
       </mesh>
       {handle && (
-        <mesh position={[0, -0.115, 0]} material={toon('#d4a373')}>
+        <mesh position={[0, -0.115, 0]} material={toon('#B9C3CC')}>
           <boxGeometry args={[0.026, 0.085, 0.022]} />
         </mesh>
       )}
@@ -50,7 +50,7 @@ function netMaterial() {
   c.width = 256;
   c.height = 32;
   const ctx = c.getContext('2d')!;
-  ctx.strokeStyle = 'rgba(30,30,40,0.85)';
+  ctx.strokeStyle = 'rgba(27,39,50,0.85)';
   ctx.lineWidth = 1.2;
   for (let x = 0; x <= 256; x += 6) {
     ctx.beginPath();
@@ -64,7 +64,7 @@ function netMaterial() {
     ctx.lineTo(256, y);
     ctx.stroke();
   }
-  ctx.fillStyle = '#f8f9fa';
+  ctx.fillStyle = '#F6F9FC';
   ctx.fillRect(0, 0, 256, 5);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -80,7 +80,7 @@ const Table = memo(function Table() {
   const span = T.wid + net.overhang * 2;
   return (
     <group position={[T.x, 0, T.z]}>
-      <mesh position={[0, T.top - TOP_T / 2, 0]} material={toon('#1d4e89')} castShadow receiveShadow>
+      <mesh position={[0, T.top - TOP_T / 2, 0]} material={toon('#4D7399')} castShadow receiveShadow>
         <boxGeometry args={[T.len, TOP_T, T.wid]} />
         <Outlines thickness={0.012} color={INK} />
       </mesh>
@@ -97,9 +97,9 @@ const Table = memo(function Table() {
         </mesh>
       ))}
       {/* frame and legs */}
-      <Box size={[T.len - 0.3, 0.08, T.wid - 0.3]} position={[0, T.top - TOP_T - 0.04, 0]} color="#495057" shadow={false} />
+      <Box size={[T.len - 0.3, 0.08, T.wid - 0.3]} position={[0, T.top - TOP_T - 0.04, 0]} color="#3D454D" shadow={false} />
       {[-1, 1].flatMap((sx) =>
-        [-1, 1].map((sz) => <Box key={`${sx}${sz}`} size={[0.05, T.top - TOP_T, 0.05]} position={[sx * (half.x - 0.25), (T.top - TOP_T) / 2, sz * (half.z - 0.2)]} color="#343a40" />),
+        [-1, 1].map((sz) => <Box key={`${sx}${sz}`} size={[0.05, T.top - TOP_T, 0.05]} position={[sx * (half.x - 0.25), (T.top - TOP_T) / 2, sz * (half.z - 0.2)]} color="#3D454D" />),
       )}
       {/* the net and its posts */}
       <mesh position={[0, T.top + net.h / 2, 0]} rotation={[0, Math.PI / 2, 0]} material={netMaterial()}>
@@ -107,19 +107,19 @@ const Table = memo(function Table() {
       </mesh>
       {[-1, 1].map((sz) => (
         <group key={sz}>
-          <Box size={[0.03, net.h + 0.02, 0.03]} position={[0, T.top + net.h / 2, sz * (half.z + net.overhang)]} color="#212529" />
-          <Box size={[0.05, 0.03, 0.08]} position={[0, T.top - 0.005, sz * (half.z + 0.02)]} color="#212529" />
+          <Box size={[0.03, net.h + 0.02, 0.03]} position={[0, T.top + net.h / 2, sz * (half.z + net.overhang)]} color="#1B2732" />
+          <Box size={[0.05, 0.03, 0.08]} position={[0, T.top - 0.005, sz * (half.z + 0.02)]} color="#1B2732" />
         </group>
       ))}
       {/* a cup of balls clipped to the table's north edge by the net */}
       <group position={[0.25, T.top - 0.03, -half.z - 0.05]}>
-        <Cyl r={0.045} rTop={0.05} h={0.09} color="#adb5bd" outline />
+        <Cyl r={0.045} rTop={0.05} h={0.09} color="#AEB8C2" outline />
         {[
           [-0.015, 0.05, 0.01],
           [0.017, 0.055, -0.008],
           [0, 0.075, 0.004],
         ].map(([x, y, z], i) => (
-          <mesh key={i} position={[x, y, z]} material={toon('#ff9f1c')}>
+          <mesh key={i} position={[x, y, z]} material={toon('#F6F9FC')}>
             <sphereGeometry args={[PONG.ball.r, 12, 10]} />
           </mesh>
         ))}
@@ -150,18 +150,18 @@ function nameOf(id: string | null, names: Record<string, string>, you: string) {
 
 function drawScore(ctx: CanvasRenderingContext2D, w: number, h: number, v: PongView | null, left: 'west' | 'east', names: Record<string, string>, you: string) {
   roundRect(ctx, 0, 0, w, h, 26);
-  ctx.fillStyle = '#15151f';
+  ctx.fillStyle = '#1B2732';
   ctx.fill();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   if (!v || v.phase === 'waiting') {
     const waiting = v && (v.west || v.east);
-    ctx.fillStyle = '#ffd166';
+    ctx.fillStyle = '#E2C26E';
     ctx.font = `700 52px ${SANS}`;
     ctx.fillText('🏓', w / 2, h * 0.33);
     ctx.font = `700 34px ${SANS}`;
-    ctx.fillStyle = '#f8f9fa';
-    ctx.fillText(waiting ? 'Waiting for a player…' : 'Fancy a game? E at an end', w / 2, h * 0.7);
+    ctx.fillStyle = '#EAF0F6';
+    ctx.fillText(waiting ? 'Waiting for a player…' : 'Fancy a game? E at an end', w / 2, h * 0.7, w - 32);
     return;
   }
   const right = left === 'west' ? 'east' : 'west';
@@ -170,22 +170,22 @@ function drawScore(ctx: CanvasRenderingContext2D, w: number, h: number, v: PongV
     [right, w * 0.73],
   ] as const) {
     let name = nameOf(v[end], names, you);
-    ctx.font = `600 30px ${SANS}`;
+    ctx.font = `700 30px ${SANS}`;
     while (name.length > 3 && ctx.measureText(name).width > w * 0.42) name = name.slice(0, -2);
-    ctx.fillStyle = '#ced4da';
+    ctx.fillStyle = '#AABFD5';
     ctx.fillText(name, x, h * 0.2);
-    ctx.fillStyle = v.phase === 'over' && v.last?.winner === end ? '#06d6a0' : '#ffd166';
-    ctx.font = `800 104px ${SANS}`;
+    ctx.fillStyle = v.phase === 'over' && v.last?.winner === end ? '#7FC4A0' : '#FFFFFF';
+    ctx.font = `700 104px ${SANS}`;
     ctx.fillText(String(v.score[end]), x, h * 0.6);
     if (v.server === end && v.phase !== 'over') {
-      ctx.fillStyle = '#ff9f1c';
+      ctx.fillStyle = '#8FB5DD';
       ctx.beginPath();
       ctx.arc(x, h * 0.9, 9, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-  ctx.fillStyle = '#6c757d';
-  ctx.font = `800 70px ${SANS}`;
+  ctx.fillStyle = '#6B7580';
+  ctx.font = `700 70px ${SANS}`;
   ctx.fillText(':', w / 2, h * 0.58);
 }
 
@@ -203,9 +203,9 @@ function Scoreboard() {
   const h = 0.33;
   return (
     <group position={[T.x, T.top + 0.42, T.z - T.wid / 2 - 0.1]}>
-      <Box size={[0.03, T.top + 0.42, 0.03]} position={[0, -(T.top + 0.42) / 2, 0]} color="#212529" shadow={false} />
-      <Box size={[0.24, 0.02, 0.18]} position={[0, -(T.top + 0.42) + 0.01, 0]} color="#212529" shadow={false} />
-      <mesh material={toon('#2b2d42')}>
+      <Box size={[0.03, T.top + 0.42, 0.03]} position={[0, -(T.top + 0.42) / 2, 0]} color="#1B2732" shadow={false} />
+      <Box size={[0.24, 0.02, 0.18]} position={[0, -(T.top + 0.42) + 0.01, 0]} color="#1B2732" shadow={false} />
+      <mesh material={toon('#26394D')}>
         <boxGeometry args={[w + 0.04, h + 0.04, 0.03]} />
         <Outlines thickness={0.01} color={INK} />
       </mesh>
@@ -227,23 +227,23 @@ const BOARD_ROWS = 7;
 
 function drawLeaderboard(ctx: CanvasRenderingContext2D, w: number, h: number, rows: PongRow[], you: string) {
   roundRect(ctx, 0, 0, w, h, 30);
-  ctx.fillStyle = '#1b4332';
+  ctx.fillStyle = '#26394D';
   ctx.fill();
   ctx.lineWidth = 10;
-  ctx.strokeStyle = '#d4a373';
+  ctx.strokeStyle = '#B9C3CC';
   roundRect(ctx, 5, 5, w - 10, h - 10, 26);
   ctx.stroke();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#ffd166';
-  ctx.font = `800 54px ${SANS}`;
-  ctx.fillText('🏓 PING-PONG LADDER', w / 2, 62);
-  ctx.font = `600 26px ${SANS}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `700 54px ${SANS}`;
+  ctx.fillText('🏓 PING-PONG LADDER', w / 2, 62, w - 60);
+  ctx.font = `400 26px ${SANS}`;
+  ctx.fillStyle = '#AABFD5';
   ctx.fillText('games won – lost on this floor', w / 2, 108);
   if (!rows.length) {
-    ctx.font = `600 36px ${SANS}`;
-    ctx.fillStyle = '#f8f9fa';
+    ctx.font = `400 36px ${SANS}`;
+    ctx.fillStyle = '#EAF0F6';
     ctx.fillText('No games yet.', w / 2, h / 2 + 20);
     ctx.fillText('Pick up a paddle!', w / 2, h / 2 + 70);
     return;
@@ -254,16 +254,16 @@ function drawLeaderboard(ctx: CanvasRenderingContext2D, w: number, h: number, ro
     const y = top + rowH * (i + 0.5);
     const mine = r.id === PONG_PLAYER;
     if (mine) {
-      ctx.fillStyle = 'rgba(255,209,102,0.18)';
+      ctx.fillStyle = 'rgba(212,180,131,0.22)';
       roundRect(ctx, 28, y - rowH / 2 + 4, w - 56, rowH - 8, 14);
       ctx.fill();
     }
     ctx.textAlign = 'left';
-    ctx.font = `800 40px ${SANS}`;
-    ctx.fillStyle = i === 0 ? '#ffd166' : '#f8f9fa';
+    ctx.font = `700 40px ${SANS}`;
+    ctx.fillStyle = i === 0 ? '#D4B483' : '#EAF0F6';
     ctx.fillText(`${i + 1}.`, 48, y);
     let name = mine ? `${you} (you)` : r.name;
-    ctx.font = `600 40px ${SANS}`;
+    ctx.font = `400 40px ${SANS}`;
     while (name.length > 3 && ctx.measureText(name).width > w * 0.52) name = name.slice(0, -2);
     ctx.fillText(name, 118, y);
     ctx.textAlign = 'right';
@@ -280,7 +280,7 @@ function Leaderboard({ repoId }: { repoId: string }) {
   const b = PONG_BOARD;
   return (
     <group position={[b.x, b.y, HALF_D - 0.03]} rotation={[0, Math.PI, 0]}>
-      <mesh material={toon('#7f5539')}>
+      <mesh material={toon('#5C6B7A')}>
         <boxGeometry args={[b.w + 0.06, b.h + 0.06, 0.03]} />
         <Outlines thickness={0.012} color={INK} />
       </mesh>

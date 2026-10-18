@@ -35,7 +35,7 @@ const BASE: Agent = {
   look: 'masculine',
   task: null,
   desk: 0,
-  color: '#ef476f',
+  color: '#6699CC',
   hair: '#2b2118',
   skin: '#e0ac69',
   model: '',
@@ -107,7 +107,7 @@ function VisitorFigure({ id }: { id: string }) {
   useSyncExternalStore(subscribePresence, presenceVersion); // their name, colour and what they hold
   const r = remoteOf(id);
   const name = r?.name ?? 'Visitor';
-  const color = r?.color ?? '#ef476f';
+  const color = r?.color ?? '#6699CC';
   const held = r?.held ?? null; // replaced (not changed) when they pick something else up
   const vid = visitorBodyId(id);
   const agent = useMemo(() => visitorAgent(id, name, color), [id, name, color]);
@@ -252,7 +252,7 @@ const strapGeo = (from: THREE.Vector3, to: THREE.Vector3) => {
   return { mid, q, len: dir.length() };
 };
 // Torso space (hips at the origin; Character.tsx's torso is a capsule of radius 0.2 from y 0.18 to 0.42, plus caps).
-const STRAP_COLOR = '#2b2d42'; // dark, so it shows on a shirt of their colour
+const STRAP_COLOR = '#26394D'; // dark, so it shows on a shirt of their colour
 const STRAPS = [-1, 1].map((s) => strapGeo(new THREE.Vector3(0.08 * s, 0.55, -0.17), new THREE.Vector3(0.028 * s, 0.33, -0.24)));
 
 /** A dark strap round the neck and a white badge with a stripe of their colour. */
@@ -263,7 +263,7 @@ function Lanyard({ color }: { color: string }) {
         <mesh key={i} geometry={STRAP} material={toon(STRAP_COLOR)} position={s.mid} quaternion={s.q} scale={[1, s.len, 1]} />
       ))}
       <group position={[0, 0.28, -0.245]} rotation={[0.08, 0, 0]}>
-        <Box size={[0.075, 0.1, 0.008]} color="#f8f9fa" shadow={false} />
+        <Box size={[0.075, 0.1, 0.008]} color="#FFFFFF" shadow={false} />
         <Box size={[0.077, 0.026, 0.01]} position={[0, 0.03, 0]} color={color} shadow={false} />
       </group>
     </group>
@@ -308,23 +308,26 @@ function Glow({ color }: { color: string }) {
 /** Their name over their head, on a tag in their colour. Drawn on a canvas as text: a name can never be markup. */
 export function drawVisitorTag(ctx: CanvasRenderingContext2D, w: number, h: number, name: string, color: string) {
   ctx.clearRect(0, 0, w, h);
-  roundRect(ctx, 4, 4, w - 8, h - 8, (h - 8) / 2);
-  ctx.fillStyle = color;
+  roundRect(ctx, 4, 4, w - 8, h - 8, 18);
+  ctx.fillStyle = '#FFFFFF';
   ctx.fill();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#AABFD5';
   ctx.stroke();
+  // their colour as a stripe down the left edge
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = color;
+  ctx.fillRect(4, 4, 10, h - 8);
+  ctx.restore();
   ctx.textBaseline = 'middle';
   ctx.font = `36px ${SANS}`;
   ctx.fillText('🪪', 22, h / 2 + 2);
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#26394D';
   ctx.font = `700 40px ${SANS}`;
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur = 4;
   let label = name;
   while (label.length > 2 && ctx.measureText(label).width > w - 100) label = `${label.slice(0, -2)}…`;
   ctx.fillText(label, 74, h / 2 + 2);
-  ctx.shadowBlur = 0;
 }
 
 function VisitorTag({ name, color }: { name: string; color: string }) {

@@ -5,6 +5,7 @@ import { Outlines } from '../Outlines';
 import { BuildingBelow } from '../Outside';
 import { DECKING, ELEVATOR, HALF_D, HELIPAD, ROOF_EDGE, ROOF_HUT, WINDSOCK, roofElevation } from '../layout';
 import { toon } from '../materials';
+import { DARK, INK, METAL, METAL_LIGHT, WALL } from '../palette';
 import { boxesGeometry, merged, type BoxSpec } from '../shapes';
 import { balconyBulb } from '../sky/lamps';
 import { deckingTexture, helipadTexture, pavingTexture, windsockTexture } from './textures';
@@ -13,7 +14,6 @@ import { deckingTexture, helipadTexture, pavingTexture, windsockTexture } from '
 // over the elevator and the stairs (the elevator's doors are Elevator.tsx's, as on every floor), the windsock, and the
 // building under it all (every floor's balconies, the outer walls and the elevator shaft down to the street).
 
-const INK = '#1f1d2b';
 const { x: X, z: Z, t: T, parapet: P, h: H } = ROOF_EDGE;
 const HUT = ROOF_HUT;
 const PAVER = 1.2; // metres per paving texture repeat (and per decking repeat)
@@ -127,7 +127,7 @@ function Windsock() {
   });
   return (
     <group position={[WINDSOCK.x, 0, WINDSOCK.z]}>
-      <mesh position={[0, WINDSOCK.h / 2, 0]} material={toon('#adb5bd')} castShadow>
+      <mesh position={[0, WINDSOCK.h / 2, 0]} material={toon(METAL)} castShadow>
         <cylinderGeometry args={[0.045, 0.06, WINDSOCK.h, 10]} />
       </mesh>
       <group ref={sock} position={[0, WINDSOCK.h - 0.12, 0]}>
@@ -176,20 +176,20 @@ export function RoofDeck({ top }: { top: number }) {
       <mesh geometry={ground.decking} material={mats.decking} receiveShadow />
       <mesh geometry={ground.helipad} material={mats.helipad} receiveShadow />
       <mesh geometry={ground.bulbs} material={balconyBulb} />
-      <mesh geometry={edge.wall} material={toon('#c9c2b4')} receiveShadow castShadow>
+      <mesh geometry={edge.wall} material={toon('#C9D2DB')} receiveShadow castShadow>
         <Outlines thickness={0.02} color={INK} />
       </mesh>
-      <mesh geometry={edge.cap} material={toon('#ece6da')} receiveShadow />
-      <mesh geometry={edge.metal} material={toon('#5c677d')} castShadow />
-      <mesh geometry={hut.walls} material={toon('#efe3cc')} receiveShadow castShadow>
+      <mesh geometry={edge.cap} material={toon('#DCE3EA')} receiveShadow />
+      <mesh geometry={edge.metal} material={toon(DARK)} castShadow />
+      <mesh geometry={hut.walls} material={toon(WALL)} receiveShadow castShadow>
         <Outlines thickness={0.02} color={INK} />
       </mesh>
-      <mesh geometry={hut.roof} material={toon('#8d99ae')} castShadow receiveShadow>
+      <mesh geometry={hut.roof} material={toon(METAL)} castShadow receiveShadow>
         <Outlines thickness={0.02} color={INK} />
       </mesh>
-      <mesh geometry={hut.trim} material={toon('#ff8a5b')} />
-      <mesh geometry={hut.door} material={toon('#2a9d8f')} />
-      <mesh geometry={hut.handle} material={toon('#dee2e6')} />
+      <mesh geometry={hut.trim} material={toon('#6699CC')} />
+      <mesh geometry={hut.door} material={toon('#4D7399')} />
+      <mesh geometry={hut.handle} material={toon(METAL_LIGHT)} />
       <Windsock />
       <BuildingBelow top={top} />
     </group>

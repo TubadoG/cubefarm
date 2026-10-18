@@ -19,9 +19,9 @@ import { setHoopSource, type HoopScore } from './probe';
 // and rim, basket detection, and the scoreboard above it. Part of the lazily loaded toy world (ToyWorld.tsx).
 // Local coordinates start at the foot of the wall, with -z pointing out into the room (north).
 
-const INK = '#1f1d2b';
-const RIM_COLOR = '#ff7b00';
-const SQUARE_COLOR = '#e63946';
+const INK = '#26394D';
+const RIM_COLOR = '#4D7399';
+const SQUARE_COLOR = '#26394D';
 
 // ---------- scores ----------
 
@@ -54,7 +54,7 @@ function saveBest(floorKey: string, best: number) {
 
 function drawScoreboard(ctx: CanvasRenderingContext2D, w: number, h: number, { score, best }: HoopScore) {
   roundRect(ctx, 0, 0, w, h, 22);
-  ctx.fillStyle = '#15151f';
+  ctx.fillStyle = '#1B2732';
   ctx.fill();
   const text = `Score ${score} · Best ${best}`;
   let size = 88;
@@ -65,20 +65,20 @@ function drawScoreboard(ctx: CanvasRenderingContext2D, w: number, h: number, { s
   }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffd166';
+  ctx.fillStyle = '#EAF0F6';
   ctx.fillText(text, w / 2, h / 2 + 4);
   ctx.textAlign = 'left';
 }
 
 // ---------- looks ----------
 
-/** The basketball: orange with black seams. Used by balls.tsx for the pick-up-able ball. */
+/** The basketball: natural tan with dark seams. Used by balls.tsx for the pick-up-able ball. */
 export function BasketballLook({ r }: { r: number }) {
   const seam = toon(INK);
   const tube = r * 0.05;
   return (
     <group>
-      <mesh castShadow material={toon('#f3722c')}>
+      <mesh castShadow material={toon('#D99A6C')}>
         <sphereGeometry args={[r, 24, 16]} />
         <Outlines thickness={0.012} color={INK} />
       </mesh>
@@ -116,7 +116,7 @@ function netMaterial() {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(12, 3);
-  netMat = new THREE.MeshBasicMaterial({ map: tex, color: '#f1f3f5', alphaTest: 0.5, side: THREE.DoubleSide });
+  netMat = new THREE.MeshBasicMaterial({ map: tex, color: '#F6F9FC', alphaTest: 0.5, side: THREE.DoubleSide });
   return netMat;
 }
 
@@ -154,7 +154,7 @@ function Net({ burst }: { burst: RefObject<number> }) {
 
 const CONFETTI = 42;
 const CONFETTI_S = 1.8;
-const CONFETTI_COLORS = ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#ff9f1c', '#9b5de5'];
+const CONFETTI_COLORS = ['#6699CC', '#D4B483', '#5FA8A0', '#4D7399', '#FFFFFF', '#7FB7D9'];
 
 /** A small burst of paper bits from the rim after a basket. */
 function Confetti({ burst }: { burst: RefObject<number> }) {
@@ -212,7 +212,7 @@ function Scoreboard({ tally }: { tally: HoopScore }) {
   const tex = useCanvasTexture(640, 186, (ctx) => drawScoreboard(ctx, 640, 186, tally), [tally.score, tally.best]);
   return (
     <group position={[0, bottom + h / 2, -(HOOP.standoff + HOOP.board.t / 2)]}>
-      <mesh material={toon('#2b2d42')}>
+      <mesh material={toon('#26394D')}>
         <boxGeometry args={[w, h, 0.06]} />
         <Outlines thickness={0.015} color={INK} />
       </mesh>
@@ -234,12 +234,12 @@ const Board = memo(function Board() {
       {/* wall brackets */}
       {[-0.4, 0.4].flatMap((x) =>
         [2.72, 3.05].map((y) => (
-          <mesh key={`${x}${y}`} position={[x, y, -standoff / 2]} material={toon('#8d99ae')}>
+          <mesh key={`${x}${y}`} position={[x, y, -standoff / 2]} material={toon('#AEB8C2')}>
             <boxGeometry args={[0.05, 0.05, standoff]} />
           </mesh>
         )),
       )}
-      <mesh position={[0, board.bottom + board.h / 2, -(standoff + board.t / 2)]} material={toon('#fdfdfd')} castShadow>
+      <mesh position={[0, board.bottom + board.h / 2, -(standoff + board.t / 2)]} material={toon('#FFFFFF')} castShadow>
         <boxGeometry args={[board.w, board.h, board.t]} />
         <Outlines thickness={0.015} color={INK} />
       </mesh>

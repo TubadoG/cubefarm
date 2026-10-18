@@ -11,8 +11,7 @@ import { glow, toon } from './materials';
 import { bodies } from './people';
 import { dogNow } from './toys/dogState';
 import { Box } from './Toon';
-
-const METAL = '#b9c2cf';
+import { GOLD, METAL } from './palette';
 
 export function Elevator({ floorLabel, accent }: { floorLabel: string; accent: string }) {
   const left = useRef<THREE.Mesh>(null);
@@ -25,7 +24,7 @@ export function Elevator({ floorLabel, accent }: { floorLabel: string; accent: s
   const frameRef = useInteractable<THREE.Group>({ id: 'elevator', label: 'Use the elevator', action: { kind: 'elevator' } }, 3.5);
   const panelRef = useInteractable<THREE.Group>({ id: 'elevator-panel', label: 'Choose a floor', action: { kind: 'elevator' } }, 2.5);
 
-  const indicator = useCanvasTexture(512, 128, (ctx) => drawSign(ctx, 512, 128, [{ text: floorLabel, size: 56, color: '#7CFFB2' }], '#15151f'), [floorLabel]);
+  const indicator = useCanvasTexture(512, 128, (ctx) => drawSign(ctx, 512, 128, [{ text: floorLabel, size: 56, color: '#8FB5DD' }], '#1B2732'), [floorLabel]);
 
   useFrame((_, dt) => {
     const travel = useStore.getState().travel;
@@ -53,10 +52,10 @@ export function Elevator({ floorLabel, accent }: { floorLabel: string; accent: s
         <Box size={[0.22, doorHeight + 0.1, 0.36]} position={[doorHalf + 0.05, (doorHeight + 0.1) / 2, HALF_D]} color={METAL} outline />
         <Box size={[doorHalf * 2 + 0.32, 0.22, 0.36]} position={[0, doorHeight + 0.08, HALF_D]} color={METAL} outline />
         {/* doors */}
-        <mesh ref={left} position={[-doorHalf / 2, doorHeight / 2, zDoor]} material={toon('#d9dee6')} castShadow>
+        <mesh ref={left} position={[-doorHalf / 2, doorHeight / 2, zDoor]} material={toon('#DCE3EA')} castShadow>
           <boxGeometry args={[doorHalf, doorHeight, 0.06]} />
         </mesh>
-        <mesh ref={right} position={[doorHalf / 2, doorHeight / 2, zDoor]} material={toon('#d9dee6')} castShadow>
+        <mesh ref={right} position={[doorHalf / 2, doorHeight / 2, zDoor]} material={toon('#DCE3EA')} castShadow>
           <boxGeometry args={[doorHalf, doorHeight, 0.06]} />
         </mesh>
       </group>
@@ -80,30 +79,30 @@ export function Elevator({ floorLabel, accent }: { floorLabel: string; accent: s
 
       {/* cabin */}
       <group position={[0, 0, HALF_D]}>
-        <mesh position={[0, 0.01, depth / 2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={toon('#8d7b68')}>
+        <mesh position={[0, 0.01, depth / 2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={toon('#8A96A3')}>
           <planeGeometry args={[cabinHalf * 2, depth]} />
         </mesh>
-        <mesh position={[0, doorHeight + 0.2, depth / 2]} rotation={[Math.PI / 2, 0, 0]} material={toon('#f1f3f5')}>
+        <mesh position={[0, doorHeight + 0.2, depth / 2]} rotation={[Math.PI / 2, 0, 0]} material={toon('#E8EEF4')}>
           <planeGeometry args={[cabinHalf * 2, depth]} />
         </mesh>
-        <mesh position={[0, doorHeight + 0.18, depth / 2]} rotation={[Math.PI / 2, 0, 0]} material={glow('#fff6d6')}>
+        <mesh position={[0, doorHeight + 0.18, depth / 2]} rotation={[Math.PI / 2, 0, 0]} material={glow('#FFFFFF')}>
           <circleGeometry args={[0.45, 32]} />
         </mesh>
         {/* sides: their front starts inside the wall, not on its face, which would flicker beside the doorway */}
         {[-1, 1].map((s) => (
-          <mesh key={s} position={[s * (cabinHalf + 0.05), WALL_H / 2, (depth + 0.05) / 2]} material={toon('#c8ced8')}>
+          <mesh key={s} position={[s * (cabinHalf + 0.05), WALL_H / 2, (depth + 0.05) / 2]} material={toon('#E8EEF4')}>
             <boxGeometry args={[0.1, WALL_H, depth - 0.05]} />
           </mesh>
         ))}
-        <mesh position={[0, WALL_H / 2, depth + 0.05]} material={toon('#c8ced8')}>
+        <mesh position={[0, WALL_H / 2, depth + 0.05]} material={toon('#E8EEF4')}>
           <boxGeometry args={[cabinHalf * 2 + 0.2, WALL_H, 0.1]} />
         </mesh>
-        <Box size={[cabinHalf * 2 - 0.2, 0.05, 0.08]} position={[0, 0.95, depth - 0.05]} color="#e9c46a" outline />
+        <Box size={[cabinHalf * 2 - 0.2, 0.05, 0.08]} position={[0, 0.95, depth - 0.05]} color={GOLD} outline />
         {/* inner panel */}
         <group ref={panelRef} position={[cabinHalf - 0.02, 1.25, 0.9]} rotation={[0, -Math.PI / 2, 0]}>
           <Box size={[0.36, 0.7, 0.04]} position={[0, 0, 0]} color={METAL} outline />
           {[0.22, 0.08, -0.06, -0.2].map((y, i) => (
-            <mesh key={y} position={[0, y, 0.025]} material={glow(i === 0 ? accent : '#fdfdfd')}>
+            <mesh key={y} position={[0, y, 0.025]} material={glow(i === 0 ? accent : '#F6F9FC')}>
               <circleGeometry args={[0.04, 16]} />
             </mesh>
           ))}

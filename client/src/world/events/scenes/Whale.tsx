@@ -83,7 +83,7 @@ export default function Whale({ run, elevation }: SceneProps) {
 
   const blue = toonOut('#4f6d8f');
   const belly = toonOut('#dfe8f2');
-  const ink = toonOut('#1f1d2b');
+  const ink = toonOut('#26394D');
   return (
     <group ref={whale}>
       <group scale={SCALE}>

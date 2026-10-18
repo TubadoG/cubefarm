@@ -16,10 +16,7 @@ const PX: [number, number] = [704, 400];
 
 function drawScreen(ctx: CanvasRenderingContext2D, replaying: boolean, use: string) {
   const [w, h] = PX;
-  const g = ctx.createLinearGradient(0, 0, w, h);
-  g.addColorStop(0, '#2b1d3f');
-  g.addColorStop(1, '#4a1f3a');
-  ctx.fillStyle = g;
+  ctx.fillStyle = '#26394D';
   ctx.fillRect(0, 0, w, h);
   // a strip of film along the top and bottom
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
@@ -30,14 +27,14 @@ function drawScreen(ctx: CanvasRenderingContext2D, replaying: boolean, use: stri
     ctx.fill();
   }
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffd6a5';
+  ctx.fillStyle = '#FFFFFF';
   ctx.font = `700 64px ${SANS}`;
   ctx.fillText('📼 Time-lapse', 40, 102);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `600 34px ${SANS}`;
+  ctx.fillStyle = '#EAF0F6';
+  ctx.font = `400 34px ${SANS}`;
   ctx.fillText('What happened while', 40, 180);
   ctx.fillText('you were away?', 40, 222);
-  ctx.fillStyle = replaying ? '#ff8fa3' : '#7CFFB2';
+  ctx.fillStyle = replaying ? '#E07A72' : '#8FB5DD';
   ctx.font = `700 32px ${SANS}`;
   ctx.fillText(replaying ? '▶ REPLAY · Esc for live' : `Press ${use} to replay the day`, 40, 306);
 }
@@ -49,7 +46,7 @@ export function TimeLapseScreen() {
   const tex = useCanvasTexture(PX[0], PX[1], (ctx) => drawScreen(ctx, replaying, use), [replaying, use]);
   return (
     <group ref={ref} position={AT} rotation={[0, Math.PI, 0]}>
-      <Box size={[W + 0.14, H + 0.14, 0.06]} position={[0, 0, -0.04]} color="#2b2d42" outline shadow={false} />
+      <Box size={[W + 0.14, H + 0.14, 0.06]} position={[0, 0, -0.04]} color="#1B2732" outline shadow={false} />
       <mesh position={[0, 0, 0.002]}>
         <planeGeometry args={[W, H]} />
         <meshBasicMaterial map={tex} toneMapped={false} />

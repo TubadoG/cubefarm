@@ -6,7 +6,7 @@ import { replay, type Op } from './record';
 // painted once they arrive, as the main thread does when document.fonts is ready.
 
 export type ToWorker =
-  | { type: 'fonts'; css: string }
+  | { type: 'fonts'; css: string[] }
   | { type: 'paint'; id: number; w: number; h: number; ops: Op[]; images?: ImageBitmap[] }
   | { type: 'drop'; id: number };
 export type FromWorker = { type: 'painted'; id: number; bitmap: ImageBitmap; ms: number } | { type: 'failed'; id: number; error: string } | { type: 'fontsReady' };
@@ -37,9 +37,10 @@ async function paint(id: number, w: number, h: number, ops: Op[], images: ImageB
   scope.postMessage(msg, [bitmap]);
 }
 
-/** Loads the faces a Google Fonts stylesheet lists, into this worker. */
-async function loadFonts(cssUrl: string) {
-  const css = cssUrl ? await fetch(cssUrl).then((r) => (r.ok ? r.text() : '')) : '';
+/** Loads the faces the font stylesheets list (Google Fonts, the Adobe kit), into this worker; a sheet that fails is skipped. */
+async function loadFonts(cssUrls: string[]) {
+  const sheets = await Promise.all(cssUrls.map((url) => fetch(url).then((r) => (r.ok ? r.text() : '')).catch(() => '')));
+  const css = sheets.join('\n'); // their @import lines (the kit's tracking) are ignored: only @font-face blocks load
   const loads: Promise<FontFace>[] = [];
   for (const block of css.match(/@font-face\s*{[^}]*}/g) ?? []) {
     const prop = (name: string) => new RegExp(`${name}:\\s*([^;]+);`).exec(block)?.[1].trim();

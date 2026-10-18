@@ -28,7 +28,7 @@ import { standable, steer, walkways } from './walkways';
 // (there, on the phone or in the console), the candidate takes it in person: up out of the chair, a big smile and a
 // handshake, then the elevator up to their floor; or a polite nod and out through the glass door. hiring.ts has the rules.
 
-const SEAT = '#06d6a0';
+const SEAT = '#6699CC';
 const WEST = Math.PI; // walkways.ts facing: into the lobby
 const STAND_FRONT = { x: 0, z: -0.6 }; // chair space: they stand up straight ahead, not beside the chair (the next one's there)
 const GIVE_UP = 60; // seconds of walking out before they just go
@@ -73,16 +73,16 @@ function candidateAgent(r: HireRequestView): Agent {
 /** Their CV in a manila folder: in their hands on the way out (Character's torso frame, the 'hold' gesture)... */
 const CARRIED_CV = (
   <group position={[0, 0.16, -0.36]} rotation={[0.3, 0, 0]}>
-    <Box size={[0.26, 0.34, 0.03]} color="#e9c46a" outline />
-    <Box size={[0.22, 0.29, 0.01]} position={[0, 0.02, -0.018]} color="#fffdf6" shadow={false} />
+    <Box size={[0.26, 0.34, 0.03]} color="#B9C3CC" outline />
+    <Box size={[0.22, 0.29, 0.01]} position={[0, 0.02, -0.018]} color="#FFFFFF" shadow={false} />
   </group>
 );
 /** ...and on their lap while they wait (chair space), propped against their hands. */
 const LAP_CV = (
   <group position={[0, 0.7, -0.3]} rotation={[0.35, 0, 0]}>
-    <Box size={[0.26, 0.34, 0.03]} color="#e9c46a" outline />
-    <Box size={[0.22, 0.29, 0.01]} position={[0, 0.02, -0.018]} color="#fffdf6" shadow={false} />
-    <Box size={[0.08, 0.03, 0.03]} position={[-0.07, 0.18, 0]} color="#e9c46a" shadow={false} />
+    <Box size={[0.26, 0.34, 0.03]} color="#B9C3CC" outline />
+    <Box size={[0.22, 0.29, 0.01]} position={[0, 0.02, -0.018]} color="#FFFFFF" shadow={false} />
+    <Box size={[0.08, 0.03, 0.03]} position={[-0.07, 0.18, 0]} color="#B9C3CC" shadow={false} />
   </group>
 );
 
@@ -138,7 +138,7 @@ function WaitingChair({ z }: { z: number }) {
         [-0.22, 0.2],
         [0.22, 0.2],
       ].map(([x, zz]) => (
-        <Box key={`${x}${zz}`} size={[0.05, 0.42, 0.05]} position={[x, 0.2, zz]} color="#444a5c" />
+        <Box key={`${x}${zz}`} size={[0.05, 0.42, 0.05]} position={[x, 0.2, zz]} color="#3D454D" />
       ))}
     </group>
   );
@@ -149,13 +149,13 @@ function WaitingTable() {
   const t = WAITING_TABLE;
   return (
     <group position={[t.x, 0, t.z]}>
-      <Box size={[t.w, 0.05, t.d]} position={[0, 0.47, 0]} color="#f1d19b" outline />
-      <Box size={[t.w - 0.12, 0.42, t.d - 0.12]} position={[0, 0.22, 0]} color="#c9a26b" />
-      <Box size={[0.22, 0.02, 0.3]} position={[0.05, 0.505, -0.2]} rotation={[0, 0.25, 0]} color="#ef476f" />
-      <Box size={[0.22, 0.02, 0.3]} position={[0.02, 0.525, -0.17]} rotation={[0, -0.15, 0]} color="#4cc9f0" />
-      <Cyl r={0.06} rTop={0.045} h={0.22} position={[-0.05, 0.6, 0.2]} color="#bde0fe" outline />
-      <Cyl r={0.035} h={0.09} position={[0.13, 0.54, 0.25]} color="#e7f5ff" />
-      <Cyl r={0.035} h={0.09} position={[0.12, 0.54, 0.1]} color="#e7f5ff" />
+      <Box size={[t.w, 0.05, t.d]} position={[0, 0.47, 0]} color="#B9C3CC" outline />
+      <Box size={[t.w - 0.12, 0.42, t.d - 0.12]} position={[0, 0.22, 0]} color="#5C6B7A" />
+      <Box size={[0.22, 0.02, 0.3]} position={[0.05, 0.505, -0.2]} rotation={[0, 0.25, 0]} color="#6699CC" />
+      <Box size={[0.22, 0.02, 0.3]} position={[0.02, 0.525, -0.17]} rotation={[0, -0.15, 0]} color="#4D7399" />
+      <Cyl r={0.06} rTop={0.045} h={0.22} position={[-0.05, 0.6, 0.2]} color="#D6E4F2" outline />
+      <Cyl r={0.035} h={0.09} position={[0.13, 0.54, 0.25]} color="#F6F9FC" />
+      <Cyl r={0.035} h={0.09} position={[0.12, 0.54, 0.1]} color="#F6F9FC" />
     </group>
   );
 }
@@ -277,9 +277,9 @@ export function WaitingRoom() {
               206,
               [
                 { text: '🪑 Waiting room', size: 54 },
-                { text: label, size: 42, weight: 600, color: out ? '#ffe066' : '#ffffff' },
+                { text: label, size: 42, weight: 400, color: out ? '#E2C26E' : '#AABFD5' },
               ],
-              '#06a77d',
+              '#26394D',
             )
           }
           deps={[label, out]}

@@ -17,7 +17,7 @@ export type Outfit = (typeof OUTFITS)[number];
 export type Build = (typeof BUILDS)[number];
 
 /** The small accent palette: glasses frames, beanies and caps, the stripe. */
-export const ACCENT_COLORS = ['#ffffff', '#ffd166', '#ef476f', '#06d6a0', '#118ab2', '#2b2d42'] as const;
+export const ACCENT_COLORS = ['#ffffff', '#6699cc', '#4d7399', '#26394d', '#aabfd5', '#9c8fc4'] as const;
 /** Hair colours and skin tones new hires are given (and the editor offers). */
 export const HAIR_COLORS = ['#2b2118', '#6b4226', '#c68642', '#f2d16b', '#d94f30', '#1c1c1c', '#8e8e8e', '#5b3cc4', '#e76f51', '#e8e2d0'];
 export const SKIN_TONES = ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffe0bd', '#a86b3c', '#5c3a21'];

@@ -26,9 +26,9 @@ const HORIZON_FADE = 0.08;
 const HEMI_DAY = 0.95;
 const HEMI_NIGHT = 1.05;
 /** The ceiling lamps' warm light, mixed into the fill at night (the undersides keep a little of the night's blue). */
-const LAMP_SKY = 0xffe2b0;
-const LAMP_GROUND = 0x8c6a50;
-const LAMP_AMBIENT = 0xffd49c;
+const LAMP_SKY = 0xf4e6cf;
+const LAMP_GROUND = 0x8a8580;
+const LAMP_AMBIENT = 0xf0ddbf;
 const LAMP_MIX = 0.88;
 const LAMP_GROUND_MIX = 0.5;
 const AMBIENT_LAMPS = 0.14;

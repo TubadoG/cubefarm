@@ -9,27 +9,27 @@ import type { TermClientMessage, TermServerMessage } from '../../../shared/types
 // Opening it late shows everything so far: the office keeps a copy of each agent's screen and scrollback.
 
 const THEME: ITheme = {
-  background: '#1b1b29',
-  foreground: '#eeeef6', // bright enough that dim text (drawn at half strength) still reads at 4.5:1
-  cursor: '#ff9e64',
-  cursorAccent: '#1b1b29',
-  selectionBackground: '#44475a',
-  black: '#21222c',
-  red: '#ff6b6b',
-  green: '#50fa7b',
-  yellow: '#f1fa8c',
-  blue: '#8aa4ff',
-  magenta: '#ff79c6',
-  cyan: '#8be9fd',
-  white: '#e8e8f2',
-  brightBlack: '#6c6f93',
-  brightRed: '#ff8787',
-  brightGreen: '#69ff94',
-  brightYellow: '#ffffa5',
-  brightBlue: '#a4b9ff',
-  brightMagenta: '#ff92df',
-  brightCyan: '#a4ffff',
-  brightWhite: '#ffffff',
+  background: '#1B2732',
+  foreground: '#EAF0F6', // bright enough that dim text (drawn at half strength) still reads at 4.5:1
+  cursor: '#6699CC',
+  cursorAccent: '#1B2732',
+  selectionBackground: '#3A5675',
+  black: '#26394D',
+  red: '#E07A72',
+  green: '#7FC4A0',
+  yellow: '#E2C26E',
+  blue: '#8FB5DD',
+  magenta: '#B4A7D6',
+  cyan: '#7FC9C4',
+  white: '#DCE3EA',
+  brightBlack: '#8A96A3',
+  brightRed: '#EBA09A',
+  brightGreen: '#A3D6BB',
+  brightYellow: '#EDD596',
+  brightBlue: '#B5CDE8',
+  brightMagenta: '#CEC4E6',
+  brightCyan: '#A5DAD6',
+  brightWhite: '#FFFFFF',
 };
 
 export function LiveTerminal({ agentId, className }: { agentId: string; className?: string }) {
@@ -41,7 +41,7 @@ export function LiveTerminal({ agentId, className }: { agentId: string; classNam
   useEffect(() => {
     const el = host.current!;
     const term = new Terminal({
-      fontFamily: "'JetBrains Mono', Consolas, monospace",
+      fontFamily: "'JetBrains Mono', Consolas, 'Cascadia Mono', monospace",
       fontSize: 13,
       cursorBlink: true,
       cursorInactiveStyle: 'none',

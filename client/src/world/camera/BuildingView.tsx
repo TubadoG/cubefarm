@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CEO_ID } from '../../../../shared/types';
 import { repoOnFloor, useStore } from '../../store';
-import { SANS, roundRect } from '../draw';
+import { BODY, inkOnColor, SANS, roundRect } from '../draw';
 import { useCanvasTexture } from '../interact';
 import { FLOOR_HEIGHT, WALL_H, viewElevation } from '../layout';
 import { mix } from '../materials';
@@ -33,11 +33,11 @@ function sliceInfo(f: number, s: ReturnType<typeof useStore.getState>): string {
     const l = lobbySummary(s.agents[CEO_ID], s.requests);
     const parts = [l.ceo ? `CEO ${l.ceo === 'idle' ? 'free' : l.ceo}` : 'no CEO yet', `${l.waiting} candidate${l.waiting === 1 ? '' : 's'} waiting`];
     if (l.needsYou) parts.push(`${l.needsYou} need${l.needsYou === 1 ? 's' : ''} you`);
-    const info: SliceInfo = { label: 'G', name: s.settings.companyName || 'Lobby', sub: 'Lobby', color: '#ff8a5b', line: parts.join(' · '), chips: l.ceo ? [l.ceo] : [], alert: l.needsYou > 0 };
+    const info: SliceInfo = { label: 'G', name: s.settings.companyName || 'Lobby', sub: 'Lobby', color: '#6699CC', line: parts.join(' · '), chips: l.ceo ? [l.ceo] : [], alert: l.needsYou > 0 };
     return JSON.stringify(info);
   }
   const repo = repoOnFloor(s.repos, f);
-  if (!repo) return JSON.stringify({ label: String(f), name: 'Empty floor', sub: '', color: '#adb5bd', line: 'nobody here yet', chips: [], alert: false } satisfies SliceInfo);
+  if (!repo) return JSON.stringify({ label: String(f), name: 'Empty floor', sub: '', color: '#AEB8C2', line: 'nobody here yet', chips: [], alert: false } satisfies SliceInfo);
   const sum = floorSummary(repo, Object.values(s.agents), s.qa);
   const [owner, name] = repo.fullName.split('/');
   const info: SliceInfo = { label: String(f), name: name ?? repo.fullName, sub: owner ?? '', color: repo.color, line: summaryLine(sum), chips: sum.chips, alert: sum.needsYou + sum.errors > 0 };
@@ -48,19 +48,19 @@ function drawSlice(ctx: CanvasRenderingContext2D, info: SliceInfo, here: boolean
   const { w, h } = PX;
   ctx.clearRect(0, 0, w, h);
   roundRect(ctx, 3, 3, w - 6, h - 6, 18);
-  ctx.fillStyle = mix(info.color, '#fffdf6', 0.82);
+  ctx.fillStyle = mix(info.color, '#FFFFFF', 0.9);
   ctx.fill();
   ctx.lineWidth = here ? 7 : 4;
-  ctx.strokeStyle = here ? info.color : '#1f1d2b';
+  ctx.strokeStyle = here ? info.color : '#AABFD5';
   ctx.stroke();
   // the floor number
   roundRect(ctx, 14, 14, h - 28, h - 28, 14);
   ctx.fillStyle = info.color;
   ctx.fill();
   ctx.lineWidth = 4;
-  ctx.strokeStyle = '#1f1d2b';
+  ctx.strokeStyle = '#26394D';
   ctx.stroke();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = inkOnColor(info.color);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `700 46px ${SANS}`;
@@ -68,13 +68,13 @@ function drawSlice(ctx: CanvasRenderingContext2D, info: SliceInfo, here: boolean
   ctx.textAlign = 'left';
   // the project
   const x0 = h + 4;
-  ctx.fillStyle = '#1f1d2b';
+  ctx.fillStyle = '#26394D';
   ctx.font = `700 34px ${SANS}`;
   let name = info.name;
   while (name.length > 3 && ctx.measureText(name).width > 300) name = `${name.slice(0, -2)}…`;
   ctx.fillText(name, x0, 40);
-  ctx.font = `500 22px ${SANS}`;
-  ctx.fillStyle = '#5c6078';
+  ctx.font = `600 22px ${BODY}`;
+  ctx.fillStyle = '#436688';
   let sub = here ? `📍 you are here${info.sub ? ` · ${info.sub}` : ''}` : info.sub;
   while (sub.length > 3 && ctx.measureText(sub).width > 290) sub = `${sub.slice(0, -2)}…`;
   ctx.fillText(sub, x0, 78);
@@ -89,15 +89,15 @@ function drawSlice(ctx: CanvasRenderingContext2D, info: SliceInfo, here: boolean
     ctx.fillStyle = CHIP_COLORS[c];
     ctx.fill();
     ctx.lineWidth = 3;
-    ctx.strokeStyle = '#1f1d2b';
+    ctx.strokeStyle = '#26394D';
     ctx.stroke();
     roundRect(ctx, cx - 9, 42, 18, 22, 7);
     ctx.fill();
     ctx.stroke();
   });
   // the summary
-  ctx.font = `600 26px ${SANS}`;
-  ctx.fillStyle = info.alert ? '#c1121f' : '#1f1d2b';
+  ctx.font = `600 26px ${BODY}`;
+  ctx.fillStyle = info.alert ? '#8C3A34' : '#26394D';
   let line = info.line;
   while (line.length > 3 && ctx.measureText(line).width > w - px - 20) line = `${line.slice(0, -2)}…`;
   ctx.fillText(line, px - 12, 88);
@@ -138,7 +138,7 @@ export function BuildingView() {
     lit.current = hovered.floor;
     for (const c of g.children) {
       const m = (c as THREE.Mesh).material as THREE.MeshBasicMaterial;
-      m.color.set((c.userData.pick as { floor: number } | undefined)?.floor === hovered.floor ? '#ffe9b0' : '#ffffff');
+      m.color.set((c.userData.pick as { floor: number } | undefined)?.floor === hovered.floor ? '#DDE8F4' : '#FFFFFF');
     }
   });
   const floors = Array.from({ length: Math.max(top, floor) + 1 }, (_, f) => f);

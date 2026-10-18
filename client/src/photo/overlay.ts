@@ -2,6 +2,8 @@
 // date caption and (on screen only) rule-of-thirds guides. The same code draws the preview over the 3D view, the
 // finished shot at its full size and every frame of a clip, so they all match. Sizes follow the picture's height.
 
+import { SANS } from '../world/draw';
+
 export interface OverlayOptions {
   frame: boolean;
   stamp: string | null;
@@ -15,7 +17,7 @@ export function frameInsets(w: number, h: number): { side: number; top: number; 
   return { side: Math.round(s * 0.045), top: Math.round(s * 0.045), bottom: Math.round(s * 0.16) };
 }
 
-const FONT = "Fredoka, 'Segoe UI', system-ui, sans-serif";
+const FONT = SANS;
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
@@ -35,13 +37,13 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, w: number, h: number,
   if (o.frame) {
     const f = frameInsets(w, h);
     inner = { x: f.side, y: f.top, w: w - 2 * f.side, h: h - f.top - f.bottom };
-    ctx.fillStyle = '#f7f3ea';
+    ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
     ctx.rect(0, 0, w, h);
     ctx.rect(inner.x, inner.y, inner.w, inner.h);
     ctx.fill('evenodd');
     // a faint shadow where the print meets the paper
-    ctx.strokeStyle = 'rgba(60, 50, 30, 0.18)';
+    ctx.strokeStyle = 'rgba(38, 57, 77, 0.18)';
     ctx.lineWidth = Math.max(1, unit * 0.25);
     ctx.strokeRect(inner.x, inner.y, inner.w, inner.h);
   }
@@ -63,22 +65,22 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, w: number, h: number,
     if (o.frame) {
       // handwritten-ish on the polaroid's deep bottom border
       const f = frameInsets(w, h);
-      ctx.fillStyle = '#3a3226';
-      ctx.font = `600 ${Math.round(f.bottom * 0.3)}px ${FONT}`;
+      ctx.fillStyle = '#26394D';
+      ctx.font = `700 ${Math.round(f.bottom * 0.3)}px ${FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(o.caption, w / 2, h - f.bottom / 2, w - 2 * f.side);
     } else {
       const size = Math.round(unit * 3.2);
-      ctx.font = `600 ${size}px ${FONT}`;
+      ctx.font = `700 ${size}px ${FONT}`;
       const tw = Math.min(ctx.measureText(o.caption).width, inner.w * 0.7);
       const pad = size * 0.55;
       const x = inner.x + unit * 3;
       const y = inner.y + inner.h - unit * 3 - size - pad;
-      ctx.fillStyle = 'rgba(20, 20, 30, 0.55)';
+      ctx.fillStyle = '#FFFFFF';
       roundRect(ctx, x, y, tw + pad * 2, size + pad * 1.4, size * 0.45);
       ctx.fill();
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = '#26394D';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(o.caption, x + pad, y + (size + pad * 1.4) / 2, tw);
@@ -95,17 +97,17 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, w: number, h: number,
     const bh = size + pad * 1.3;
     const x = inner.x + inner.w - unit * 3 - bw;
     const y = o.frame ? inner.y + unit * 3 : inner.y + inner.h - unit * 3 - bh;
-    ctx.fillStyle = 'rgba(255, 250, 240, 0.92)';
-    ctx.strokeStyle = '#1f1d2b';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = '#26394D';
     ctx.lineWidth = Math.max(1, size * 0.12);
     roundRect(ctx, x, y, bw, bh, bh * 0.35);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#ff8a5b';
+    ctx.fillStyle = '#6699CC';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText('✻', x + pad, y + bh / 2);
-    ctx.fillStyle = '#1f1d2b';
+    ctx.fillStyle = '#26394D';
     ctx.fillText(o.stamp, x + pad + ctx.measureText('✻ ').width, y + bh / 2, tw - ctx.measureText('✻ ').width);
   }
   ctx.restore();

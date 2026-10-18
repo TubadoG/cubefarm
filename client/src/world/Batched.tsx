@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { BatchSet, look, type BatchMaterials, type BatchSlot, type Look } from './batch';
 import { batchGlow, batchGlowNight, batchToon, glow, toon } from './materials';
 import { inkMaterial, Outlines, sizeInks } from './Outlines';
+import { INK } from './palette';
 
 // The React side of batch.ts. <Batches> around a floor (or the lobby, the roof) draws the repeated parts inside it in
 // instanced batches: Toon.tsx's boxes, cylinders and balls (desks, chairs, props) and people's parts (Figure.tsx). A
@@ -117,7 +118,7 @@ function PlainPart({ look: l, color, position, rotation, scale, ref }: PartProps
   const material = l.material ?? (l.shading === 'toon' ? toon(color) : glow(color, l.shading === 'glowNight' ? 'night' : 'always'));
   return (
     <mesh ref={ref} geometry={l.geometry} material={material} position={position} rotation={rotation} scale={scale} castShadow={l.castShadow} receiveShadow={l.receiveShadow}>
-      {l.outline > 0 && <Outlines thickness={l.outline} color="#1f1d2b" angle={l.crease} />}
+      {l.outline > 0 && <Outlines thickness={l.outline} color={INK} angle={l.crease} />}
     </mesh>
   );
 }

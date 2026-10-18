@@ -7,7 +7,7 @@ import { FACES_CAMERA } from './viewTags';
 // The "z z z" drifting up from someone who nodded off at their desk: three letters that rise, grow and fade, on one
 // texture, geometry and material shared by everyone. Hidden (and skipped) while they're awake.
 
-const INK = '#1f1d2b';
+const INK = '#26394D';
 const geometry = new THREE.PlaneGeometry(0.16, 0.16);
 let material: THREE.MeshBasicMaterial | null = null;
 
@@ -23,7 +23,7 @@ function zMaterial() {
   ctx.lineWidth = 9;
   ctx.lineJoin = 'round';
   ctx.strokeStyle = INK;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#FFFFFF';
   ctx.strokeText('z', 32, 30);
   ctx.fillText('z', 32, 30);
   const map = new THREE.CanvasTexture(canvas);

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { GameCanvas, GameHeader, PadButton, arrowOf, isStartKey, useGameKeys, useOnAway } from './kit';
-import { FLOOR, INK, MUTED, burst, card, drawParticles, eyes, messageCard, outlinedText, popText, text, toonBlock, type Particle } from './paint';
+import { FLOOR, INK, MONO, MUTED, WELL, burst, card, drawParticles, eyes, messageCard, outlinedText, popText, text, toonBlock, type Particle } from './paint';
 import { randomSeed } from './rng';
 import { blip } from './sounds';
 import { bestScore, recordScore } from './storage';
@@ -8,10 +8,10 @@ import { COLS, ROWS, dropDistance, dropMs, hardDrop, move, newTetris, pieceCells
 
 // Cubetris on the phone: falling office blocks in the floors' colours, with a line-clear confetti pop.
 
-export const TETRIS_COLOR = '#c77dff';
+export const TETRIS_COLOR = '#9C8FC4';
 
 /** One colour per piece, from the office's floor palette. */
-const COLOR: Record<PieceType, string> = { I: FLOOR[1], O: FLOOR[4], T: FLOOR[3], S: FLOOR[2], Z: FLOOR[7], J: FLOOR[6], L: FLOOR[0] };
+const COLOR: Record<PieceType, string> = { I: '#7FB7D9', O: '#E2C26E', T: '#9C8FC4', S: '#7FC4A0', Z: '#E07A72', J: '#4D7399', L: '#D4B483' };
 
 const C = 18; // cell size in canvas units
 const BX = 8;
@@ -67,13 +67,13 @@ export function Tetris({ onBack }: { onBack: () => void }) {
           burst(s.particles, BX + BW / 2, BY + y * C + C / 2, FLOOR, 10, 150);
         }
         const midY = BY + (next.cleared.reduce((a, b) => a + b, 0) / n) * C;
-        popText(s.particles, BX + BW / 2, midY - 14, CLEAR_WORDS[n], n === 4 ? '#ffc93c' : '#ffffff', n === 4 ? 26 : 20);
-        popText(s.particles, BX + BW / 2, midY + 12, `+${gained}`, '#80ed99', 16);
+        popText(s.particles, BX + BW / 2, midY - 14, CLEAR_WORDS[n], n === 4 ? '#E2C26E' : '#ffffff', n === 4 ? 26 : 20);
+        popText(s.particles, BX + BW / 2, midY + 12, `+${gained}`, '#7FC4A0', 16);
         if (n === 4) s.shake = 0.35;
       } else blip.land();
       if (next.level > prev.level) {
         blip.levelUp();
-        popText(s.particles, BX + BW / 2, BY + BH / 3, `Level ${next.level}!`, '#4fb3e8', 24);
+        popText(s.particles, BX + BW / 2, BY + BH / 3, `Level ${next.level}!`, '#8FB5DD', 24);
       }
       if (next.over) {
         s.newBest = recordScore('tetris', next.score);
@@ -162,9 +162,9 @@ export function Tetris({ onBack }: { onBack: () => void }) {
       ctx.translate((Math.random() - 0.5) * 6 * s.shake * 3, (Math.random() - 0.5) * 6 * s.shake * 3);
     }
 
-    // the board: a cubicle-fabric well with an ink frame
-    card(ctx, BX - 3, BY - 3, BW + 6, BH + 6, '#e3e9f3', 8);
-    ctx.strokeStyle = 'rgba(80,100,140,0.12)';
+    // the board: a dark-screen well with a faint grid
+    card(ctx, BX - 3, BY - 3, BW + 6, BH + 6, WELL, 9, WELL);
+    ctx.strokeStyle = 'rgba(170,191,213,0.08)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = 1; x < COLS; x++) {
@@ -189,7 +189,7 @@ export function Tetris({ onBack }: { onBack: () => void }) {
         ctx.roundRect(BX + x * C + 2, BY + y * C + 2, C - 4, C - 4, 4);
         ctx.fillStyle = `${COLOR[g.piece.type]}44`;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(31,29,43,0.45)';
+        ctx.strokeStyle = 'rgba(234,240,246,0.45)';
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
@@ -217,8 +217,8 @@ export function Tetris({ onBack }: { onBack: () => void }) {
     ctx.restore();
 
     // side panel: what's next and the numbers
-    card(ctx, SIDE, BY, 92, 110, '#ffffff', 10);
-    text(ctx, 'NEXT', SIDE + 46, BY + 13, 11, MUTED, 700);
+    card(ctx, SIDE, BY, 92, 110);
+    text(ctx, 'NEXT', SIDE + 46, BY + 13, 10, MUTED, 600, 'center', MONO);
     g.queue.slice(0, 3).forEach((t, i) => {
       const size = i === 0 ? 14 : 9;
       const cells = previewCells(t);
@@ -231,14 +231,14 @@ export function Tetris({ onBack }: { onBack: () => void }) {
       for (const [x, y] of cells) toonBlock(ctx, ox + (x - Math.min(...xs)) * size, oy + (y - Math.min(...ys)) * size, size, size, COLOR[t], size * 0.25, i === 0 ? 2 : 1.5);
     });
     const stat = (label: string, value: string, y: number, color = INK) => {
-      card(ctx, SIDE, y, 92, 46, '#ffffff', 10);
-      text(ctx, label, SIDE + 46, y + 13, 10, MUTED, 700);
-      text(ctx, value, SIDE + 46, y + 31, 17, color, 700);
+      card(ctx, SIDE, y, 92, 46);
+      text(ctx, label, SIDE + 46, y + 13, 9, MUTED, 600, 'center', MONO);
+      text(ctx, value, SIDE + 46, y + 31, 16, color, 600, 'center', MONO);
     };
     stat('SCORE', g.score.toLocaleString(), BY + 122);
     stat('LINES', String(g.lines), BY + 178);
     stat('LEVEL', String(g.level), BY + 234);
-    stat('BEST', Math.max(s.best, g.score).toLocaleString(), BY + 290, g.score > s.best ? '#e05a2b' : INK);
+    stat('BEST', Math.max(s.best, g.score).toLocaleString(), BY + 290, g.score > s.best ? '#3D6B54' : INK);
 
     drawParticles(ctx, s.particles, dt);
 
@@ -246,9 +246,9 @@ export function Tetris({ onBack }: { onBack: () => void }) {
       const hint = s.status === 'ready' ? 'Space or tap to start' : s.status === 'paused' ? 'Space or tap to resume' : 'Space or tap to play again';
       if (s.status === 'ready') messageCard(ctx, W, H, 'Cubetris', ['Stack the blocks.', 'Fill a row to ship it!', hint], TETRIS_COLOR);
       else if (s.status === 'paused') messageCard(ctx, W, H, 'Coffee break ☕', [`Score ${g.score.toLocaleString()}`, hint], TETRIS_COLOR);
-      else messageCard(ctx, W, H, 'Stack overflow!', [`Score ${g.score.toLocaleString()}`, s.newBest ? '🏆 New best!' : `Best ${s.best.toLocaleString()}`, hint], '#f25f5c');
+      else messageCard(ctx, W, H, 'Stack overflow!', [`Score ${g.score.toLocaleString()}`, s.newBest ? '🏆 New best!' : `Best ${s.best.toLocaleString()}`, hint], '#C25B54');
     } else if (g.score === 0 && g.locks === 0) {
-      outlinedText(ctx, 'Go!', BX + BW / 2, BY + BH / 2, 30 + Math.sin(now / 120) * 2, '#80ed99');
+      outlinedText(ctx, 'Go!', BX + BW / 2, BY + BH / 2, 30 + Math.sin(now / 120) * 2, '#7FC4A0');
     }
   };
 

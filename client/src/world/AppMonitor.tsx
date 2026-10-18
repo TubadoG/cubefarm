@@ -15,10 +15,10 @@ import { glow, mix } from './materials';
 import { Box } from './Toon';
 
 const PX = [1280, 720] as const;
-const BEZEL = '#2b2d42';
+const BEZEL = '#1B2732';
 // A soft halo around the bezel while the app is live, blended toward the wall so it stays subtle.
-const LIVE_GLOW = mix('#7CFFB2', '#fbf3e4', 0.35);
-const LED: Record<string, string> = { running: '#7CFFB2', error: '#ff6b6b', preparing: '#ffd166', installing: '#ffd166', starting: '#ffd166' };
+const LIVE_GLOW = mix('#7FC4A0', '#F2F5F9', 0.35);
+const LED: Record<string, string> = { running: '#7FC4A0', error: '#E07A72', preparing: '#E2C26E', installing: '#E2C26E', starting: '#E2C26E' };
 
 /** The latest agent screenshot on this floor, as "agentId|timestamp", so the selector result stays a stable string. */
 function useLatestShot(agents: Agent[]) {
@@ -126,7 +126,7 @@ export function AppMonitor({ repo, agents }: { repo: RepoView; agents: Agent[] }
         <meshBasicMaterial map={tex} toneMapped={false} userData={BLOOM} />
       </mesh>
       <AppScreenGlow color={repo.color} height={s.y} />
-      <mesh position={[s.w / 2 - 0.04, -s.h / 2 - s.bezel / 2, s.depth + 0.002]} material={glow(LED[p.status] ?? '#6c7086')}>
+      <mesh position={[s.w / 2 - 0.04, -s.h / 2 - s.bezel / 2, s.depth + 0.002]} material={glow(LED[p.status] ?? '#4D6680')}>
         <circleGeometry args={[0.022, 12]} />
       </mesh>
       {chips.map((c, i) => (

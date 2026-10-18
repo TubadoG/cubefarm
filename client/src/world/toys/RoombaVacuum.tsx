@@ -79,7 +79,7 @@ export function Vacuum({ brain }: { brain: Roomba }) {
   return Array.from({ length: SLOTS }, (_, i) => (
     <group key={i} ref={(g) => void (slots.current[i] = g)} visible={false}>
       <mesh ref={(m) => void (foam.current[i] = m)} geometry={geo.foam} material={toon('#ffffff')} />
-      <mesh geometry={geo.tip} material={toon('#ffd166')} />
+      <mesh geometry={geo.tip} material={toon('#26394D')} />
     </group>
   ));
 }

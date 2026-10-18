@@ -32,7 +32,7 @@ export function contrastRatio(a: string, b: string): number {
 }
 
 /** Dark ink or white, whichever reads better on `bg`. */
-export const inkOn = (bg: string, dark = '#1f1d2b', light = '#ffffff') => (contrastRatio(dark, bg) >= contrastRatio(light, bg) ? dark : light);
+export const inkOn = (bg: string, dark = '#1B2732', light = '#ffffff') => (contrastRatio(dark, bg) >= contrastRatio(light, bg) ? dark : light);
 
 export type Cvd = 'protanopia' | 'deuteranopia' | 'tritanopia';
 

@@ -23,16 +23,17 @@ export interface HitPose {
 }
 
 const HEAD_Y = 1.16; // roughly where the head is above the floor, for looking up at the player
-const INK = '#1f1d2b';
+const INK = '#26394D';
+const OUTLINE = '#AABFD5';
 
 export function drawBubble(ctx: CanvasRenderingContext2D, w: number, h: number, text: string) {
   const pad = 8;
   const tail = 34;
   const bottom = h - pad - tail;
-  ctx.lineWidth = 8;
+  ctx.lineWidth = 6;
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = INK;
-  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = OUTLINE;
+  ctx.fillStyle = '#FFFFFF';
   ctx.beginPath();
   ctx.roundRect(pad, pad, w - pad * 2, bottom - pad, 40);
   ctx.fill();
@@ -48,7 +49,7 @@ export function drawBubble(ctx: CanvasRenderingContext2D, w: number, h: number, 
   ctx.lineTo(28, h - pad);
   ctx.lineTo(104, bottom);
   ctx.stroke();
-  ctx.fillStyle = '#e63946';
+  ctx.fillStyle = INK;
   ctx.font = `700 ${text.length > 2 ? 84 : 100}px ${SANS}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

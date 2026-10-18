@@ -208,7 +208,7 @@ export class PresenceHub {
       id: crypto.randomBytes(4).toString('hex'),
       seq: this.seq++,
       name: cleanName(''),
-      color: '#ef476f',
+      color: '#6699cc',
       mode: 'away',
       floor: null,
       pose: null,

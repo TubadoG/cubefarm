@@ -64,7 +64,7 @@ export interface ThemeDef {
   confetti?: { colors: string[]; shape: 'paper' | 'heart' };
 }
 
-const HALLOWEEN_CONFETTI = ['#ff7b00', '#ff9e1f', '#7b2cbf', '#9d4edd', '#1b1b1f', '#2b2d42'];
+const HALLOWEEN_CONFETTI = ['#ff7b00', '#ff9e1f', '#7b2cbf', '#9d4edd', '#1B2732', '#26394D'];
 
 export const THEMES: Record<ThemeId, ThemeDef> = {
   halloween: {
@@ -107,13 +107,13 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
       { slots: 'reception-w', item: 'champagne' },
       { slots: 'reception-e', item: 'champagne' },
     ],
-    lights: ['#ffd23f', '#f8f9fa', '#c0c0ff'],
-    bunting: ['#ffd23f', '#1b1b3a', '#f8f9fa', '#c77dff'],
+    lights: ['#ffd23f', '#F6F9FC', '#c0c0ff'],
+    bunting: ['#ffd23f', '#26394D', '#F6F9FC', '#c77dff'],
     tint: { color: '#ffe8b0', amount: 0.08 },
-    sky: { color: '#1b1b4a', amount: 0.25, fog: 0 },
+    sky: { color: '#1B2732', amount: 0.25, fog: 0 },
     costumes: { agent: ['partyHat'], ceo: ['crown'] },
     playlist: ['countdown-commit'],
-    confetti: { colors: ['#ffd23f', '#f8f9fa', '#c0c0c0', '#c77dff', '#4cc9f0'], shape: 'paper' },
+    confetti: { colors: ['#ffd23f', '#F6F9FC', '#c0c0c0', '#c77dff', '#4cc9f0'], shape: 'paper' },
   },
   valentines: {
     id: 'valentines',

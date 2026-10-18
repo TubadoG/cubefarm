@@ -32,14 +32,14 @@ function rand(seed: number) {
 /** One 1.2 m paving slab, grout on two edges: tiles seamlessly. */
 export const pavingTexture = () =>
   canvasTexture('paving', 256, 256, (ctx) => {
-    ctx.fillStyle = '#d6d0c4';
+    ctx.fillStyle = '#D6DDE4';
     ctx.fillRect(0, 0, 256, 256);
     const r = rand(3);
     for (let i = 0; i < 260; i++) {
-      ctx.fillStyle = r() < 0.5 ? 'rgba(255,255,255,0.18)' : 'rgba(90,80,70,0.08)';
+      ctx.fillStyle = r() < 0.5 ? 'rgba(255,255,255,0.18)' : 'rgba(61,69,77,0.08)';
       ctx.fillRect(r() * 256, r() * 256, 2 + r() * 3, 2 + r() * 3);
     }
-    ctx.fillStyle = '#b3ab9d';
+    ctx.fillStyle = '#B7C4D2';
     ctx.fillRect(0, 0, 256, 4);
     ctx.fillRect(0, 0, 4, 256);
   });
@@ -52,9 +52,9 @@ export const deckingTexture = () =>
     for (let i = 0; i < 8; i++) {
       const y = i * board;
       const shade = 150 + Math.floor(r() * 30);
-      ctx.fillStyle = `rgb(${shade + 40},${shade - 20},${shade - 75})`;
+      ctx.fillStyle = `rgb(${shade + 40},${shade + 50},${shade + 60})`;
       ctx.fillRect(0, y, 512, board);
-      ctx.strokeStyle = 'rgba(80,40,10,0.18)';
+      ctx.strokeStyle = 'rgba(61,79,99,0.14)';
       ctx.lineWidth = 2;
       for (let g = 0; g < 4; g++) {
         const gy = y + 8 + r() * (board - 16);
@@ -63,7 +63,7 @@ export const deckingTexture = () =>
         ctx.bezierCurveTo(170, gy + (r() - 0.5) * 8, 340, gy + (r() - 0.5) * 8, 512, gy);
         ctx.stroke();
       }
-      ctx.fillStyle = '#5b3a24';
+      ctx.fillStyle = '#5C6B7A';
       ctx.fillRect(0, y, 512, 4); // the gap between boards
       const seam = (i % 2 ? 0.3 : 0.75) * 512;
       ctx.fillRect(seam, y, 4, board);
@@ -78,23 +78,23 @@ export const helipadTexture = () =>
     1024,
     (ctx) => {
       const c = 512;
-      ctx.fillStyle = '#4a4f5a';
+      ctx.fillStyle = '#3D454D';
       ctx.beginPath();
       ctx.arc(c, c, 508, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#ffd166';
+      ctx.strokeStyle = '#E2C26E';
       ctx.lineWidth = 34;
       ctx.beginPath();
       ctx.arc(c, c, 440, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.strokeStyle = '#f8f9fa';
+      ctx.strokeStyle = '#F6F9FC';
       ctx.lineWidth = 10;
       ctx.setLineDash([60, 40]);
       ctx.beginPath();
       ctx.arc(c, c, 495, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = '#f8f9fa';
+      ctx.fillStyle = '#F6F9FC';
       const bar = 70;
       ctx.fillRect(c - 190, c - 230, bar, 460);
       ctx.fillRect(c + 190 - bar, c - 230, bar, 460);
@@ -107,7 +107,7 @@ export const helipadTexture = () =>
 export const stripeTexture = () =>
   canvasTexture('stripes', 128, 8, (ctx) => {
     for (let i = 0; i < 4; i++) {
-      ctx.fillStyle = i % 2 ? '#ffffff' : '#c9c9c9';
+      ctx.fillStyle = i % 2 ? '#FFFFFF' : '#DCE3EA';
       ctx.fillRect(i * 32, 0, 32, 8);
     }
   });
@@ -116,7 +116,7 @@ export const stripeTexture = () =>
 export const windsockTexture = () =>
   canvasTexture('windsock', 8, 128, (ctx) => {
     for (let i = 0; i < 5; i++) {
-      ctx.fillStyle = i % 2 ? '#ffffff' : '#ff7b39';
+      ctx.fillStyle = i % 2 ? '#FFFFFF' : '#E07A72';
       ctx.fillRect(0, (i * 128) / 5, 8, 128 / 5 + 1);
     }
   });

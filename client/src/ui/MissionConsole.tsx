@@ -94,7 +94,7 @@ function AlarmCard({ alarm, repo, hot }: { alarm: OpsAlarm; repo: RepoView | und
   const goToFloor = useStore((s) => s.goToFloor);
   const pr = alarm.prNumber !== null ? repo?.pulls.find((p) => p.number === alarm.prNumber) : undefined;
   return (
-    <div id={`ops-card-${alarm.id}`} className={`card floor-card alarm-card ${hot ? 'ops-card-hot' : ''}`} style={{ ['--accent' as string]: repo?.color ?? '#ef476f' }}>
+    <div id={`ops-card-${alarm.id}`} className={`card floor-card alarm-card ${hot ? 'ops-card-hot' : ''}`} style={{ ['--accent' as string]: repo?.color ?? '#C25B54' }}>
       <div className="row">
         <span className="floor-badge">{alarm.floor}</span>
         <div className="grow">
@@ -171,7 +171,7 @@ async function applyFix(f: DoctorFinding, fix: DoctorFix) {
 function DoctorCard({ finding: f, repo }: { finding: DoctorFinding; repo: RepoView | undefined }) {
   const openOverlay = useStore((s) => s.openOverlay);
   return (
-    <div id={`ops-card-doctor-${f.id}`} className="card floor-card alarm-card doctor-card" style={{ ['--accent' as string]: repo?.color ?? '#7c6cf0' }}>
+    <div id={`ops-card-doctor-${f.id}`} className="card floor-card alarm-card doctor-card" style={{ ['--accent' as string]: repo?.color ?? '#9C8FC4' }}>
       <div className="row">
         <span className="floor-badge">{repo?.floor ?? '?'}</span>
         <div className="grow">
@@ -261,9 +261,9 @@ function OpsTable() {
   const rows: [string, string, OpsNumbers][] = [
     ...ops.floors.map((f): [string, string, OpsNumbers] => {
       const r = repos.find((x) => x.id === f.repoId);
-      return [`${f.floor} · ${r?.fullName.split('/')[1] ?? f.repoId}`, r?.color ?? '#ccc', f];
+      return [`${f.floor} · ${r?.fullName.split('/')[1] ?? f.repoId}`, r?.color ?? '#AEB8C2', f];
     }),
-    ['All floors', '#1f1d2b', ops.total],
+    ['All floors', '#26394D', ops.total],
   ];
   return (
     <div className="ops-table-wrap">

@@ -14,7 +14,7 @@ import { eyeAbove, sign, type SceneProps } from '../kit';
 const SLOTS = 2400;
 const GRAVITY = -6;
 const ATTRS = ['position', 'aVel', 'aColor', 'aTime', 'aSize'] as const;
-const PALETTE = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#ff70a6', '#ffffff', '#c77dff', '#4cc9f0'];
+const PALETTE = ['#6699CC', '#D4B483', '#5FA8A0', '#8C9FD9', '#4D7399', '#ffffff', '#AABFD5', '#7FB7D9'];
 
 const VERT = /* glsl */ `
 attribute vec3 aVel;
@@ -79,7 +79,7 @@ export default function Fireworks({ run, elevation }: SceneProps) {
         y: eyeAbove(elevation) + 22 + r() * 30,
         z: (r() - 0.5) * 260,
         shape,
-        color: new THREE.Color(shape === 'willow' ? '#ffcf6b' : c),
+        color: new THREE.Color(shape === 'willow' ? '#F2D9A0' : c),
         color2: new THREE.Color(r() < 0.4 ? PALETTE[Math.floor(r() * PALETTE.length)] : c),
         sparks: big ? 140 : 70 + Math.floor(r() * 50),
         done: false,

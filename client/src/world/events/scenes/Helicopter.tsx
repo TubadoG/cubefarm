@@ -93,20 +93,20 @@ export default function Helicopter({ run, elevation }: SceneProps) {
     sound.rotor?.set(heard.gain * inOut(t, run.seconds, 2) * (1 - 0.6 * landed), heard.pan, 1 - 0.35 * landed);
   });
 
-  const red = toonOut('#d62828');
-  const dark = toonOut('#2b2d42');
+  const red = toonOut('#6699CC');
+  const dark = toonOut('#26394D');
   return (
     <group ref={body} scale={1.6}>
       <mesh material={red} scale={[1, 0.95, 1.5]}>
         <sphereGeometry args={[1.6, 14, 10]} />
       </mesh>
-      <mesh material={toonOut('#8ecae6')} position={[0, 0.35, 1.25]} scale={[1, 0.7, 0.8]}>
+      <mesh material={toonOut('#8FB5DD')} position={[0, 0.35, 1.25]} scale={[1, 0.7, 0.8]}>
         <sphereGeometry args={[1.05, 12, 8]} />
       </mesh>
       <mesh material={red} position={[0, 0.3, -3.2]} rotation-x={Math.PI / 2}>
         <cylinderGeometry args={[0.28, 0.45, 4.2, 8]} />
       </mesh>
-      <mesh material={toonOut('#f1faee')} position={[0, 1, -5.1]}>
+      <mesh material={toonOut('#F6F9FC')} position={[0, 1, -5.1]}>
         <boxGeometry args={[0.15, 1.4, 0.9]} />
       </mesh>
       <mesh ref={tail} material={dark} position={[0.2, 0.9, -5.2]}>

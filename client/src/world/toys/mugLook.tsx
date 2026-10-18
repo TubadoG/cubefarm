@@ -4,19 +4,19 @@ import { Outlines } from '../Outlines';
 import * as THREE from 'three';
 import { useInteractable } from '../interact';
 import { shade, toon } from '../materials';
+import { DARK, INK, METAL } from '../palette';
 import { Box, Cyl } from '../Toon';
 import { DISPENSER_ID, fillLevel, steamStrength } from './mugs';
 
 // What a coffee mug looks like, its steam, and the kitchenette's mug dispenser. No physics here, so the
 // kitchenette (Props.tsx) can draw the dispenser without loading the toy chunk.
 
-const INK = '#1f1d2b';
 const COFFEE = '#6f4518';
 
 /** A mug's size in metres: radius at the rim and at the base, and height. */
 export const MUG_SIZE = { r: 0.055, rBase: 0.05, h: 0.12 };
 
-const COLORS = ['#f8f9fa', '#ef476f', '#118ab2', '#ffd166', '#06d6a0'];
+const COLORS = ['#F6F9FC', '#6699CC', '#4D7399', '#AABFD5', '#5FA8A0'];
 
 const tints = new Map<string, string>();
 
@@ -119,14 +119,14 @@ export function MugDispenser({ position }: { position: [number, number, number] 
   const { h } = MUG_SIZE;
   return (
     <group ref={ref} position={position}>
-      <Cyl r={0.1} h={0.03} position={[0, 0.015, 0]} color="#adb5bd" outline />
-      <Cyl r={0.012} h={0.42} position={[0, 0.24, 0]} color="#6c757d" />
+      <Cyl r={0.1} h={0.03} position={[0, 0.015, 0]} color={METAL} outline />
+      <Cyl r={0.012} h={0.42} position={[0, 0.24, 0]} color={DARK} />
       {STACK.map((i) => (
         <group key={i} position={[0, 0.03 + h / 2 + i * (h + 0.002), 0]} rotation={[Math.PI, (i * 2.4) % (Math.PI * 2), 0]}>
           <MugLook color={COLORS[i + 1]} sips={0} />
         </group>
       ))}
-      <Box size={[0.04, 0.05, 0.05]} position={[0, 0.47, 0]} color="#6c757d" shadow={false} />
+      <Box size={[0.04, 0.05, 0.05]} position={[0, 0.47, 0]} color={DARK} shadow={false} />
     </group>
   );
 }

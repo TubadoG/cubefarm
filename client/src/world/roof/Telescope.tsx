@@ -167,13 +167,13 @@ function moonTexture() {
 /** A constellation's name, soft white with a dark edge so it reads over the sky. */
 function labelTexture(name: string) {
   return canvas(512, 96, (ctx) => {
-    ctx.font = `600 44px ${SANS}`;
+    ctx.font = `700 44px ${SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 8;
-    ctx.strokeStyle = 'rgba(8,12,40,0.85)';
+    ctx.strokeStyle = 'rgba(27,39,50,0.85)';
     ctx.strokeText(name, 256, 48);
-    ctx.fillStyle = '#d7e3ff';
+    ctx.fillStyle = '#DDE8F4';
     ctx.fillText(name, 256, 48);
   });
 }
@@ -211,7 +211,7 @@ function TelescopeSky({ visible }: { visible: RefObject<boolean> }) {
       starGeo,
       starMat: new THREE.ShaderMaterial({ vertexShader: STAR_VERT, fragmentShader: STAR_FRAG, uniforms: { uPixel: { value: 1 }, uOpacity: { value: 0 } }, transparent: true, depthWrite: false }),
       lines,
-      lineMat: farMaterial(null, '#9fc3ff', 0.6),
+      lineMat: farMaterial(null, '#8FB5DD', 0.6),
       labels,
       labelGeo: new THREE.PlaneGeometry(3.6, 0.68),
       moonGeo: new THREE.PlaneGeometry(MOON, MOON),
@@ -375,34 +375,34 @@ export function Telescope() {
         {[0, 1, 2].map((k) => {
           const a = (k / 3) * Math.PI * 2 + 0.3;
           return (
-            <mesh key={k} position={[Math.cos(a) * 0.2, MOUNT_Y / 2 - 0.05, Math.sin(a) * 0.2]} rotation={[Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3]} material={toon('#6c757d')} castShadow>
+            <mesh key={k} position={[Math.cos(a) * 0.2, MOUNT_Y / 2 - 0.05, Math.sin(a) * 0.2]} rotation={[Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3]} material={toon('#6B7580')} castShadow>
               <cylinderGeometry args={[0.025, 0.03, MOUNT_Y + 0.05, 8]} />
             </mesh>
           );
         })}
-        <mesh position={[0, 0.55, 0]} material={toon('#adb5bd')}>
+        <mesh position={[0, 0.55, 0]} material={toon('#AEB8C2')}>
           <cylinderGeometry args={[0.16, 0.16, 0.03, 12]} />
         </mesh>
-        <mesh position={[0, MOUNT_Y - 0.06, 0]} material={toon('#343a40')} castShadow>
+        <mesh position={[0, MOUNT_Y - 0.06, 0]} material={toon('#3D454D')} castShadow>
           <boxGeometry args={[0.14, 0.16, 0.14]} />
         </mesh>
         {/* the tube, turned to where it was last aimed */}
         <group ref={tube} position={[0, MOUNT_Y + 0.08, 0]}>
-          <mesh position={[0, 0, -0.15]} rotation={[Math.PI / 2, 0, 0]} material={toon('#f8f9fa')} castShadow>
+          <mesh position={[0, 0, -0.15]} rotation={[Math.PI / 2, 0, 0]} material={toon('#F6F9FC')} castShadow>
             <cylinderGeometry args={[0.085, 0.085, 1.0, 20]} />
-            <Outlines thickness={0.012} color="#1f1d2b" />
+            <Outlines thickness={0.012} color="#26394D" />
           </mesh>
-          <mesh position={[0, 0, -0.7]} rotation={[Math.PI / 2, 0, 0]} material={toon('#1d3557')} castShadow>
+          <mesh position={[0, 0, -0.7]} rotation={[Math.PI / 2, 0, 0]} material={toon('#4D7399')} castShadow>
             <cylinderGeometry args={[0.105, 0.1, 0.22, 20]} />
-            <Outlines thickness={0.012} color="#1f1d2b" />
+            <Outlines thickness={0.012} color="#26394D" />
           </mesh>
-          <mesh position={[0, 0, 0.0]} rotation={[Math.PI / 2, 0, 0]} material={toon('#d4a373')}>
+          <mesh position={[0, 0, 0.0]} rotation={[Math.PI / 2, 0, 0]} material={toon('#A88E5E')}>
             <cylinderGeometry args={[0.09, 0.09, 0.05, 20]} />
           </mesh>
-          <mesh position={[0, 0.06, 0.4]} rotation={[Math.PI / 2 - 0.6, 0, 0]} material={toon('#343a40')}>
+          <mesh position={[0, 0.06, 0.4]} rotation={[Math.PI / 2 - 0.6, 0, 0]} material={toon('#3D454D')}>
             <cylinderGeometry args={[0.025, 0.03, 0.14, 10]} />
           </mesh>
-          <mesh position={[0.08, 0.11, -0.05]} rotation={[Math.PI / 2, 0, 0]} material={toon('#d4a373')}>
+          <mesh position={[0.08, 0.11, -0.05]} rotation={[Math.PI / 2, 0, 0]} material={toon('#A88E5E')}>
             <cylinderGeometry args={[0.022, 0.022, 0.3, 10]} />
           </mesh>
         </group>

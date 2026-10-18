@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { contrastRatio, deltaE, inkOn, simulateCvd } from './colorMath';
 import { CVD_PALETTES, KIND_ICON, kindStrong, paletteVars, PALETTE_VAR_NAMES, PALETTES, STATUS_KIND, STATUS_KINDS, statusFill, toneFill, TONE_KIND } from './statusLook';
 
-const INK = '#1f1d2b';
-const PAPER = '#fffdf6';
+const INK = '#1B2732'; // --n900: the ink status pills and toned cards use
+const PAPER = '#FFFFFF';
 
 /** The smallest colour difference between any two kinds, as someone with `cvd` sees them (null: typical vision). */
 function closest(colors: string[], cvd: 'protanopia' | 'deuteranopia' | 'tritanopia' | null) {
@@ -54,13 +54,20 @@ describe('the colour-blind palettes', () => {
 
 describe('the standard palette', () => {
   it('is the office’s own colours, so the default changes nothing', () => {
-    expect(statusFill('working', 'standard')).toBe('#74c0fc');
-    expect(statusFill('error', 'standard')).toBe('#ffa8a8');
-    expect(statusFill('idle', 'standard')).toBe('#e9ecef');
-    expect(toneFill('warn', 'standard', 'card')).toBe('#fff3d6');
-    expect(toneFill('bad', 'standard', 'board')).toBe('#ffc9c9');
-    expect(kindStrong('ok', 'standard')).toBe('#2dc653');
+    expect(statusFill('working', 'standard')).toBe('#DDE8F4');
+    expect(statusFill('error', 'standard')).toBe('#F5DEDC');
+    expect(statusFill('idle', 'standard')).toBe('#DCE3EA');
+    expect(toneFill('warn', 'standard', 'card')).toBe('#F5EDD8');
+    expect(toneFill('bad', 'standard', 'board')).toBe('#EDCBC8');
+    expect(kindStrong('ok', 'standard')).toBe('#4C9A76');
+    expect(kindStrong('attention', 'standard')).not.toBe(kindStrong('waiting', 'standard'));
     expect(paletteVars('standard')).toEqual({});
+  });
+
+  it('keeps ink readable on every standard fill and tone', () => {
+    const fills = [...(Object.keys(STATUS_KIND) as (keyof typeof STATUS_KIND)[]).map((s) => statusFill(s, 'standard'))];
+    for (const surface of ['card', 'board'] as const) for (const t of ['good', 'warn', 'bad'] as const) fills.push(toneFill(t, 'standard', surface));
+    for (const fill of fills) expect(contrastRatio(INK, fill)).toBeGreaterThanOrEqual(10);
   });
 });
 

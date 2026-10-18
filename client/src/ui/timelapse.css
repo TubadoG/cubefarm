@@ -1,14 +1,15 @@
 /* The time-lapse (ui/TimeLapse.tsx): the console tab's day list and, while it plays, the frame, badge and bar. */
 
 .pill-replay {
-  background: #ff8fa3;
+  background: var(--bad-surface);
+  color: var(--bad-ink);
 }
 
 /* ---------- console tab ---------- */
 
 .tl-since {
-  border-color: #ef476f;
-  background: #fff5f7;
+  border-color: var(--bad);
+  background: var(--bad-surface);
 }
 .tl-day .row {
   margin: 0;
@@ -26,13 +27,13 @@
   position: relative;
   height: 12px;
   border-radius: 999px;
-  background: #ece7dc;
-  border: 2px solid var(--ink);
+  background: var(--n100);
+  border: 1px solid var(--border-default);
 }
 .tl-track-mini {
   height: 10px;
   margin-top: 4px;
-  border-width: 1.5px;
+  border-width: 1px;
 }
 .tl-mark {
   position: absolute;
@@ -42,7 +43,7 @@
   line-height: 1;
   pointer-events: auto;
   cursor: default;
-  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 1px 0 rgba(27, 39, 50, 0.35));
 }
 .tl-track-mini .tl-mark {
   font-size: 9px;
@@ -59,14 +60,15 @@
   touch-action: none;
 }
 .tl-scrub:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--focus-ring);
 }
 .tl-fill {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 999px;
-  background: #ffc2d1;
+  background: var(--bad-surface);
   pointer-events: none;
 }
 .tl-head {
@@ -75,9 +77,9 @@
   bottom: -5px;
   width: 6px;
   margin-left: -3px;
-  border-radius: 3px;
-  background: #ef476f;
-  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--bad);
+  border: 1px solid var(--paper);
   pointer-events: none;
 }
 .tl-tip {
@@ -86,11 +88,13 @@
   left: 50%;
   transform: translateX(-50%);
   padding: 2px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--ink);
-  color: #fff;
-  font-size: 0.8rem;
+  color: var(--text-on-dark);
+  font-family: var(--mono);
+  font-size: 0.75rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -108,8 +112,7 @@
 .replay-frame {
   position: absolute;
   inset: 0;
-  border: 5px solid rgba(239, 71, 111, 0.85);
-  box-shadow: inset 0 0 40px rgba(239, 71, 111, 0.35);
+  border: 4px solid var(--bad);
 }
 .replay-badge {
   position: absolute;
@@ -120,22 +123,24 @@
   align-items: baseline;
   gap: 10px;
   padding: 6px 16px;
-  border: 3px solid var(--ink);
-  border-radius: 14px;
-  box-shadow: 0 4px 0 var(--ink);
-  background: #ef476f;
-  color: #fff;
+  border: 1px solid var(--border-float);
+  border-left: 4px solid var(--bad);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  background: var(--paper);
+  color: var(--bad-ink);
+  font-family: var(--display);
   font-weight: 700;
   font-size: 1.35rem;
-  letter-spacing: 0.04em;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+  letter-spacing: -0.02em;
   white-space: nowrap;
 }
 .replay-sub {
+  font-family: var(--font);
   font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0;
-  opacity: 0.92;
+  color: var(--muted);
 }
 .replay-bar {
   position: absolute;
@@ -149,15 +154,17 @@
   gap: 8px;
   padding: 10px 14px;
   background: var(--paper);
-  border: 3px solid var(--ink);
-  border-radius: 18px;
-  box-shadow: 0 4px 0 var(--ink);
+  border: 1px solid var(--border-float);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-raised);
 }
 .replay-play {
   min-width: 38px;
 }
 .replay-time {
+  font-family: var(--mono);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 .replay-speeds {
@@ -169,7 +176,7 @@
   color: var(--muted);
 }
 .replay-note-bad {
-  color: #c9184a;
+  color: var(--bad-ink);
 }
 /* Narrower, it would reach the phone button: up above it. */
 @media (max-width: 1100px) {

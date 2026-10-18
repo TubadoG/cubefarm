@@ -44,7 +44,7 @@ export function StringLights({ kind, colors }: { kind: FloorKind; colors: string
   }, [kind]);
   const geo = useMemo(() => new THREE.SphereGeometry(0.04, 6, 4).scale(1, 1.3, 1), []);
   const mat = useMemo(() => markBloom(new THREE.MeshBasicMaterial({ toneMapped: false }), 'night'), []);
-  const wireMat = useMemo(() => new THREE.LineBasicMaterial({ color: '#2b2d42' }), []);
+  const wireMat = useMemo(() => new THREE.LineBasicMaterial({ color: '#26394D' }), []);
   useEffect(
     () => () => {
       [wire, geo, mat, wireMat].forEach((d) => d.dispose());

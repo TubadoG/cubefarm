@@ -139,7 +139,7 @@ export default function Kaiju({ run, elevation }: SceneProps) {
   const green = toonOut('#6abf69');
   const cream = toonOut('#f6e7a1');
   const spike = toonOut('#ff9f1c');
-  const ink = toonOut('#1f1d2b');
+  const ink = toonOut('#26394D');
   const white = toonOut('#ffffff');
   return (
     <group>
@@ -210,13 +210,13 @@ export default function Kaiju({ run, elevation }: SceneProps) {
         // the toppling copy of the city's tower, pivoting on the roof under it
         <group ref={fallen} position={[p.tower.x - s * p.tankR, p.tower.y, p.tower.z]} visible={false}>
           <group position={[s * p.tankR, 0, 0]}>
-            <mesh material={toonOut('#5e4a3c')} position={[0, 0.8, 0]}>
+            <mesh material={toonOut('#5C6B7A')} position={[0, 0.8, 0]}>
               <boxGeometry args={[2.6, 1.6, 2.6]} />
             </mesh>
-            <mesh material={toonOut('#a0704a')} position={[0, 3.1, 0]}>
+            <mesh material={toonOut('#9AA7B4')} position={[0, 3.1, 0]}>
               <cylinderGeometry args={[1.5, 1.5, 3, 12]} />
             </mesh>
-            <mesh material={toonOut('#6b4a33')} position={[0, 5.3, 0]}>
+            <mesh material={toonOut('#3D4F63')} position={[0, 5.3, 0]}>
               <coneGeometry args={[1.8, 1.4, 12]} />
             </mesh>
           </group>

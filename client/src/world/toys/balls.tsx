@@ -2,6 +2,7 @@ import { Outlines } from '../Outlines';
 import * as THREE from 'three';
 import { inBuilding } from '../layout';
 import { shade, toon, toonMap } from '../materials';
+import { INK } from '../palette';
 import { BasketballLook } from './Hoop';
 import { HOOP, hoopRim } from './hoopScore';
 
@@ -20,7 +21,6 @@ export interface BallDef {
   throwSpeed?: number;
 }
 
-const INK = '#1f1d2b';
 
 const SPECS: Record<BallKind, Omit<BallDef, 'id' | 'start'>> = {
   beach: { kind: 'beach', r: 0.4, restitution: 0.8, density: 1.2, damping: 0.9 },
@@ -44,7 +44,7 @@ export const BALLS: Record<ToyFloor, BallDef[]> = {
 export const escaped = (p: { x: number; y: number; z: number }) => !inBuilding(p.x, p.z) || p.y < -0.5 || p.y > 6;
 
 // Beach ball: six bold gores with white caps. Nearest filtering keeps the stripes crisp like the rest of the toon look.
-const GORES = ['#ef476f', '#ffffff', '#ffd166', '#ffffff', '#118ab2', '#ffffff'];
+const GORES = ['#6699CC', '#ffffff', '#5FA8A0', '#ffffff', '#4D7399', '#ffffff'];
 let beachTex: THREE.DataTexture | null = null;
 function beachTexture() {
   if (beachTex) return beachTex;
@@ -69,8 +69,8 @@ function beachTexture() {
   return beachTex;
 }
 
-const EXERCISE = '#8338ec';
-const YARN = '#ff70a6';
+const EXERCISE = '#6699CC';
+const YARN = '#4D7399';
 // Strands wound round the yarn ball at a few angles.
 const STRANDS: [number, number, number][] = [
   [0, 0, 0],
@@ -103,7 +103,7 @@ export function BallLook({ def }: { def: BallDef }) {
         <mesh rotation={[Math.PI / 2, 0, 0]} material={toon(shade(EXERCISE, -0.14))}>
           <torusGeometry args={[r * 1.002, 0.018, 6, 40]} />
         </mesh>
-        <mesh position={[0, 0, r]} rotation={[Math.PI / 2, 0, 0]} material={toon('#f8f9fa')}>
+        <mesh position={[0, 0, r]} rotation={[Math.PI / 2, 0, 0]} material={toon('#F6F9FC')}>
           <cylinderGeometry args={[0.045, 0.05, 0.04, 12]} />
         </mesh>
       </group>

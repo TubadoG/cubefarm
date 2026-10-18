@@ -21,7 +21,7 @@ const PARTY = [
   ['#ff8c42', '#3bceac'],
 ] as const;
 
-const BLACK = '#2b2340';
+const BLACK = '#26394D';
 
 /** Half a shell round the back (thetaStart -π/2: CylinderGeometry's θ 0 is +z, the back). */
 const backShell = (rTop: number, rBottom: number, h: number, arc = Math.PI) => new THREE.CylinderGeometry(rTop, rBottom, h, 20, 1, true, -arc / 2, arc);
@@ -53,15 +53,15 @@ function headGeometry(c: Costume, y: number, v: number): THREE.BufferGeometry | 
     }
     case 'ghost':
       return mergeParts([
-        part(new THREE.SphereGeometry(0.235, 20, 14, 0, Math.PI * 2, 0, 2.2), '#f8f9fa', [0, 0.01, 0]),
-        part(sphere(0.035, 10, 8), '#1f1d2b', [-0.075, 0.03, -0.225], [0, 0, 0], [1, 1.5, 0.4]),
-        part(sphere(0.035, 10, 8), '#1f1d2b', [0.075, 0.03, -0.225], [0, 0, 0], [1, 1.5, 0.4]),
-        part(sphere(0.03, 10, 8), '#1f1d2b', [0, -0.07, -0.228], [0, 0, 0], [1, 1.3, 0.4]),
+        part(new THREE.SphereGeometry(0.235, 20, 14, 0, Math.PI * 2, 0, 2.2), '#F6F9FC', [0, 0.01, 0]),
+        part(sphere(0.035, 10, 8), '#26394D', [-0.075, 0.03, -0.225], [0, 0, 0], [1, 1.5, 0.4]),
+        part(sphere(0.035, 10, 8), '#26394D', [0.075, 0.03, -0.225], [0, 0, 0], [1, 1.5, 0.4]),
+        part(sphere(0.03, 10, 8), '#26394D', [0, -0.07, -0.228], [0, 0, 0], [1, 1.3, 0.4]),
       ]);
     case 'catEars':
       return mergeParts(
         [-1, 1].flatMap((s) => [
-          part(cone(0.085, 0.17, 4), '#1f1d2b', [s * 0.12, y + 0.06, 0.01], [0, Math.PI / 4, s * -0.35]),
+          part(cone(0.085, 0.17, 4), '#26394D', [s * 0.12, y + 0.06, 0.01], [0, Math.PI / 4, s * -0.35]),
           part(cone(0.05, 0.11, 4), '#ff8fab', [s * 0.115, y + 0.05, -0.03], [0, Math.PI / 4, s * -0.35]),
         ]),
       );
@@ -69,7 +69,7 @@ function headGeometry(c: Costume, y: number, v: number): THREE.BufferGeometry | 
       return null; // all on the body: the cape and the collar
     case 'skeleton':
       // the hoodie's hood, round the back of the head
-      return part(new THREE.SphereGeometry(0.24, 20, 14, Math.PI * 1.5 + 0.8, Math.PI * 2 - 1.6, 0, 2.1), '#1f1d2b', [0, 0.02, 0.02]);
+      return part(new THREE.SphereGeometry(0.24, 20, 14, Math.PI * 1.5 + 0.8, Math.PI * 2 - 1.6, 0, 2.1), '#26394D', [0, 0.02, 0.02]);
     case 'crown':
       return mergeParts([
         part(cyl(0.165, 0.16, 0.08, 20, true), '#ffd23f', [0, y + 0.03, 0]),
@@ -83,9 +83,9 @@ function headGeometry(c: Costume, y: number, v: number): THREE.BufferGeometry | 
       ]);
     case 'santaHat':
       return mergeParts([
-        part(torus(0.175, 0.045, 8, 24), '#f8f9fa', [0, y, 0.01], [Math.PI / 2 + 0.15, 0, 0]),
+        part(torus(0.175, 0.045, 8, 24), '#F6F9FC', [0, y, 0.01], [Math.PI / 2 + 0.15, 0, 0]),
         part(cone(0.17, 0.3, 16), '#d62828', [0, y + 0.14, 0.05], [0.55, 0, 0]),
-        part(sphere(0.055, 10, 8), '#f8f9fa', [0, y + 0.25, 0.2]),
+        part(sphere(0.055, 10, 8), '#F6F9FC', [0, y + 0.25, 0.2]),
       ]);
     case 'antlers':
       return mergeParts([
@@ -102,7 +102,7 @@ function headGeometry(c: Costume, y: number, v: number): THREE.BufferGeometry | 
         part(cyl(0.085, 0.11, 0.09, 16), a, [0, y + 0.045, 0.02], [0.2, 0, 0]),
         part(cyl(0.055, 0.085, 0.09, 16), b, [0, y + 0.13, 0.04], [0.2, 0, 0]),
         part(cone(0.055, 0.1, 16), a, [0, y + 0.22, 0.055], [0.2, 0, 0]),
-        part(sphere(0.035, 8, 6), '#f8f9fa', [0, y + 0.28, 0.07]),
+        part(sphere(0.035, 8, 6), '#F6F9FC', [0, y + 0.28, 0.07]),
       ]);
     }
     case 'heartBoppers':
@@ -115,9 +115,9 @@ function headGeometry(c: Costume, y: number, v: number): THREE.BufferGeometry | 
       ]);
     case 'bunnyEars':
       return mergeParts([
-        part(torus(0.222, 0.012, 6, 24, Math.PI), '#f8f9fa', [0, y - 0.17, 0.02]),
+        part(torus(0.222, 0.012, 6, 24, Math.PI), '#F6F9FC', [0, y - 0.17, 0.02]),
         ...[-1, 1].flatMap((s) => [
-          part(sphere(0.06, 12, 10), '#f8f9fa', [s * 0.08, y + 0.17, 0.02], [0, 0, s * -0.2], [1, 3.2, 0.45]),
+          part(sphere(0.06, 12, 10), '#F6F9FC', [s * 0.08, y + 0.17, 0.02], [0, 0, s * -0.2], [1, 3.2, 0.45]),
           part(sphere(0.035, 10, 8), '#ffafcc', [s * 0.08, y + 0.17, -0.004], [0, 0, s * -0.2], [1, 4, 0.3]),
         ]),
       ]);
@@ -130,24 +130,24 @@ function bodyGeometry(c: Costume, v: number): THREE.BufferGeometry | null {
   switch (c) {
     case 'vampire':
       return mergeParts([
-        part(backShell(0.24, 0.34, 0.62), '#1b1430', [0, 0.22, 0.01]),
+        part(backShell(0.24, 0.34, 0.62), '#26394D', [0, 0.22, 0.01]),
         part(backShell(0.232, 0.33, 0.6), '#9d0208', [0, 0.22, 0.01]),
         // the tall collar behind the neck, red inside
-        part(backShell(0.3, 0.15, 0.32, Math.PI * 1.25), '#1b1430', [0, 0.67, 0.01]),
+        part(backShell(0.3, 0.15, 0.32, Math.PI * 1.25), '#26394D', [0, 0.67, 0.01]),
         part(backShell(0.29, 0.145, 0.31, Math.PI * 1.25), '#c1121f', [0, 0.67, 0.01]),
         part(box(0.06, 0.04, 0.02), '#ffd23f', [0, 0.5, -0.2]),
       ]);
     case 'ghost':
-      return part(cyl(0.21, 0.32, 0.6, 22, true), '#f8f9fa', [0, 0.24, 0]);
+      return part(cyl(0.21, 0.32, 0.6, 22, true), '#F6F9FC', [0, 0.24, 0]);
     case 'skeleton': {
       const ribs = [0.42, 0.35, 0.28, 0.21].map((y, i) =>
-        part(torus(0.207, 0.012, 4, 16, 1.5 - i * 0.12), '#f8f9fa', [0, y, 0], [Math.PI / 2, 0, -Math.PI / 2 - (1.5 - i * 0.12) / 2]),
+        part(torus(0.207, 0.012, 4, 16, 1.5 - i * 0.12), '#F6F9FC', [0, y, 0], [Math.PI / 2, 0, -Math.PI / 2 - (1.5 - i * 0.12) / 2]),
       );
-      return mergeParts([part(cyl(0.204, 0.204, 0.5, 22, true), '#1f1d2b', [0, 0.28, 0]), ...ribs, part(box(0.03, 0.26, 0.012), '#f8f9fa', [0, 0.32, -0.21])]);
+      return mergeParts([part(cyl(0.204, 0.204, 0.5, 22, true), '#26394D', [0, 0.28, 0]), ...ribs, part(box(0.03, 0.26, 0.012), '#F6F9FC', [0, 0.32, -0.21])]);
     }
     case 'uglySweater': {
       const [main, band] = v % 2 ? ['#2d6a4f', '#c1121f'] : ['#c1121f', '#2d6a4f'];
-      const flakes = [-0.12, -0.04, 0.04, 0.12].map((x) => part(box(0.035, 0.035, 0.012), '#f8f9fa', [x, 0.33, -Math.sqrt(0.212 ** 2 - x * x) - 0.004], [0, -Math.asin(x / 0.212), Math.PI / 4]));
+      const flakes = [-0.12, -0.04, 0.04, 0.12].map((x) => part(box(0.035, 0.035, 0.012), '#F6F9FC', [x, 0.33, -Math.sqrt(0.212 ** 2 - x * x) - 0.004], [0, -Math.asin(x / 0.212), Math.PI / 4]));
       return mergeParts([
         part(cyl(0.208, 0.208, 0.44, 24, true), main, [0, 0.3, 0]),
         part(cyl(0.212, 0.212, 0.05, 24, true), band, [0, 0.4, 0]),
