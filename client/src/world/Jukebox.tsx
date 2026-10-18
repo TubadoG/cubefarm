@@ -271,17 +271,17 @@ if (typeof window !== 'undefined' && !Object.getOwnPropertyDescriptor(window, '_
 // ---------- drawing ----------
 
 const { w: W, d: D } = JUKEBOX;
-const BODY = '#d62828';
-const TRIM = '#ffd166';
-const INK = '#1f1d2b';
+const BODY = '#4D7399';
+const TRIM = '#D4B483';
+const INK = '#26394D';
 const ARCH_Y = 1.0;
 const NOTES = [0, 1, 2, 3];
 const NOTE_LIFE = 3; // beats each note rises for
 const ROT_FRONT: [number, number, number] = [0, Math.PI, 0];
 
 // One jukebox is on screen at a time, so it owns these and recolours them every frame.
-const neonArch = markBloom(new THREE.MeshBasicMaterial({ color: '#ff5d8f', toneMapped: false }));
-const neonSides = markBloom(new THREE.MeshBasicMaterial({ color: '#4cc9f0', toneMapped: false }));
+const neonArch = markBloom(new THREE.MeshBasicMaterial({ color: '#8FB5DD', toneMapped: false }));
+const neonSides = markBloom(new THREE.MeshBasicMaterial({ color: '#B4A7D6', toneMapped: false }));
 const noteMats = NOTES.map(() => markBloom(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, toneMapped: false })));
 const hsl = { h: 0, s: 0, l: 0 };
 let noteTex: THREE.CanvasTexture | null = null;
@@ -360,12 +360,12 @@ export function Jukebox({ x, floor }: { x: number; floor: number }) {
       view.on
         ? drawDisplay(ctx, song.color, view.vol, [
             { text: focus ? '♪ FOCUS STATION ♪' : '♪ NOW PLAYING ♪', size: 30, weight: 700 },
-            { text: song.title, size: 58, weight: 800 },
-            { text: song.artist, size: 38, weight: 600 },
+            { text: song.title, size: 58, weight: 700 },
+            { text: song.artist, size: 38, weight: 400 },
           ])
-        : drawDisplay(ctx, '#495057', view.vol, [
-            { text: 'JUKEBOX', size: 66, weight: 800 },
-            { text: focus ? `Focus · press ${use} to play` : `press ${use} to play`, size: 40, weight: 600 },
+        : drawDisplay(ctx, '#5C6B7A', view.vol, [
+            { text: 'JUKEBOX', size: 66, weight: 700 },
+            { text: focus ? `Focus · press ${use} to play` : `press ${use} to play`, size: 40, weight: 400 },
           ]),
     [view.on, view.vol, song, focus, use],
   );
@@ -390,8 +390,8 @@ export function Jukebox({ x, floor }: { x: number; floor: number }) {
     if (dance.current) dance.current.scale.set(1 - 0.015 * p, 1 + 0.035 * p, 1 - 0.015 * p);
     if (dome.current) dome.current.scale.setScalar(1 + 0.4 * p);
     if (record.current && playing) record.current.rotation.z = -Math.max(0, sec) * 3.5;
-    neonArch.color.setHSL((base + beat / 16) % 1, playing ? 0.9 : 0.15, playing ? 0.55 + 0.12 * p : 0.32);
-    neonSides.color.setHSL((base + 0.5 + beat / 16) % 1, playing ? 0.9 : 0.15, playing ? 0.55 + 0.12 * p : 0.32);
+    neonArch.color.setHSL((base + beat / 16) % 1, playing ? 0.45 : 0.12, playing ? 0.55 + 0.12 * p : 0.32);
+    neonSides.color.setHSL((base + 0.5 + beat / 16) % 1, playing ? 0.45 : 0.12, playing ? 0.55 + 0.12 * p : 0.32);
     for (let i = 0; i < NOTES.length; i++) {
       const s = notes.current[i];
       if (!s) continue;
@@ -402,14 +402,14 @@ export function Jukebox({ x, floor }: { x: number; floor: number }) {
       s.position.set(side * (0.22 + k * 0.15) + Math.sin(k * 7 + i) * 0.06, ARCH_Y + 0.5 + k * 0.85, 0.05);
       s.scale.setScalar(0.13 + k * 0.07);
       noteMats[i].opacity = 1 - k * k;
-      noteMats[i].color.setHSL((base + i * 0.13) % 1, 0.85, 0.65);
+      noteMats[i].color.setHSL((base + i * 0.13) % 1, 0.5, 0.72);
     }
   });
 
   return (
     <group position={[x, 0, HALF_D - D / 2]} rotation={ROT_FRONT}>
       {/* plinth */}
-      <Box size={[W, 0.1, D - 0.04]} position={[0, 0.05, 0]} color="#3d2c2e" outline />
+      <Box size={[W, 0.1, D - 0.04]} position={[0, 0.05, 0]} color="#3D454D" outline />
       <group ref={dance}>
         <Box size={[W - 0.08, 0.9, D - 0.1]} position={[0, 0.55, 0]} color={BODY} outline />
         {/* the arched top */}
@@ -419,17 +419,17 @@ export function Jukebox({ x, floor }: { x: number; floor: number }) {
         </mesh>
         <Ball r={0.06} position={[0, ARCH_Y + 0.5, 0]} color={TRIM} outline shadow={false} />
         {/* the lit window in the arch, and the record spinning behind it */}
-        <mesh position={[0, ARCH_Y, D / 2 - 0.045]} material={glow('#fff3b0')}>
+        <mesh position={[0, ARCH_Y, D / 2 - 0.045]} material={glow('#EEF3F8')}>
           <circleGeometry args={[0.36, 24, 0, Math.PI]} />
         </mesh>
         <group ref={record} position={[0, ARCH_Y + 0.15, D / 2 - 0.04]}>
-          <mesh material={toon('#1f1d2b')}>
+          <mesh material={toon('#1B2732')}>
             <circleGeometry args={[0.15, 24]} />
           </mesh>
           <mesh position={[0, 0, 0.002]} material={toon(song.color)}>
             <circleGeometry args={[0.055, 16]} />
           </mesh>
-          <mesh position={[0.028, 0.016, 0.003]} material={toon('#fffdf5')}>
+          <mesh position={[0.028, 0.016, 0.003]} material={toon('#FFFFFF')}>
             <circleGeometry args={[0.014, 8]} />
           </mesh>
         </group>
@@ -447,7 +447,7 @@ export function Jukebox({ x, floor }: { x: number; floor: number }) {
         {/* the song picker: a row of buttons, E for the next song */}
         <group ref={picker} position={[-0.07, 0.66, D / 2 - 0.03]}>
           <Box size={[0.56, 0.1, 0.06]} color={TRIM} outline shadow={false} />
-          {['#ef476f', '#ffd166', '#06d6a0', '#118ab2'].map((c, i) => (
+          {['#6699CC', '#D4B483', '#5FA8A0', '#4D7399'].map((c, i) => (
             <Box key={c} size={[0.09, 0.05, 0.03]} position={[-0.195 + i * 0.13, 0, 0.04]} color={c} shadow={false} />
           ))}
           <mesh visible={false} position={[0.02, 0.2, 0.03]}>
@@ -456,7 +456,7 @@ export function Jukebox({ x, floor }: { x: number; floor: number }) {
         </group>
         {/* the power button */}
         <group ref={power} position={[0.32, 0.66, D / 2 - 0.02]}>
-          <Cyl r={0.05} h={0.05} rotation={[Math.PI / 2, 0, 0]} color={view.on ? '#e63946' : '#6c757d'} outline shadow={false} />
+          <Cyl r={0.05} h={0.05} rotation={[Math.PI / 2, 0, 0]} color={view.on ? '#7FC4A0' : '#6B7580'} outline shadow={false} />
           <mesh visible={false}>
             <boxGeometry args={[0.14, 0.14, 0.12]} />
           </mesh>
@@ -467,13 +467,13 @@ export function Jukebox({ x, floor }: { x: number; floor: number }) {
         <VolumeButton ref={softer} x={-0.31} plus={false} />
         <VolumeButton ref={louder} x={0.31} plus />
         {/* the speaker, thumping on the beat */}
-        <mesh position={[0, 0.36, D / 2 - 0.045]} material={toon('#2b2d42')}>
+        <mesh position={[0, 0.36, D / 2 - 0.045]} material={toon('#26394D')}>
           <circleGeometry args={[0.22, 24]} />
         </mesh>
-        <mesh position={[0, 0.36, D / 2 - 0.04]} material={toon('#495057')}>
+        <mesh position={[0, 0.36, D / 2 - 0.04]} material={toon('#3D454D')}>
           <ringGeometry args={[0.12, 0.17, 24]} />
         </mesh>
-        <mesh ref={dome} position={[0, 0.36, D / 2 - 0.04]} material={toon('#adb5bd')}>
+        <mesh ref={dome} position={[0, 0.36, D / 2 - 0.04]} material={toon('#AEB8C2')}>
           <sphereGeometry args={[0.07, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
         </mesh>
         {NOTES.map((i) => (
@@ -523,7 +523,7 @@ function drawMeter(ctx: CanvasRenderingContext2D, vol: number, cx: number, botto
   const gap = 10;
   const label = 84;
   const left = cx - (label + MAX_MUSIC_LEVEL * bar + (MAX_MUSIC_LEVEL - 1) * gap) / 2;
-  ctx.font = `800 32px ${SANS}`;
+  ctx.font = `700 32px ${SANS}`;
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffffff';
   ctx.fillText('VOL', left, bottom - 16);
@@ -533,7 +533,7 @@ function drawMeter(ctx: CanvasRenderingContext2D, vol: number, cx: number, botto
     const bh = 14 + ((METER_H - 14) * i) / (MAX_MUSIC_LEVEL - 1);
     const x = left + label + i * (bar + gap);
     roundRect(ctx, x, bottom - bh, bar, bh, 5);
-    ctx.fillStyle = i < vol ? '#ffffff' : 'rgba(31, 29, 43, 0.35)';
+    ctx.fillStyle = i < vol ? '#ffffff' : 'rgba(38, 57, 77, 0.35)';
     ctx.fill();
     ctx.stroke();
   }
@@ -562,12 +562,12 @@ function FocusButton({ ref, on }: { ref: Ref<THREE.Group>; on: boolean }) {
   const draw = useMemo(
     () => (ctx: CanvasRenderingContext2D) => {
       roundRect(ctx, 4, 4, FOCUS_PX.w - 8, FOCUS_PX.h - 8, 14);
-      ctx.fillStyle = on ? '#06d6a0' : '#ced4da';
+      ctx.fillStyle = on ? '#4A8A84' : '#DCE3EA';
       ctx.fill();
       ctx.lineWidth = 6;
       ctx.strokeStyle = INK;
       ctx.stroke();
-      ctx.font = `800 40px ${SANS}`;
+      ctx.font = `700 40px ${SANS}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = on ? '#ffffff' : INK;
@@ -578,7 +578,7 @@ function FocusButton({ ref, on }: { ref: Ref<THREE.Group>; on: boolean }) {
   const tex = useCanvasTexture(FOCUS_PX.w, FOCUS_PX.h, draw, [on]);
   return (
     <group ref={ref} position={[0.315, 0.51, D / 2 - 0.02]}>
-      <Box size={[0.16, 0.075, 0.03]} color={on ? '#06d6a0' : TRIM} outline shadow={false} />
+      <Box size={[0.16, 0.075, 0.03]} color={on ? '#4A8A84' : TRIM} outline shadow={false} />
       <mesh position={[0, 0, 0.016]}>
         <planeGeometry args={[0.15, 0.0675]} />
         <meshBasicMaterial map={tex} transparent toneMapped={false} />

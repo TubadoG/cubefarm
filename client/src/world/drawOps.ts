@@ -1,22 +1,10 @@
 import { fmtDuration, fmtPct, fmtUsd } from '../ops';
-import { roundRect, SANS } from './draw';
+import { roundRect, SANS, SCREEN } from './draw';
 
 // 2D canvas painters for mission control's screens in the lobby (MissionControl.tsx). Each takes exactly the numbers
 // it shows, so a screen repaints only when one of them changes.
 
-const C = {
-  bg: '#0f1530',
-  grid: 'rgba(143, 211, 255, 0.06)',
-  line: '#27315c',
-  title: '#8fd3ff',
-  text: '#eef1ff',
-  dim: '#6f7aa8',
-  good: '#7CFFB2',
-  warn: '#ffd166',
-  bad: '#ff6b6b',
-  idle: '#4a557f',
-  ceo: '#b388ff',
-};
+const C = SCREEN;
 
 /** A floor's label on the screens. */
 export interface FloorTag {
@@ -57,7 +45,7 @@ function frame(ctx: CanvasRenderingContext2D, w: number, h: number, title: strin
   ctx.stroke();
   ctx.textBaseline = 'middle';
   text(ctx, title, 32, 46, 40, C.title);
-  if (sub) text(ctx, sub, w - 32, 48, 26, C.dim, 'right', 500, w * 0.55);
+  if (sub) text(ctx, sub, w - 32, 48, 26, C.dim, 'right', 400, w * 0.55);
   ctx.fillStyle = C.line;
   ctx.fillRect(32, 82, w - 64, 3);
 }
@@ -68,8 +56,8 @@ function floorLabel(ctx: CanvasRenderingContext2D, f: FloorTag, x: number, y: nu
   roundRect(ctx, x, y - s / 2, s, s, s * 0.25);
   ctx.fillStyle = f.color;
   ctx.fill();
-  text(ctx, String(f.floor), x + s / 2, y + 2, size * 0.8, '#1f1d2b', 'center');
-  text(ctx, f.name, x + s + 14, y, size * 0.8, C.text, 'left', 600, max - s - 14);
+  text(ctx, String(f.floor), x + s / 2, y + 2, size * 0.8, '#1B2732', 'center');
+  text(ctx, f.name, x + s + 14, y, size * 0.8, C.text, 'left', 700, max - s - 14);
 }
 
 // ---------- the pipeline ----------
@@ -100,7 +88,7 @@ export function drawPipeline(ctx: CanvasRenderingContext2D, w: number, h: number
   const nameW = 270;
   const colW = (w - 64 - nameW) / STAGES.length;
   const colX = (i: number) => 32 + nameW + colW * i + colW / 2;
-  STAGES.forEach(([, label], i) => text(ctx, label, colX(i), 118, 24, C.dim, 'center', 600, colW - 6));
+  STAGES.forEach(([, label], i) => text(ctx, label, colX(i), 118, 24, C.dim, 'center', 700, colW - 6));
   const rows = d.floors.slice(0, MAX_ROWS);
   const top = 148;
   const rowH = Math.min(100, (h - top - 30) / (rows.length + 1));
@@ -110,7 +98,7 @@ export function drawPipeline(ctx: CanvasRenderingContext2D, w: number, h: number
       roundRect(ctx, colX(i) - colW * 0.36, y - rowH * 0.38, colW * 0.72, rowH * 0.76, rowH * 0.38);
       ctx.fillStyle = C.bad;
       ctx.fill();
-      text(ctx, String(n), colX(i), y + 2, size, '#ffffff', 'center');
+      text(ctx, String(n), colX(i), y + 2, size, '#1B2732', 'center');
     } else text(ctx, String(n), colX(i), y + 2, size, n ? (bold ? C.title : C.text) : C.dim, 'center');
   };
   rows.forEach((f, r) => {
@@ -124,7 +112,7 @@ export function drawPipeline(ctx: CanvasRenderingContext2D, w: number, h: number
   const more = d.floors.length - rows.length;
   text(ctx, more > 0 ? `All (+${more} more)` : 'All floors', 32, y, Math.min(36, rowH * 0.42), C.title, 'left', 700, nameW - 10);
   STAGES.forEach(([key], i) => cell(d.total[key], key, i, y, true));
-  if (d.total.triage) text(ctx, `🧭 ${d.total.triage} with the CEO`, colX(STAGES.length - 1), Math.min(h - 18, y + rowH * 0.62), 20, C.warn, 'center', 600, colW + 30);
+  if (d.total.triage) text(ctx, `🧭 ${d.total.triage} with the CEO`, colX(STAGES.length - 1), Math.min(h - 18, y + rowH * 0.62), 20, C.warn, 'center', 700, colW + 30);
 }
 
 // ---------- throughput ----------
@@ -133,8 +121,8 @@ export function drawPipeline(ctx: CanvasRenderingContext2D, w: number, h: number
 export function drawThroughput(ctx: CanvasRenderingContext2D, w: number, h: number, d: { today: number; hour: number; spark: number[]; floors: (FloorTag & { today: number })[] }) {
   frame(ctx, w, h, 'THROUGHPUT', 'pull requests merged');
   text(ctx, String(d.today), 150, 225, 160, C.good, 'center');
-  text(ctx, 'today', 150, 325, 36, C.dim, 'center', 600);
-  text(ctx, `${d.hour} in the last hour`, 150, 380, 28, d.hour ? C.text : C.dim, 'center', 600, 260);
+  text(ctx, 'today', 150, 325, 36, C.dim, 'center', 700);
+  text(ctx, `${d.hour} in the last hour`, 150, 380, 28, d.hour ? C.text : C.dim, 'center', 700, 260);
 
   const x0 = 310;
   const x1 = w - 36;
@@ -146,14 +134,14 @@ export function drawThroughput(ctx: CanvasRenderingContext2D, w: number, h: numb
   d.spark.forEach((n, i) => {
     const bh = n ? Math.max(8, ((yBase - yTop) * n) / max) : 4;
     roundRect(ctx, x0 + i * slot + 3, yBase - bh, slot - 6, bh, Math.min(6, (slot - 6) / 2));
-    ctx.fillStyle = n ? (i === d.spark.length - 1 ? C.good : 'rgba(143, 211, 255, 0.75)') : C.line;
+    ctx.fillStyle = n ? (i === d.spark.length - 1 ? C.good : 'rgba(143, 181, 221, 0.75)') : C.line;
     ctx.fill();
   });
   ctx.fillStyle = C.line;
   ctx.fillRect(x0, yBase + 4, x1 - x0, 2);
-  text(ctx, '24 h ago', x0, yBase + 30, 22, C.dim, 'left', 500);
-  text(ctx, `busiest hour: ${peak}`, (x0 + x1) / 2, yBase + 30, 22, C.dim, 'center', 500);
-  text(ctx, 'now', x1, yBase + 30, 22, C.dim, 'right', 500);
+  text(ctx, '24 h ago', x0, yBase + 30, 22, C.dim, 'left', 400);
+  text(ctx, `busiest hour: ${peak}`, (x0 + x1) / 2, yBase + 30, 22, C.dim, 'center', 400);
+  text(ctx, 'now', x1, yBase + 30, 22, C.dim, 'right', 400);
 
   // each floor's merges today
   const shown = d.floors.slice(0, 4);
@@ -163,8 +151,8 @@ export function drawThroughput(ctx: CanvasRenderingContext2D, w: number, h: numb
     floorLabel(ctx, f, x, 500, 26, each - 90);
     text(ctx, String(f.today), x + each - 16, 500, 40, f.today ? C.text : C.dim, 'right');
   });
-  if (!shown.length) text(ctx, 'No floors yet', w / 2, 500, 30, C.dim, 'center', 600);
-  text(ctx, 'merged today, by floor', w / 2, 560, 22, C.dim, 'center', 500);
+  if (!shown.length) text(ctx, 'No floors yet', w / 2, 500, 30, C.dim, 'center', 700);
+  text(ctx, 'merged today, by floor', w / 2, 560, 22, C.dim, 'center', 400);
 }
 
 // ---------- flow and CI ----------
@@ -196,18 +184,18 @@ export function drawFlow(ctx: CanvasRenderingContext2D, w: number, h: number, d:
     const x = 32 + (i % 2) * (tw + 20);
     const y = 102 + Math.floor(i / 2) * (th + 14);
     roundRect(ctx, x, y, tw, th, 18);
-    ctx.fillStyle = 'rgba(143, 211, 255, 0.07)';
+    ctx.fillStyle = 'rgba(170, 191, 213, 0.08)';
     ctx.fill();
     text(ctx, label, x + 22, y + 30, 24, C.dim, 'left', 700);
     text(ctx, value, x + 22, y + 88, 66, color, 'left', 700, tw - 40);
-    text(ctx, sub, x + 22, y + 138, 22, C.dim, 'left', 500, tw - 40);
+    text(ctx, sub, x + 22, y + 138, 22, C.dim, 'left', 400, tw - 40);
   });
   d.floors.slice(0, 2).forEach((f, i) => {
     const y = 470 + i * 52;
     floorLabel(ctx, f, 32, y, 26, 330);
-    text(ctx, `lead ${fmtDuration(f.leadMs)} · QA wait ${fmtDuration(f.qaWaitMs)} · CI ${fmtPct(f.ciPass)}${f.ciRuns ? ` · ${fmtDuration(f.ciMs)}` : ''}`, w - 32, y, 26, C.text, 'right', 600, w - 400);
+    text(ctx, `lead ${fmtDuration(f.leadMs)} · QA wait ${fmtDuration(f.qaWaitMs)} · CI ${fmtPct(f.ciPass)}${f.ciRuns ? ` · ${fmtDuration(f.ciMs)}` : ''}`, w - 32, y, 26, C.text, 'right', 700, w - 400);
   });
-  if (d.floors.length > 2) text(ctx, `+${d.floors.length - 2} more floors in the manager's console`, w / 2, 576, 20, C.dim, 'center', 500);
+  if (d.floors.length > 2) text(ctx, `+${d.floors.length - 2} more floors in the manager's console`, w / 2, 576, 20, C.dim, 'center', 400);
 }
 
 // ---------- the team ----------
@@ -243,12 +231,12 @@ export function drawTeam(ctx: CanvasRenderingContext2D, w: number, h: number, d:
       roundRect(ctx, x, y - rowH * 0.26, n * unit - 4, rowH * 0.52, 8);
       ctx.fillStyle = color;
       ctx.fill();
-      if (n * unit > 40) text(ctx, String(n), x + (n * unit - 4) / 2, y + 2, Math.round(rowH * 0.36), '#14182c', 'center');
+      if (n * unit > 40) text(ctx, String(n), x + (n * unit - 4) / 2, y + 2, Math.round(rowH * 0.36), color === C.idle ? C.text : '#1B2732', 'center');
       x += n * unit;
     }
     text(ctx, `${f.busy}/${f.busy + f.idle + f.errors}`, w - 32, y, Math.round(rowH * 0.42), f.errors ? C.bad : C.text, 'right');
   });
-  if (!rows.length) text(ctx, 'No floors yet', w / 2, h / 2, 34, C.dim, 'center', 600);
+  if (!rows.length) text(ctx, 'No floors yet', w / 2, h / 2, 34, C.dim, 'center', 700);
   const ly = h - 28;
   [
     ['busy', C.good],
@@ -259,7 +247,7 @@ export function drawTeam(ctx: CanvasRenderingContext2D, w: number, h: number, d:
     roundRect(ctx, x, ly - 11, 22, 22, 6);
     ctx.fillStyle = color;
     ctx.fill();
-    text(ctx, label, x + 32, ly, 22, C.dim, 'left', 600);
+    text(ctx, label, x + 32, ly, 22, C.dim, 'left', 700);
   });
 }
 
@@ -292,10 +280,10 @@ export function drawUsage(ctx: CanvasRenderingContext2D, w: number, h: number, d
     ctx.fillStyle = d.pct >= 90 ? C.bad : d.pct >= 75 ? C.warn : C.good;
     ctx.fill();
   }
-  text(ctx, d.limit, w / 2, 320, 34, C.text, 'center', 600, w - 80);
-  text(ctx, d.resets ? `resets ${d.resets}` : 'nothing to reset', w / 2, 368, 30, C.dim, 'center', 600);
+  text(ctx, d.limit, w / 2, 320, 34, C.text, 'center', 700, w - 80);
+  text(ctx, d.resets ? `resets ${d.resets}` : 'nothing to reset', w / 2, 368, 30, C.dim, 'center', 700);
   roundRect(ctx, 60, 404, w - 120, 64, 32);
-  ctx.fillStyle = d.tone === 'warn' ? 'rgba(255, 209, 102, 0.16)' : 'rgba(143, 211, 255, 0.08)';
+  ctx.fillStyle = d.tone === 'warn' ? 'rgba(226, 194, 110, 0.16)' : 'rgba(170, 191, 213, 0.08)';
   ctx.fill();
   text(ctx, d.hint, w / 2, 437, 28, d.tone === 'warn' ? C.warn : C.dim, 'center', 700, w - 160);
 }
@@ -306,7 +294,7 @@ export function drawUsage(ctx: CanvasRenderingContext2D, w: number, h: number, d
 export function drawCost(ctx: CanvasRenderingContext2D, w: number, h: number, d: { floors: (FloorTag & { usd: number })[]; ceo: number; total: number }) {
   frame(ctx, w, h, 'COST TODAY', 'estimate · finished sessions');
   text(ctx, `~${fmtUsd(d.total)}`, w - 40, 150, 84, C.warn, 'right');
-  text(ctx, 'all floors and the CEO', w - 40, 210, 24, C.dim, 'right', 500);
+  text(ctx, 'all floors and the CEO', w - 40, 210, 24, C.dim, 'right', 400);
   const rows: (FloorTag & { usd: number })[] = [...d.floors.slice(0, 4), { floor: 0, name: 'CEO', color: C.ceo, usd: d.ceo }];
   const max = Math.max(0.01, ...rows.map((r) => r.usd));
   const top = 250;
@@ -328,11 +316,11 @@ export function drawCost(ctx: CanvasRenderingContext2D, w: number, h: number, d:
 
 /** Above the screens: the wall's name, and either all clear or what needs the manager. */
 export function drawStrip(ctx: CanvasRenderingContext2D, w: number, h: number, d: { alarms: string[] }) {
-  ctx.fillStyle = d.alarms.length ? '#3a0d18' : '#0b1024';
+  ctx.fillStyle = d.alarms.length ? '#4A2B30' : '#1B2732';
   ctx.fillRect(0, 0, w, h);
   ctx.textBaseline = 'middle';
   text(ctx, '🛰️ MISSION CONTROL', 40, h / 2 + 4, h * 0.46, C.title);
   const n = d.alarms.length;
   if (!n) text(ctx, '✓ All clear', w - 40, h / 2 + 4, h * 0.42, C.good, 'right');
-  else text(ctx, `🚨 ${n > 1 ? `${n} need you · ` : ''}${d.alarms[0]}`, w - 40, h / 2 + 4, h * 0.36, '#ffd6dc', 'right', 700, w * 0.6);
+  else text(ctx, `🚨 ${n > 1 ? `${n} need you · ` : ''}${d.alarms[0]}`, w - 40, h / 2 + 4, h * 0.36, '#F5DEDC', 'right', 700, w * 0.6);
 }

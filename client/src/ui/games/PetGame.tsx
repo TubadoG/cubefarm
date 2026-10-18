@@ -8,7 +8,7 @@ import { blip } from './sounds';
 // Desk Pet on the phone: a little cube creature living on a cubicle desk. Feed it, give it coffee, play with it and
 // let it nap; it grows up (Intern to Tech Lead) the more you look after it, and cheers when the team ships.
 
-export const PET_COLOR = '#ff6fb5';
+export const PET_COLOR = '#B4A7D6';
 
 const W = 320;
 const H = 260;
@@ -48,7 +48,7 @@ export function drawPetFigure(ctx: CanvasRenderingContext2D, f: Figure) {
   const dark = shade(f.color, -0.3);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.fillStyle = 'rgba(31,29,43,0.16)';
+  ctx.fillStyle = 'rgba(27,39,50,0.16)';
   ctx.beginPath();
   ctx.ellipse(0, 2, s * 0.46, s * 0.07, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -164,7 +164,7 @@ export function drawPetFigure(ctx: CanvasRenderingContext2D, f: Figure) {
   const chest = top + s * 0.76;
   if (f.stage === 0) {
     // an intern's visitor badge on a lanyard
-    ctx.strokeStyle = '#4fb3e8';
+    ctx.strokeStyle = '#6699CC';
     ctx.lineWidth = lw * 0.9;
     ctx.beginPath();
     ctx.moveTo(-s * 0.2, top + s * 0.7);
@@ -172,7 +172,7 @@ export function drawPetFigure(ctx: CanvasRenderingContext2D, f: Figure) {
     ctx.lineTo(s * 0.2, top + s * 0.7);
     ctx.stroke();
     toonBlock(ctx, -s * 0.09, chest, s * 0.18, s * 0.14, '#ffffff', s * 0.03, lw * 0.8);
-    ctx.fillStyle = '#4fb3e8';
+    ctx.fillStyle = '#6699CC';
     ctx.fillRect(-s * 0.06, chest + s * 0.04, s * 0.12, s * 0.025);
   } else {
     // a tie
@@ -185,7 +185,7 @@ export function drawPetFigure(ctx: CanvasRenderingContext2D, f: Figure) {
     ctx.lineTo(-s * 0.065, chest + s * 0.15);
     ctx.lineTo(-s * 0.035, chest + s * 0.02);
     ctx.closePath();
-    ctx.fillStyle = f.color === '#f25f5c' || f.color === '#ff6fb5' ? '#2b2d42' : '#f25f5c';
+    ctx.fillStyle = f.color === '#f25f5c' || f.color === '#ff6fb5' ? '#26394D' : '#f25f5c';
     ctx.fill();
     ctx.lineWidth = lw * 0.8;
     ctx.strokeStyle = INK;
@@ -198,7 +198,7 @@ export function drawPetFigure(ctx: CanvasRenderingContext2D, f: Figure) {
     ctx.beginPath();
     ctx.arc(0, top + s * 0.4, s * 0.53, Math.PI * 1.12, Math.PI * 1.88);
     ctx.stroke();
-    for (const side of [-1, 1]) toonBlock(ctx, side * s * 0.52 - s * 0.08, top + s * 0.28, s * 0.16, s * 0.24, '#2b2d42', s * 0.05, lw * 0.8);
+    for (const side of [-1, 1]) toonBlock(ctx, side * s * 0.52 - s * 0.08, top + s * 0.28, s * 0.16, s * 0.24, '#26394D', s * 0.05, lw * 0.8);
     ctx.lineWidth = lw;
     ctx.beginPath();
     ctx.moveTo(-s * 0.52, top + s * 0.5);
@@ -278,11 +278,11 @@ function drawMug(ctx: CanvasRenderingContext2D, x: number, y: number, now: numbe
 
 /** Its little cubicle: fabric wall, a pinboard, employee of the month, a desk with a monitor and a plant. */
 function drawCubicle(ctx: CanvasRenderingContext2D, now: number, star: boolean) {
-  ctx.fillStyle = '#d6e2ef';
+  ctx.fillStyle = '#DCE3EA';
   ctx.fillRect(0, 0, W, DESK_Y);
   ctx.fillStyle = 'rgba(255,255,255,0.28)';
   for (let x = 6; x < W; x += 12) ctx.fillRect(x, 12, 1.5, DESK_Y - 12);
-  ctx.fillStyle = '#b9c9dc';
+  ctx.fillStyle = '#AABFD5';
   ctx.fillRect(0, 0, W, 12);
   ctx.fillStyle = INK;
   ctx.fillRect(0, 12, W, 2);
@@ -290,8 +290,8 @@ function drawCubicle(ctx: CanvasRenderingContext2D, now: number, star: boolean) 
   // pinboard with sticky notes
   toonBlock(ctx, 16, 58, 76, 52, '#d9a066', 6, 2);
   const notes: [number, number, string, number][] = [
-    [24, 66, '#fff3b0', -0.08],
-    [56, 70, '#ffd6e8', 0.1],
+    [24, 66, '#FFFFFF', -0.08],
+    [56, 70, '#DDE8F4', 0.1],
   ];
   for (const [x, y, c, rot] of notes) {
     ctx.save();
@@ -302,7 +302,7 @@ function drawCubicle(ctx: CanvasRenderingContext2D, now: number, star: boolean) 
     ctx.strokeStyle = INK;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(-13, -13, 26, 26);
-    ctx.strokeStyle = 'rgba(31,29,43,0.4)';
+    ctx.strokeStyle = 'rgba(38,57,77,0.4)';
     ctx.lineWidth = 1.2;
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
@@ -312,7 +312,7 @@ function drawCubicle(ctx: CanvasRenderingContext2D, now: number, star: boolean) 
     }
     ctx.beginPath();
     ctx.arc(0, -11, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#f25f5c';
+    ctx.fillStyle = '#E07A72';
     ctx.fill();
     ctx.restore();
   }
@@ -321,7 +321,7 @@ function drawCubicle(ctx: CanvasRenderingContext2D, now: number, star: boolean) 
   toonBlock(ctx, 232, 54, 66, 60, '#ffffff', 5, 2);
   text(ctx, 'EMPLOYEE', 265, 64, 7.5, INK, 700);
   text(ctx, 'OF THE MONTH', 265, 73, 7, INK, 700);
-  drawStar(ctx, 265, 93, 13, star ? '#ffc93c' : '#e3e7ee');
+  drawStar(ctx, 265, 93, 13, star ? '#D4B483' : '#DCE3EA');
 
   // the office clock, telling the real time
   const d = new Date();
@@ -348,20 +348,20 @@ function drawCubicle(ctx: CanvasRenderingContext2D, now: number, star: boolean) 
   }
   ctx.beginPath();
   ctx.arc(clockX, clockY, 2.5, 0, Math.PI * 2);
-  ctx.fillStyle = '#f25f5c';
+  ctx.fillStyle = '#6699CC';
   ctx.fill();
 
   // the desk
-  ctx.fillStyle = '#d9b48a';
+  ctx.fillStyle = '#B9C6D3';
   ctx.fillRect(0, DESK_Y + 12, W, H - DESK_Y - 12);
   ctx.fillStyle = INK;
   ctx.fillRect(0, DESK_Y + 12, W, 2);
-  toonBlock(ctx, -6, DESK_Y, W + 12, 14, '#f1d19b', 5, 2.5);
+  toonBlock(ctx, -6, DESK_Y, W + 12, 14, '#E4E9EE', 5, 2.5);
 
   // monitor with code scrolling by
-  toonBlock(ctx, 48, DESK_Y - 12, 18, 12, '#3d4152', 2, 2);
-  toonBlock(ctx, 18, DESK_Y - 66, 78, 54, '#2b2d42', 7, 2.5);
-  ctx.fillStyle = '#1b1b29';
+  toonBlock(ctx, 48, DESK_Y - 12, 18, 12, '#5C6B7A', 2, 2);
+  toonBlock(ctx, 18, DESK_Y - 66, 78, 54, '#3D454D', 7, 2.5);
+  ctx.fillStyle = '#1B2732';
   ctx.fillRect(25, DESK_Y - 59, 64, 40);
   const scroll = Math.floor(now / 700);
   for (let i = 0; i < 5; i++) {
@@ -379,12 +379,12 @@ function drawCubicle(ctx: CanvasRenderingContext2D, now: number, star: boolean) 
   ]) {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#52b788';
+    ctx.fillStyle = '#5E9C7E';
     ctx.fill();
     ctx.strokeStyle = INK;
     ctx.stroke();
   }
-  toonBlock(ctx, 248, DESK_Y - 26, 32, 26, '#e07a5f', 5, 2);
+  toonBlock(ctx, 248, DESK_Y - 26, 32, 26, '#AABFD5', 5, 2);
 }
 
 /** The box a new desk pet arrives in, standing on (0, 0). */
@@ -548,7 +548,7 @@ export function Pet({ onBack }: { onBack: () => void }) {
       ctx.rotate(wob);
       drawDeliveryBox(ctx);
       ctx.restore();
-      outlinedText(ctx, '?', W / 2 + 34, DESK_Y - 70 + Math.sin(t / 300) * 3, 20, '#ffc93c');
+      outlinedText(ctx, '?', W / 2 + 34, DESK_Y - 70 + Math.sin(t / 300) * 3, 20, '#E2C26E');
     } else {
       const size = SIZES[st];
       let x = W / 2;
@@ -620,7 +620,7 @@ export function Pet({ onBack }: { onBack: () => void }) {
           // a little storm cloud
           const cx = x;
           const cy = headY - 22 + bob;
-          ctx.fillStyle = '#8e93a8';
+          ctx.fillStyle = '#8A96A3';
           ctx.strokeStyle = INK;
           ctx.lineWidth = 2;
           ctx.beginPath();
@@ -636,20 +636,20 @@ export function Pet({ onBack }: { onBack: () => void }) {
             ctx.lineTo(cx - 3, cy + 16);
             ctx.lineTo(cx + 2, cy + 16);
             ctx.lineTo(cx - 2, cy + 24);
-            ctx.strokeStyle = '#ffc93c';
+            ctx.strokeStyle = '#E2C26E';
             ctx.lineWidth = 2.5;
             ctx.stroke();
           }
         } else if (m === 'happy' && Math.floor(t / 900) % 3 === 0) {
           const sp = (t % 900) / 900;
           ctx.globalAlpha = Math.sin(sp * Math.PI);
-          outlinedText(ctx, '✦', x - size * 0.6, headY + 10 - sp * 8, 14, '#ffc93c');
+          outlinedText(ctx, '✦', x - size * 0.6, headY + 10 - sp * 8, 14, '#E2C26E');
           outlinedText(ctx, '✦', x + size * 0.62, headY + 22 - sp * 6, 11, '#ffffff');
           ctx.globalAlpha = 1;
         }
       }
       if (m === 'asleep') {
-        ctx.fillStyle = 'rgba(28,36,82,0.32)';
+        ctx.fillStyle = 'rgba(27,39,50,0.32)';
         ctx.fillRect(0, 0, W, H);
       }
     }
@@ -675,9 +675,9 @@ export function Pet({ onBack }: { onBack: () => void }) {
   const day = view ? Math.floor((now - view.born) / 86_400_000) + 1 : 0;
   const bars: [string, string, number, string][] = view
     ? [
-        ['🍩', 'Food', view.food, '#ffc93c'],
-        ['🎾', 'Fun', view.fun, '#ff6fb5'],
-        ['⚡', 'Energy', view.energy, '#4fb3e8'],
+        ['🍩', 'Food', view.food, 'var(--gold)'],
+        ['🎾', 'Fun', view.fun, 'var(--lavender)'],
+        ['⚡', 'Energy', view.energy, 'var(--sky)'],
       ]
     : [];
 

@@ -42,11 +42,11 @@ function logger() {
 /** A painter like draw.ts's: text laid out with measureText, a gradient, paths and a picture. */
 function sign(ctx: CanvasRenderingContext2D, picture?: CanvasImageSource) {
   const g = ctx.createLinearGradient(0, 0, 100, 50);
-  g.addColorStop(0, '#20224a');
-  g.addColorStop(1, '#3a1f4d');
+  g.addColorStop(0, '#1B2732');
+  g.addColorStop(1, '#26394D');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  ctx.font = '700 20px Fredoka';
+  ctx.font = '700 20px komet';
   const w = ctx.measureText('hello').width;
   ctx.save();
   ctx.textAlign = 'center';
@@ -79,7 +79,7 @@ describe('recorded painting', () => {
     const rec = record(100, 50, (ctx) => sign(ctx, picture), spy);
     expect(rec).not.toBeNull();
     expect(rec!.images).toEqual([picture]);
-    expect(measured).toEqual(['700 20px Fredoka']);
+    expect(measured).toEqual(['700 20px komet']);
 
     const replayed = logger();
     replay(replayed.ctx, rec!.ops, rec!.images);

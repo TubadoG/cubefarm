@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { DECOR_SLOTS, stored, type DecorItem, type FloorProgressView } from '../../../../shared/progress';
 import type { RepoView } from '../../../../shared/types';
 import { useStore } from '../../store';
-import { roundRect, SANS } from '../draw';
+import { BODY, inkOnColor, MONO, roundRect, SANS } from '../draw';
 import { useCanvasTexture, useInteractable } from '../interact';
 import { DECOR_BOX } from '../layout';
 import { glass, shade } from '../materials';
@@ -84,19 +84,16 @@ function drawPoster(ctx: CanvasRenderingContext2D, w: number, h: number, item: D
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   if (item === 'poster-ship') {
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#3a86ff');
-    g.addColorStop(1, '#8338ec');
-    ctx.fillStyle = g;
+    ctx.fillStyle = '#4D7399';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     for (let i = 0; i < 26; i++) ctx.fillRect((i * 97) % w, (i * 151) % (h * 0.6), 4, 4);
     ctx.font = `${w * 0.36}px ${SANS}`;
     ctx.fillText('🚀', w / 2, h * 0.38);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#FFFFFF';
     ctx.font = `700 ${w * 0.17}px ${SANS}`;
     ctx.fillText('SHIP IT', w / 2, h * 0.7);
-    ctx.font = `500 ${w * 0.06}px ${SANS}`;
+    ctx.font = `400 ${w * 0.06}px ${SANS}`;
     ctx.fillText('merged is better than perfect', w / 2, h * 0.82);
     return;
   }
@@ -107,32 +104,32 @@ function drawPoster(ctx: CanvasRenderingContext2D, w: number, h: number, item: D
     ctx.beginPath();
     ctx.arc(w * 0.5, h * 0.42, w * 0.36, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `600 ${w * 0.075}px ${SANS}`;
+    ctx.fillStyle = inkOnColor(repo.color);
+    ctx.font = `700 ${w * 0.075}px ${SANS}`;
     ctx.fillText(`FLOOR ${repo.floor}`, w / 2, h * 0.16);
     ctx.font = `700 ${w * 0.13}px ${SANS}`;
     wrap(ctx, shortName(repo), w * 0.86, 2).forEach((l, i, all) => ctx.fillText(l, w / 2, h * 0.42 + (i - (all.length - 1) / 2) * w * 0.15));
-    ctx.font = `500 ${w * 0.06}px ${SANS}`;
+    ctx.font = `400 ${w * 0.06}px ${SANS}`;
     ctx.fillText(repo.fullName.split('/')[0] ?? '', w / 2, h * 0.68);
-    ctx.font = `500 ${w * 0.05}px ${SANS}`;
+    ctx.font = `400 ${w * 0.05}px ${BODY}`;
     wrap(ctx, repo.description || 'built by a team of AI agents', w * 0.84, 2).forEach((l, i) => ctx.fillText(l, w / 2, h * 0.8 + i * w * 0.065));
     return;
   }
-  ctx.fillStyle = '#fff3d6';
+  ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = '#e9c46a';
+  ctx.strokeStyle = '#D4B483';
   ctx.lineWidth = w * 0.03;
   ctx.strokeRect(w * 0.05, w * 0.05, w * 0.9, h - w * 0.1);
-  ctx.fillStyle = '#9c6644';
-  ctx.font = `600 ${w * 0.07}px ${SANS}`;
+  ctx.fillStyle = '#436688';
+  ctx.font = `700 ${w * 0.07}px ${SANS}`;
   ctx.fillText('🏆 FIRST MERGE', w / 2, h * 0.14);
-  ctx.fillStyle = '#2d3142';
+  ctx.fillStyle = '#26394D';
   ctx.font = `700 ${w * 0.24}px ${SANS}`;
   ctx.fillText(firstPr ? `#${firstPr.n}` : '#?', w / 2, h * 0.36);
-  ctx.font = `600 ${w * 0.065}px ${SANS}`;
+  ctx.font = `600 ${w * 0.065}px ${BODY}`;
   wrap(ctx, firstPr?.title || 'The first PR this floor merges goes here', w * 0.8, 4).forEach((l, i) => ctx.fillText(l, w / 2, h * 0.56 + i * w * 0.085));
-  ctx.fillStyle = '#9c6644';
-  ctx.font = `500 ${w * 0.05}px ${SANS}`;
+  ctx.fillStyle = '#436688';
+  ctx.font = `400 ${w * 0.05}px ${SANS}`;
   ctx.fillText(shortName(repo), w / 2, h * 0.9);
 }
 
@@ -160,9 +157,9 @@ function Neon({ repo }: { repo: RepoView }) {
       ctx.textBaseline = 'middle';
       ctx.lineJoin = 'round';
       roundRect(ctx, 24, 24, 976, 252, 60);
-      ctx.strokeStyle = '#ff5d8f';
+      ctx.strokeStyle = '#8FB5DD';
       ctx.lineWidth = 10;
-      ctx.shadowColor = '#ff5d8f';
+      ctx.shadowColor = '#8FB5DD';
       ctx.shadowBlur = 28;
       ctx.stroke();
       let size = 150;
@@ -174,7 +171,7 @@ function Neon({ repo }: { repo: RepoView }) {
       ctx.lineWidth = 14;
       ctx.strokeText(name, 512, 154);
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 4;
       ctx.strokeText(name, 512, 154);
     },
@@ -196,19 +193,19 @@ function Arcade({ accent }: { accent: string }) {
     256,
     192,
     (ctx) => {
-      ctx.fillStyle = '#10002b';
+      ctx.fillStyle = '#1B2732';
       ctx.fillRect(0, 0, 256, 192);
       ctx.textAlign = 'center';
-      ctx.font = `700 20px monospace`;
-      ctx.fillStyle = '#ffd166';
+      ctx.font = `700 20px ${MONO}`;
+      ctx.fillStyle = '#E2C26E';
       ctx.fillText('CUBEFARM', 128, 34);
-      ctx.font = `700 16px monospace`;
+      ctx.font = `700 16px ${MONO}`;
       ['▶ CUBETRIS', '  CABLE SNAKE', '  DESK PET'].forEach((t, i) => {
-        ctx.fillStyle = i === 0 ? '#7CFFB2' : '#c77dff';
+        ctx.fillStyle = i === 0 ? '#7FC4A0' : '#B4A7D6';
         ctx.fillText(t, 128, 78 + i * 26);
       });
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `700 14px monospace`;
+      ctx.fillStyle = '#EAF0F6';
+      ctx.font = `700 14px ${MONO}`;
       ctx.fillText('PRESS  E', 128, 170);
     },
     [],
@@ -220,9 +217,7 @@ function Arcade({ accent }: { accent: string }) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = `700 78px ${SANS}`;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 18;
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = '#FFFFFF';
       ctx.fillText('ARCADE', 256, 68);
     },
     [],
@@ -284,7 +279,7 @@ function FishTank() {
       <instancedMesh ref={fish} args={[M.fishModel(), vertexToon, FISH_COLORS.length]} frustumCulled={false} />
       <mesh position={[0, standH + 0.05 + (tankH - 0.1) / 2, 0]}>
         <boxGeometry args={[w - 0.04, tankH - 0.1, d - 0.04]} />
-        <meshBasicMaterial color="#4cc9f0" transparent opacity={0.18} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial color="#7FB7D9" transparent opacity={0.18} depthWrite={false} toneMapped={false} />
       </mesh>
       <mesh position={[0, standH + tankH / 2, 0]} material={glass}>
         <boxGeometry args={[w, tankH, d]} />
@@ -353,7 +348,7 @@ const Placed = memo(function Placed({ slot, item, repo, floor, carrying }: { slo
 
 // ---------- carrying one ----------
 
-const markerMat = new THREE.MeshBasicMaterial({ color: '#7CFFB2', transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false });
+const markerMat = new THREE.MeshBasicMaterial({ color: '#7FC4A0', transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false });
 
 function Marker({ slot, item, back }: { slot: string; item: DecorItem; back: boolean }) {
   const p = placement(slot, item)!;
@@ -401,10 +396,10 @@ function DecorBox({ repo, floor, carrying }: { repo: RepoView; floor: FloorProgr
       ctx.fillRect(0, 0, 384, 192);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#5c3d2e';
+      ctx.fillStyle = '#26394D';
       ctx.font = `700 64px ${SANS}`;
       ctx.fillText('📦 DECOR', 192, 76);
-      ctx.font = `600 34px ${SANS}`;
+      ctx.font = `400 34px ${SANS}`;
       ctx.fillText(inside ? `${inside} inside` : 'empty', 192, 146);
     },
     [inside],

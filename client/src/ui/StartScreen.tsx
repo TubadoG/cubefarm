@@ -7,6 +7,7 @@ import { Key } from './Key';
 import { SetupWizard } from './SetupWizard';
 import { unlockAudio } from './sfx';
 import { announce } from './announce';
+import { BcRings } from './BcRings';
 
 export function StartScreen() {
   const started = useStore((s) => s.started);
@@ -37,7 +38,7 @@ export function StartScreen() {
   return (
     <div className="start">
       <div className="start-card">
-        <div className="start-logo">✻</div>
+        <BcRings />
         <h1>{settings.companyName || 'cubefarm'}</h1>
         <p className="start-tag">{settings.managerName ? `Welcome back, ${settings.managerName}.` : 'A cartoon office where a team of AI coding agents works through your GitHub issues.'}</p>
         <ul className="start-list">

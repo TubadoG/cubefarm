@@ -92,7 +92,7 @@ const COURIER: Agent = {
   look: 'masculine',
   task: null,
   desk: 0,
-  color: '#e63946',
+  color: '#6699CC',
   hair: '#3d2b1f',
   skin: '#d9a066',
   style: null,
@@ -152,7 +152,7 @@ const lampGeometry = merged([
 const bulbGeometry = new THREE.SphereGeometry(0.035, 12, 8).translate(-0.17, 0.27, 0);
 // the warm pool of light on the desk under the shade
 const poolGeometry = new THREE.PlaneGeometry(0.85, 0.75).rotateX(-Math.PI / 2).translate(-0.4, 0.006, 0.14);
-const BULB_OFF = new THREE.Color('#d6d0c2');
+const BULB_OFF = new THREE.Color('#DCE3EA');
 const BULB_ON = new THREE.Color('#fff1c1');
 const bulbMaterial = new THREE.MeshBasicMaterial({ color: BULB_OFF.clone(), toneMapped: false });
 const poolMaterial = new THREE.MeshBasicMaterial({ map: poolTexture(), color: '#ffd89a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
@@ -220,7 +220,7 @@ function DeskLamps({ agents }: { agents: Agent[] }) {
   });
   return (
     <>
-      <instancedMesh ref={lamps} args={[lampGeometry, toon('#3d5a80'), LAMP_MAX]} castShadow frustumCulled={false} />
+      <instancedMesh ref={lamps} args={[lampGeometry, toon('#3D4F63'), LAMP_MAX]} castShadow frustumCulled={false} />
       <instancedMesh ref={bulbs} args={[bulbGeometry, bulbMaterial, LAMP_MAX]} frustumCulled={false} />
       <instancedMesh ref={pools} args={[poolGeometry, poolMaterial, LAMP_MAX]} visible={false} frustumCulled={false} renderOrder={1} />
     </>

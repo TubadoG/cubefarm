@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { look } from './batch';
 import { Part, useBatches } from './Batched';
 import { toon } from './materials';
+import { INK } from './palette';
 
 // Small building blocks so furniture reads like a cartoon: flat toon shading + ink outlines. Inside <Batches> (an
 // office floor, the lobby) each one is drawn as an instance of its shape (batch.ts), so a floor of identical desks and
@@ -20,7 +21,6 @@ interface Common {
   children?: ReactNode;
 }
 
-const INK = '#1f1d2b';
 const OUTLINE = 0.018;
 
 // One geometry per size, shared by every batched part of that size (never disposed: a floor has a few dozen sizes).

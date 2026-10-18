@@ -140,14 +140,14 @@ void main() {
     float on = clamp((vLit * uLights - w.g) * 5.0, 0.0, 1.0) * w.r;
     vec3 glass = mix(vec3(0.12, 0.17, 0.26), uHemiSky * 0.6, 0.4);
     albedo = mix(albedo, glass, w.r * (1.0 - on * 0.6));
-    glow = mix(vec3(1.0, 0.68, 0.32), vec3(0.95, 0.88, 0.7), w.b) * on * 0.9;
+    glow = mix(vec3(0.91, 0.77, 0.48), vec3(0.95, 0.85, 0.63), w.b) * on * 0.9;
   } else {
     albedo *= 0.8;
   }
   // ink along the corners and the roofline, like the office's outlines
   float de = min(vEdge.y - abs(vEdge.x), vEdge.w - abs(vEdge.z));
   float ink = 1.0 - smoothstep(0.12, 0.12 + fwidth(de) * 1.5 + 1e-4, de);
-  albedo = mix(albedo, vec3(0.12, 0.11, 0.17), ink * 0.55);
+  albedo = mix(albedo, vec3(0.15, 0.22, 0.3), ink * 0.55);
   vec3 lit = toonLight(albedo, normalize(vN));
   ${FINISH}
 }

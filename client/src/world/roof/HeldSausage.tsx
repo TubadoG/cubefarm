@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { useStore } from '../../store';
 import { Outlines } from '../Outlines';
 import { toon } from '../materials';
+import { INK } from '../palette';
 import { sipPose } from '../toys/sipping';
 import { FIRST_PERSON } from '../viewTags';
 import { BITES } from './grillRules';
@@ -14,7 +15,6 @@ import { BITES } from './grillRules';
 // Where it sits in view (camera space, metres), pointing up and away, and where it goes for a bite.
 const VIEW = { x: 0.17, y: -0.15, z: -0.42, tilt: -0.5, turn: 0.7 };
 const MOUTH = { x: 0.03, y: -0.07, z: -0.24, tilt: -0.15, turn: 1.35 };
-const INK = '#1f1d2b';
 
 export function HeldSausage() {
   const held = useStore((s) => (s.held?.kind === 'sausage' ? s.held : null));

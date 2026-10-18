@@ -49,8 +49,9 @@ function startWorker() {
     };
     worker = w;
     stats.mode = 'starting';
-    const css = document.querySelector<HTMLLinkElement>('link[href*="fonts.googleapis.com/css"]')?.href;
-    post({ type: 'fonts', css: css ?? '' });
+    // The office's font stylesheets: Google Fonts (Mulish, JetBrains Mono) and the Adobe kit (Komet).
+    const links = document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href*="fonts.googleapis.com/css"], link[rel="stylesheet"][href*="use.typekit.net"]');
+    post({ type: 'fonts', css: [...links].map((l) => l.href) });
   } catch {
     worker = null;
   }

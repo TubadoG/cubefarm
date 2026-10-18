@@ -77,7 +77,7 @@ export function DayLights() {
 
   return (
     <>
-      <hemisphereLight ref={hemi} args={['#fffaf0', '#a48a6a', 0.95]} />
+      <hemisphereLight ref={hemi} args={['#F6F9FC', '#BAC6D3', 0.95]} />
       <ambientLight ref={ambient} intensity={0.18} />
       <directionalLight
         ref={key}

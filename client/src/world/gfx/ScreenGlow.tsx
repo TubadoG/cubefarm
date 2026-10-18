@@ -14,7 +14,7 @@ import { isTierAtLeast } from './quality';
 import { effectiveTier, useGfx } from './useGraphics';
 
 /** Screen light: a cool white, leaning a little towards the floor's colour. */
-const SCREEN = '#a9d4ff';
+const SCREEN = '#8FB5DD';
 const POOL = { desk: 0.42, floor: 0.3 };
 /** The most the face wash adds to the on-screen colour. */
 const FACE = 0.2;

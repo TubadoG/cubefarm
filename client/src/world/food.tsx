@@ -30,8 +30,8 @@ export function FoodLook({ kind }: { kind: Food }) {
     case 'lunchbox':
       return (
         <group>
-          <Box size={[0.17, 0.08, 0.12]} color="#4cc9f0" outline shadow={false} />
-          <Box size={[0.175, 0.025, 0.125]} position={[0, 0.045, 0]} color="#ffd166" shadow={false} />
+          <Box size={[0.17, 0.08, 0.12]} color="#6699CC" outline shadow={false} />
+          <Box size={[0.175, 0.025, 0.125]} position={[0, 0.045, 0]} color="#AABFD5" shadow={false} />
         </group>
       );
     case 'sandwich':
@@ -46,8 +46,8 @@ export function FoodLook({ kind }: { kind: Food }) {
     case 'noodles':
       return (
         <group>
-          <Cyl r={0.045} rTop={0.06} h={0.12} color="#f8f9fa" outline shadow={false} />
-          <Cyl r={0.046} rTop={0.052} h={0.03} position={[0, -0.01, 0]} color="#e63946" shadow={false} />
+          <Cyl r={0.045} rTop={0.06} h={0.12} color="#F6F9FC" outline shadow={false} />
+          <Cyl r={0.046} rTop={0.052} h={0.03} position={[0, -0.01, 0]} color="#6699CC" shadow={false} />
           <Cyl r={0.006} h={0.2} position={[0.015, 0.1, 0]} rotation={[0, 0, 0.18]} color="#e9c46a" shadow={false} />
           <Cyl r={0.006} h={0.2} position={[-0.012, 0.1, 0.01]} rotation={[0.1, 0, 0.1]} color="#e9c46a" shadow={false} />
         </group>

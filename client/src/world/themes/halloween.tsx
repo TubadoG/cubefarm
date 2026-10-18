@@ -176,12 +176,12 @@ function Cobwebs({ at }: { at: Spot[] }) {
     const z = first.z - Math.sign(first.z) * 0.35;
     const y = first.y - 1.15;
     return mergeParts([
-      part(sphere(0.05, 10, 8), '#1f1d2b', [x, y, z]),
-      part(sphere(0.032, 8, 6), '#1f1d2b', [x, y + 0.06, z]),
-      ...[-1, 1].flatMap((sx) => [0.6, 0.2, -0.2, -0.6].map((a) => part(cyl(0.006, 0.006, 0.12, 4), '#1f1d2b', [x + sx * 0.06, y, z + a * 0.06], [0, 0, sx * 1.1]))),
+      part(sphere(0.05, 10, 8), '#26394D', [x, y, z]),
+      part(sphere(0.032, 8, 6), '#26394D', [x, y + 0.06, z]),
+      ...[-1, 1].flatMap((sx) => [0.6, 0.2, -0.2, -0.6].map((a) => part(cyl(0.006, 0.006, 0.12, 4), '#26394D', [x + sx * 0.06, y, z + a * 0.06], [0, 0, sx * 1.1]))),
     ]);
   }, [at]);
-  const mat = useMemo(() => new THREE.LineBasicMaterial({ color: '#e9ecef', transparent: true, opacity: 0.75 }), []);
+  const mat = useMemo(() => new THREE.LineBasicMaterial({ color: '#DCE3EA', transparent: true, opacity: 0.75 }), []);
   useEffect(() => () => [lines, mat].forEach((d) => d.dispose()), [lines, mat]);
   useEffect(() => () => spider?.dispose(), [spider]);
   return (
@@ -217,7 +217,7 @@ function Gravestone({ at }: { at: Spot[] }) {
         part(sphere(0.6, 16, 8), '#6b4f3a', [0, -0.02, 0.5], [0, 0, 0], [1, 0.18, 0.7]),
         part(sphere(0.07, 8, 6), '#52b788', [-0.3, 0.06, 0.65]),
         part(sphere(0.06, 8, 6), '#52b788', [0.33, 0.05, 0.8]),
-        part(cyl(0.04, 0.04, 0.12, 8), '#f8f9fa', [0.25, 0.08, 0.4]),
+        part(cyl(0.04, 0.04, 0.12, 8), '#F6F9FC', [0.25, 0.08, 0.4]),
       ]),
     [],
   );
@@ -229,12 +229,12 @@ function Gravestone({ at }: { at: Spot[] }) {
     (ctx) => {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#2b2d42';
+      ctx.fillStyle = '#26394D';
       ctx.font = `700 150px ${SANS}`;
       ctx.fillText('RIP', 256, 150);
       ctx.font = `700 76px ${SANS}`;
       ctx.fillText('flaky e2e', 256, 290);
-      ctx.font = `500 44px ${SANS}`;
+      ctx.font = `400 44px ${SANS}`;
       ctx.fillText('it passed locally', 256, 390);
     },
     [],
@@ -271,8 +271,8 @@ function CandyBowl({ at }: { at: Spot[] }) {
   const geo = useMemo(() => {
     const parts = [
       part(new THREE.SphereGeometry(0.2, 18, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), '#ff7b00', [0, 0.2, 0], [0, 0, 0], [1, 0.75, 1]),
-      part(new THREE.TorusGeometry(0.2, 0.018, 6, 24), '#1f1d2b', [0, 0.2, 0], [Math.PI / 2, 0, 0]),
-      part(cyl(0.08, 0.1, 0.03, 14), '#1f1d2b', [0, 0.015, 0]),
+      part(new THREE.TorusGeometry(0.2, 0.018, 6, 24), '#26394D', [0, 0.2, 0], [Math.PI / 2, 0, 0]),
+      part(cyl(0.08, 0.1, 0.03, 14), '#26394D', [0, 0.015, 0]),
     ];
     for (let i = 0; i < 12; i++) {
       const a = i * 2.4;
@@ -319,9 +319,9 @@ function Bats() {
     const wing = (s: number) => {
       const g = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, s * 0.32, 0.08, -0.05, s * 0.26, -0.02, 0.1, 0, 0, 0, s * 0.26, -0.02, 0.1, s * 0.12, -0.05, 0.12], 3));
       g.computeVertexNormals();
-      return part(g, '#1b1430');
+      return part(g, '#26394D');
     };
-    return mergeParts([wing(1), wing(-1), part(sphere(0.06, 8, 6), '#1b1430', [0, 0, 0.04], [0, 0, 0], [0.8, 0.8, 1.3]), part(cone(0.02, 0.05, 4), '#1b1430', [0.03, 0.06, 0]), part(cone(0.02, 0.05, 4), '#1b1430', [-0.03, 0.06, 0])]);
+    return mergeParts([wing(1), wing(-1), part(sphere(0.06, 8, 6), '#26394D', [0, 0, 0.04], [0, 0, 0], [0.8, 0.8, 1.3]), part(cone(0.02, 0.05, 4), '#26394D', [0.03, 0.06, 0]), part(cone(0.02, 0.05, 4), '#26394D', [-0.03, 0.06, 0])]);
   }, []);
   useEffect(() => () => geo.dispose(), [geo]);
   const bats = useMemo(

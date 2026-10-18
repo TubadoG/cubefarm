@@ -20,6 +20,7 @@ import { DESK_RUGS, HALF_D, HALF_W, JUKEBOX, MAX_DESKS, SEATS, deskPosition, des
 import { shade } from './materials';
 import { MergeConfetti } from './MergeConfetti';
 import { Beacon, useFloorAlarm } from './MissionControl';
+import { FLOOR_OFFICE, POT_TINT } from './palette';
 import { CoinBurst } from './decor/CoinBurst';
 import { Decorations } from './decor/Decorations';
 import { DeskStory, MvpSign } from './desk/DeskStory';
@@ -74,7 +75,7 @@ export const OfficeFloor = memo(function OfficeFloor({ repo }: { repo: RepoView 
 
   return (
     <group>
-      <Shell kind="office" accent={repo.color} floorColor="#d9b48a" />
+      <Shell kind="office" accent={repo.color} floorColor={FLOOR_OFFICE} />
       {DESK_RUGS.map((r) => (
         <Rug key={r.minZ} position={[(r.minX + r.maxX) / 2, 0.004, (r.minZ + r.maxZ) / 2]} size={[r.maxX - r.minX, r.maxZ - r.minZ]} color={rugColor} />
       ))}
@@ -123,11 +124,11 @@ export const OfficeFloor = memo(function OfficeFloor({ repo }: { repo: RepoView 
             1024,
             317,
             [
-              { text: `FLOOR ${repo.floor}`, size: 58, color: 'rgba(255,255,255,0.85)', weight: 600 },
+              { text: `FLOOR ${repo.floor}`, size: 58, color: '#AABFD5', weight: 700 },
               { text: repo.fullName, size: 74 },
-              { text: repo.description || 'no description', size: 36, weight: 500, color: 'rgba(255,255,255,0.85)' },
+              { text: repo.description || 'no description', size: 36, weight: 400, color: '#AABFD5' },
             ],
-            repo.color,
+            '#26394D',
           )
         }
         deps={[repo.floor, repo.fullName, repo.description, repo.color]}
@@ -143,12 +144,12 @@ export const OfficeFloor = memo(function OfficeFloor({ repo }: { repo: RepoView 
               1024,
               317,
               [
-                { text: `👩‍💻 ${agents.length} on the team`, size: 50, color: '#2d3142' },
-                { text: `⚙️ ${working} busy · 🔍 ${inQa} in QA · ✅ ${ready} to merge`, size: 42, color: '#2d3142', weight: 600 },
-                { text: `📋 ${repo.issues.length} open issue${repo.issues.length === 1 ? '' : 's'}${repo.autoAssign ? ' · ⚡ auto' : ''}`, size: 40, color: '#5c6078', weight: 500 },
-                alarm ? { text: `🚨 ${alarm.text.split(':')[0]} · press ${use}`, size: 38, color: '#d62839' } : { text: ops, size: 36, color: '#3a6ea5', weight: 600 },
+                { text: `👩‍💻 ${agents.length} on the team`, size: 50, color: '#26394D', weight: 700 },
+                { text: `⚙️ ${working} busy · 🔍 ${inQa} in QA · ✅ ${ready} to merge`, size: 42, color: '#26394D', weight: 700 },
+                { text: `📋 ${repo.issues.length} open issue${repo.issues.length === 1 ? '' : 's'}${repo.autoAssign ? ' · ⚡ auto' : ''}`, size: 40, color: '#436688', weight: 400 },
+                alarm ? { text: `🚨 ${alarm.text.split(':')[0]} · press ${use}`, size: 38, color: '#C25B54', weight: 700 } : { text: ops, size: 36, color: '#4D7399', weight: 700 },
               ],
-              '#fffdf5',
+              '#FFFFFF',
             )
           }
           deps={[agents.length, working, inQa, ready, repo.issues.length, repo.autoAssign, ops, alarm?.text, use]}
@@ -162,7 +163,7 @@ export const OfficeFloor = memo(function OfficeFloor({ repo }: { repo: RepoView 
       <Plant position={[7.1, 0, -HALF_D + 0.7]} />
       <Plant position={[-HALF_W + 0.7, 0, HALF_D - 0.8]} scale={1.2} />
       <Plant position={[-11, 0, -HALF_D + 0.7]} scale={1.1} />
-      <Plant position={[HALF_W - 0.7, 0, HALF_D - 0.7]} scale={0.9} pot="#8338ec" />
+      <Plant position={[HALF_W - 0.7, 0, HALF_D - 0.7]} scale={0.9} pot={POT_TINT} />
       <Couch position={[-HALF_W + 0.9, 0, 6.5]} rotationY={-Math.PI / 2} color={shade(repo.color, -0.05)} />
       <CoffeeTable position={[-HALF_W + 2.6, 0, 6.5]} rotationY={Math.PI / 2} />
       <Kitchenette position={[HALF_W - 0.45, 0, 7]} />
@@ -178,8 +179,8 @@ export const OfficeFloor = memo(function OfficeFloor({ repo }: { repo: RepoView 
           drawSign(ctx, 512, 326, [
             { text: '🚀', size: 90 },
             { text: 'SHIP IT', size: 64 },
-            { text: 'small PRs, happy reviewers', size: 26, weight: 500 },
-          ], '#3a86ff')
+            { text: 'small PRs, happy reviewers', size: 26, weight: 400 },
+          ], '#26394D')
         }
         deps={[]}
       />

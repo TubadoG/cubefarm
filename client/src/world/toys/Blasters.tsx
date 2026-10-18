@@ -8,6 +8,7 @@ import { drawSign } from '../draw';
 import { useInteractable } from '../interact';
 import { BLASTER_RACK, HALF_D, toyOnlyAt } from '../layout';
 import { shade, toon } from '../materials';
+import { INK } from '../palette';
 import { WallSign } from '../OfficeFloor';
 import { Box, Cyl } from '../Toon';
 import { escaped, type ToyFloor } from './balls';
@@ -22,7 +23,6 @@ import { walk } from './hands';
 // instanced meshes, so a floor full of them costs two draw calls.
 
 const STEP = 1 / 60;
-const INK = '#2b2d42';
 const TAKE_RANGE = 2.8;
 
 // ---------- looks ----------
@@ -39,7 +39,7 @@ function BlasterLook({ def, shadow = true, mag }: { def: BlasterDef; shadow?: bo
       <Box size={[0.104, 0.03, 0.2]} position={[0, -0.01, -0.04]} color="#ffffff" shadow={false} />
       <Box size={[0.05, 0.035, 0.22]} position={[0, 0.095, -0.03]} color={trim} outline shadow={shadow} />
       <Cyl r={0.038} h={0.14} position={[0, 0.03, -0.23]} rotation={[Math.PI / 2, 0, 0]} color={trim} outline shadow={shadow} />
-      <Cyl r={0.046} h={0.04} position={[0, 0.03, -0.31]} rotation={[Math.PI / 2, 0, 0]} color="#ffd166" outline shadow={shadow} />
+      <Cyl r={0.046} h={0.04} position={[0, 0.03, -0.31]} rotation={[Math.PI / 2, 0, 0]} color="#AABFD5" outline shadow={shadow} />
       <Box size={[0.11, 0.07, 0.08]} position={[0, 0.03, 0.16]} color={trim} outline shadow={shadow} />
       <Box size={[0.065, 0.15, 0.075]} position={[0, -0.1, 0.09]} rotation={[0.3, 0, 0]} color={INK} outline shadow={shadow} />
       <Box size={[0.02, 0.05, 0.07]} position={[0, -0.065, 0.01]} color={INK} shadow={false} />
@@ -96,9 +96,9 @@ function Rack({ x, onRack }: { x: number; onRack: BlasterDef[] }) {
   return (
     <group position={[x, 0, HALF_D]} rotation={[0, Math.PI, 0]}>
       <group ref={ref}>
-        <Box size={[w, 0.8, d]} position={[0, 0.4, d / 2]} color="#ffd166" outline />
-        <Box size={[w - 0.2, 0.08, 0.01]} position={[0, 0.62, d + 0.005]} color="#ff8c1a" shadow={false} />
-        <Box size={[w - 0.1, h - 0.85, 0.04]} position={[0, 0.8 + (h - 0.8) / 2, 0.03]} color="#f4e1c1" outline />
+        <Box size={[w, 0.8, d]} position={[0, 0.4, d / 2]} color="#6699CC" outline />
+        <Box size={[w - 0.2, 0.08, 0.01]} position={[0, 0.62, d + 0.005]} color="#26394D" shadow={false} />
+        <Box size={[w - 0.1, h - 0.85, 0.04]} position={[0, 0.8 + (h - 0.8) / 2, 0.03]} color="#F6F9FC" outline />
         {SLOT_Y.flatMap((y) =>
           [-0.16, 0.16].map((px) => <Cyl key={`${y}${px}`} r={0.012} h={0.1} position={[px, y - 0.1, 0.09]} rotation={[Math.PI / 2, 0, 0]} color={INK} shadow={false} />),
         )}
@@ -110,11 +110,11 @@ function Rack({ x, onRack }: { x: number; onRack: BlasterDef[] }) {
           ) : null,
         )}
         {/* a box of spare darts on top of the cabinet */}
-        <Box size={[0.34, 0.1, 0.2]} position={[0.36, 0.85, 0.16]} color="#3a86ff" outline />
+        <Box size={[0.34, 0.1, 0.2]} position={[0.36, 0.85, 0.16]} color="#4D7399" outline />
         {[0, 1, 2, 3].map((i) => (
           <group key={i} position={[0.26 + i * 0.065, 0.92, 0.16]} rotation={[Math.PI / 2, 0, 0.2 * (i - 1.5)]}>
-            <Cyl r={0.02} h={0.13} color={i % 2 ? '#ff8c1a' : '#3a86ff'} shadow={false} />
-            <Cyl r={0.026} rTop={0.02} h={0.025} position={[0, -0.075, 0]} color="#ffd166" shadow={false} />
+            <Cyl r={0.02} h={0.13} color={i % 2 ? '#6699CC' : '#4D7399'} shadow={false} />
+            <Cyl r={0.026} rTop={0.02} h={0.025} position={[0, -0.075, 0]} color="#26394D" shadow={false} />
           </group>
         ))}
       </group>
@@ -123,7 +123,7 @@ function Rack({ x, onRack }: { x: number; onRack: BlasterDef[] }) {
         rotationY={0}
         size={[w - 0.2, 0.22]}
         px={[512, 96]}
-        draw={(ctx) => drawSign(ctx, 512, 96, [{ text: '🎯 FOAM ZONE', size: 54 }], '#ef476f')}
+        draw={(ctx) => drawSign(ctx, 512, 96, [{ text: '🎯 FOAM ZONE', size: 54 }], '#26394D')}
         deps={[]}
       />
     </group>
@@ -242,7 +242,7 @@ function Darts({ floor, groups }: { floor: ToyFloor; groups: number }) {
 
   const meshes = useMemo(() => {
     const foam = new THREE.InstancedMesh(new THREE.CylinderGeometry(DART.r, DART.r, 0.15, 8), toon('#ffffff'), DART_CAP + 8);
-    const tip = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.035, DART.r, 0.03, 10).translate(0, 0.09, 0), toon('#ffd166'), DART_CAP + 8);
+    const tip = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.035, DART.r, 0.03, 10).translate(0, 0.09, 0), toon('#26394D'), DART_CAP + 8);
     for (const m of [foam, tip]) {
       m.count = 0;
       m.frustumCulled = false;

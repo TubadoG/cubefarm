@@ -67,7 +67,7 @@ function Bolt({ elevation }: { elevation: number }) {
   const stuff = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(VERTS * 3), 3));
-    const mat = markBloom(new THREE.MeshBasicMaterial({ color: '#eef2ff', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false, side: THREE.DoubleSide }));
+    const mat = markBloom(new THREE.MeshBasicMaterial({ color: '#EEF3F8', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false, side: THREE.DoubleSide }));
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
     mesh.renderOrder = 4;

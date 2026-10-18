@@ -5,13 +5,14 @@ import { requestLook } from '../world/Player';
 import { CEO_ID, type RepoView } from '../../../shared/types';
 import { Key } from './Key';
 import { ProjectPicker } from './ProjectPicker';
+import { BcRings } from './BcRings';
 
 // First run: who you are, the company, your CEO and your first project. Every field has a default, so
 // "Skip" (or just pressing Next) gets a working office.
 
 const COMPANIES = ['Pixel & Pine', 'Byte Bakery', 'Night Owl Software', 'Tiny Rocket Co.', 'Moonbeam Works', 'Happy Path Inc.', 'Merge Conflict Ltd.', 'Quokka Labs', 'Blue Kettle Studio', 'Paper Plane Software'];
 const CEO_NAMES = ['Morgan', 'Avery', 'Jordan', 'Riley', 'Quinn', 'Harper', 'Rowan', 'Sasha', 'Casey', 'Jamie', 'Alex', 'Robin'];
-const TIES = ['#e63946', '#3a86ff', '#06d6a0', '#ffbe0b', '#9b5de5', '#fb5607'];
+const TIES = ['#6699CC', '#4D7399', '#AABFD5', '#9C8FC4', '#5FA8A0', '#8C9FD9'];
 const STEPS = ['Welcome', 'You', 'Your CEO', 'First project', 'Ready'];
 
 const pickOther = <T,>(list: T[], current: T) => {
@@ -23,16 +24,16 @@ const pickOther = <T,>(list: T[], current: T) => {
 function CeoPortrait({ color, look }: { color: string; look: 'feminine' | 'masculine' }) {
   return (
     <svg viewBox="0 0 120 120" className="ceo-portrait" aria-hidden="true">
-      <circle cx="60" cy="60" r="58" fill="#e6dcff" stroke="#1f1d2b" strokeWidth="3" />
-      {look === 'feminine' && <ellipse cx="60" cy="58" rx="27" ry="32" fill="#2b2118" stroke="#1f1d2b" strokeWidth="2.5" />}
-      <path d="M22 118 C24 88 40 80 60 80 C80 80 96 88 98 118 Z" fill="#2b2d42" stroke="#1f1d2b" strokeWidth="3" />
-      <path d="M50 81 L60 96 L70 81 Z" fill="#f8f9fa" />
-      <path d="M57 84 L63 84 L65 108 L60 113 L55 108 Z" fill={color} stroke="#1f1d2b" strokeWidth="1.5" />
-      <circle cx="60" cy="52" r="22" fill="#f1c27d" stroke="#1f1d2b" strokeWidth="3" />
-      <path d="M38 50 C38 30 82 30 82 50 C74 40 46 40 38 50 Z" fill="#2b2118" stroke="#1f1d2b" strokeWidth="2" />
-      <circle cx="52" cy="54" r="2.6" fill="#1f1d2b" />
-      <circle cx="68" cy="54" r="2.6" fill="#1f1d2b" />
-      <path d="M53 62 Q60 68 67 62" fill="none" stroke="#1f1d2b" strokeWidth="2.4" strokeLinecap="round" />
+      <circle cx="60" cy="60" r="58" fill="#EEF3F8" stroke="#26394D" strokeWidth="3" />
+      {look === 'feminine' && <ellipse cx="60" cy="58" rx="27" ry="32" fill="#2b2118" stroke="#26394D" strokeWidth="2.5" />}
+      <path d="M22 118 C24 88 40 80 60 80 C80 80 96 88 98 118 Z" fill="#26394D" stroke="#26394D" strokeWidth="3" />
+      <path d="M50 81 L60 96 L70 81 Z" fill="#F6F9FC" />
+      <path d="M57 84 L63 84 L65 108 L60 113 L55 108 Z" fill={color} stroke="#26394D" strokeWidth="1.5" />
+      <circle cx="60" cy="52" r="22" fill="#f1c27d" stroke="#26394D" strokeWidth="3" />
+      <path d="M38 50 C38 30 82 30 82 50 C74 40 46 40 38 50 Z" fill="#2b2118" stroke="#26394D" strokeWidth="2" />
+      <circle cx="52" cy="54" r="2.6" fill="#26394D" />
+      <circle cx="68" cy="54" r="2.6" fill="#26394D" />
+      <path d="M53 62 Q60 68 67 62" fill="none" stroke="#26394D" strokeWidth="2.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -97,7 +98,7 @@ export function SetupWizard() {
 
         {step === 0 && (
           <>
-            <div className="start-logo">✻</div>
+            <BcRings />
             <h1>cubefarm</h1>
             <p className="start-tag">Your own cartoon software company, staffed by AI coding agents.</p>
             <ul className="start-list">

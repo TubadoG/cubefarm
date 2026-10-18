@@ -6,13 +6,11 @@ import { Outlines } from './Outlines';
 import { ELEVATOR, HALF_D, HALF_W, SIDE_DOOR, SIDE_OPENINGS, SIDES, WALL_H, WALL_T, WINDOW, sideSign, type Side } from './layout';
 import { drawGlass } from './draw';
 import { shade, toon } from './materials';
+import { CEILING, FRAME, INK, LIGHT_PANEL, WALL, WALL_TRIM } from './palette';
 import { boxesGeometry, merged, type BoxSpec } from './shapes';
 import { Box } from './Toon';
 import { LampHalos } from './sky/lamps';
 import { SunPatches } from './sky/SunPatches';
-
-const WALL = '#fbf3e4';
-const INK = '#1f1d2b';
 
 type FloorKind = 'office' | 'lobby';
 
@@ -111,7 +109,7 @@ function SideWalls({ kind }: { kind: FloorKind }) {
   return (
     <group>
       <mesh geometry={walls} material={toon(WALL)} receiveShadow />
-      <mesh geometry={frame} material={toon('#ffffff')}>
+      <mesh geometry={frame} material={toon(FRAME)}>
         <Outlines thickness={0.018} color={INK} />
       </mesh>
       <mesh geometry={glass} material={paneMaterial()} renderOrder={1} />
@@ -125,8 +123,8 @@ const PANEL = look(new THREE.PlaneGeometry(1.25, 0.38), { shading: 'glowNight' }
 function CeilingLight({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
-      <Box size={[1.4, 0.06, 0.5]} position={[0, 0, 0]} color="#e9ecef" shadow={false} />
-      <Part look={PANEL} color="#fffbe8" position={[0, -0.035, 0]} rotation={[Math.PI / 2, 0, 0]} />
+      <Box size={[1.4, 0.06, 0.5]} position={[0, 0, 0]} color={WALL_TRIM} shadow={false} />
+      <Part look={PANEL} color={LIGHT_PANEL} position={[0, -0.035, 0]} rotation={[Math.PI / 2, 0, 0]} />
     </group>
   );
 }
@@ -185,7 +183,7 @@ export function Shell({ kind, accent, floorColor }: { kind: FloorKind; accent: s
         <planeGeometry args={[HALF_W * 2, HALF_D * 2]} />
         <meshToonMaterial map={floorTex} />
       </mesh>
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, WALL_H, 0]} material={toon('#f3efe6')}>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, WALL_H, 0]} material={toon(CEILING)}>
         <planeGeometry args={[HALF_W * 2, HALF_D * 2]} />
       </mesh>
       {lights.map((p) => (

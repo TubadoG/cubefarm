@@ -9,7 +9,7 @@ export function HolidayStrip() {
   if (!id) return null;
   const info = THEME_INFO[id];
   return (
-    <div className="phone-holiday" role="status" style={{ margin: '0 6px 6px', padding: '5px 10px', borderRadius: 12, fontSize: 13, fontWeight: 600, textAlign: 'center', color: '#23263a', background: '#ffd6a5' }}>
+    <div className="phone-holiday" role="status" style={{ margin: '0 6px 6px', padding: '5px 10px', borderRadius: 9, fontSize: 13, fontWeight: 600, textAlign: 'center', color: 'var(--ink)', background: 'var(--gold-soft)' }}>
       {status ?? `${info.emoji} Happy ${info.name.replace(/^Your /, '')}`}
     </div>
   );

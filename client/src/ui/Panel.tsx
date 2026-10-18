@@ -45,7 +45,7 @@ export function Panel({
       <div
         ref={box}
         className={`panel ${wide ? 'panel-wide' : ''} ${className ?? ''}`}
-        style={{ ['--accent' as string]: accent ?? '#ff8a5b' }}
+        style={{ ['--accent' as string]: accent ?? '#6699CC' }}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

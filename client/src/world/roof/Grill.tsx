@@ -7,6 +7,7 @@ import { useInteractable } from '../interact';
 import { Outlines } from '../Outlines';
 import { GRILL } from '../layout';
 import { glow, toon } from '../materials';
+import { BEZEL, DARK, INK, METAL, WOOD_DARK, WOOD_LIGHT } from '../palette';
 import { BITES, doneness, emptyGrill, grillLabel, grillState, pressGrill, sizzle, type Grill as GrillModel } from './grillRules';
 import { useRoofOp, useRoofReport } from './roofOps';
 import { useRoof } from './roofState';
@@ -16,7 +17,6 @@ import { useRoof } from './roofState';
 // and browns, E turns it over, and once it's done E takes it in a bun to eat a bite at a time (HeldSausage.tsx). Left on
 // too long it chars, and it's still edible.
 
-const INK = '#1f1d2b';
 const GRATE_Y = 0.86;
 const RAW = new THREE.Color('#e9a0a0');
 const COOKED = new THREE.Color('#b5532c');
@@ -63,7 +63,7 @@ export function Grill() {
     () => ({
       sausage: new THREE.MeshToonMaterial({ color: RAW.clone() }),
       coals: new THREE.MeshBasicMaterial({ color: '#ff6b2c', toneMapped: false }),
-      smoke: new THREE.MeshBasicMaterial({ color: '#e9ecef', transparent: true, opacity: 0.38, depthWrite: false }),
+      smoke: new THREE.MeshBasicMaterial({ color: '#DCE3EA', transparent: true, opacity: 0.38, depthWrite: false }),
     }),
     [],
   );
@@ -146,27 +146,27 @@ export function Grill() {
       <group ref={ref}>
         {/* the kettle on three legs, its lid propped open behind */}
         <group position={[GRILL.x, GRATE_Y, GRILL.z]}>
-          <mesh geometry={geo.bowl} material={toon('#2b2d42')} castShadow>
+          <mesh geometry={geo.bowl} material={toon(DARK)} castShadow>
             <Outlines thickness={0.015} color={INK} />
           </mesh>
           <mesh geometry={geo.coals} position={[0, -0.08, 0]} material={mats.coals} />
-          <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} material={toon('#adb5bd')}>
+          <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} material={toon(METAL)}>
             <ringGeometry args={[GRILL.r * 0.88, GRILL.r * 0.95, 24]} />
           </mesh>
           {[-0.24, -0.12, 0, 0.12, 0.24].map((x) => (
-            <mesh key={x} position={[x, 0.01, 0]} material={toon('#adb5bd')}>
+            <mesh key={x} position={[x, 0.01, 0]} material={toon(METAL)}>
               <boxGeometry args={[0.012, 0.012, Math.sqrt(GRILL.r * GRILL.r * 0.85 - x * x) * 2]} />
             </mesh>
           ))}
           <group position={[0, 0, GRILL.r]} rotation={[1.75, 0, 0]}>
-            <mesh geometry={geo.lid} position={[0, 0, -GRILL.r]} material={toon('#2b2d42')} castShadow>
+            <mesh geometry={geo.lid} position={[0, 0, -GRILL.r]} material={toon(DARK)} castShadow>
               <Outlines thickness={0.015} color={INK} />
             </mesh>
           </group>
           {[0, 1, 2].map((k) => {
             const a = (k / 3) * Math.PI * 2 + 0.5;
             return (
-              <mesh key={k} position={[Math.cos(a) * 0.28, -GRATE_Y / 2 - 0.05, Math.sin(a) * 0.28]} rotation={[Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25]} material={toon('#495057')} castShadow>
+              <mesh key={k} position={[Math.cos(a) * 0.28, -GRATE_Y / 2 - 0.05, Math.sin(a) * 0.28]} rotation={[Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25]} material={toon(BEZEL)} castShadow>
                 <cylinderGeometry args={[0.022, 0.022, GRATE_Y + 0.05, 6]} />
               </mesh>
             );
@@ -186,18 +186,18 @@ export function Grill() {
         </group>
         {/* the side shelf: a basket of buns and the ketchup */}
         <group position={[GRILL.x + GRILL.shelf, 0, GRILL.z]}>
-          <mesh position={[0, 0.78, 0]} material={toon('#c9905a')} castShadow>
+          <mesh position={[0, 0.78, 0]} material={toon(WOOD_LIGHT)} castShadow>
             <boxGeometry args={[0.6, 0.05, 0.5]} />
             <Outlines thickness={0.012} color={INK} />
           </mesh>
           {[-0.25, 0.25].map((x) =>
             [-0.2, 0.2].map((z) => (
-              <mesh key={`${x}${z}`} position={[x, 0.38, z]} material={toon('#8a5a32')}>
+              <mesh key={`${x}${z}`} position={[x, 0.38, z]} material={toon(WOOD_DARK)}>
                 <boxGeometry args={[0.04, 0.76, 0.04]} />
               </mesh>
             )),
           )}
-          <mesh position={[-0.08, 0.86, 0]} material={toon('#d4a373')}>
+          <mesh position={[-0.08, 0.86, 0]} material={toon('#6699CC')}>
             <boxGeometry args={[0.3, 0.1, 0.22]} />
           </mesh>
           {[-0.05, 0.05].map((z) => (
@@ -208,7 +208,7 @@ export function Grill() {
           <mesh position={[0.17, 0.89, 0.1]} material={toon('#d62828')} castShadow>
             <cylinderGeometry args={[0.035, 0.04, 0.17, 10]} />
           </mesh>
-          <mesh position={[0.17, 0.99, 0.1]} material={glow('#f8f9fa')}>
+          <mesh position={[0.17, 0.99, 0.1]} material={glow('#F6F9FC')}>
             <coneGeometry args={[0.02, 0.05, 8]} />
           </mesh>
         </group>

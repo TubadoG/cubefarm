@@ -98,17 +98,17 @@ function blockSpans(lines: number[]): { index: number; span: Span }[] {
   return out;
 }
 
-const FACADES = [0xe8d5b7, 0xd9a679, 0xc97b63, 0x9fb4c7, 0xb8c4a8, 0xe3c4a8, 0xa7a3b8, 0xf0e0c0, 0x8ea4b8, 0xd6b8a0, 0xc0d0d8, 0xe6b8a2, 0xb5a48c];
-const ROOF_HUT = 0x8f8a86;
-const TOWER_STAND = 0x5e4a3c;
-const TOWER_TANK = 0xa0704a;
-const TOWER_HAT = 0x6b4a33;
-const ANTENNA = 0xdadde3;
+const FACADES = [0xdce3ea, 0xc9d4df, 0xaeb8c2, 0x9fb4c7, 0x8ea4b8, 0xe8ecf2, 0xb7c4d2, 0x7f93a8, 0xcfd8e2, 0xa9b7c6, 0xc4ced8, 0xd8dee6, 0x93a6ba];
+const ROOF_HUT = 0x8a96a3;
+const TOWER_STAND = 0x5c6b7a;
+const TOWER_TANK = 0x9aa7b4;
+const TOWER_HAT = 0x3d4f63;
+const ANTENNA = 0xdce3ea;
 const LAWN = 0x8fc46a;
 const TREE = [0x5fa84f, 0x4f9a48, 0x6cb35a];
 const TRUNK = 0x7a5a3c;
 const WATER = 0x8fcbe6;
-const STONE = 0xd9d2c4;
+const STONE = 0xd6dde4;
 
 /** Where the tall towers cluster: north-east, so the skyline is behind the east windows' view of the street. */
 const DOWNTOWN = { x: 150, z: -170 };
@@ -215,21 +215,21 @@ function addLandmark(out: CityLayout, which: number, x: number, z: number) {
   const tower = (y: number, w: number, h: number, color: number) => out.buildings.push({ x, z, y, w, h, d: w, color, lit: 0.6, pattern: (which * 5) % 16 });
   if (which === 0) {
     // the spire
-    tower(0, 26, 120, 0xcfd6e0);
-    tower(120, 18, 30, 0xcfd6e0);
-    tower(150, 10, 14, 0xcfd6e0);
-    out.cones.push({ x, z, y: 164, w: 4, h: 26, d: 4, color: 0xe8ecf2 });
+    tower(0, 26, 120, 0xdce3ea);
+    tower(120, 18, 30, 0xdce3ea);
+    tower(150, 10, 14, 0xdce3ea);
+    out.cones.push({ x, z, y: 164, w: 4, h: 26, d: 4, color: 0xf2f5f9 });
   } else if (which === 1) {
     // the round tower on a podium
-    tower(0, 34, 10, 0xb5a48c);
-    out.cylinders.push({ x, z, y: 10, w: 24, h: 85, d: 24, color: 0x9fb4c7 });
-    out.cylinders.push({ x, z, y: 95, w: 16, h: 12, d: 16, color: 0x8ea4b8 });
+    tower(0, 34, 10, 0xaeb8c2);
+    out.cylinders.push({ x, z, y: 10, w: 24, h: 85, d: 24, color: 0x6699cc });
+    out.cylinders.push({ x, z, y: 95, w: 16, h: 12, d: 16, color: 0x4d7399 });
     out.cones.push({ x, z, y: 107, w: 4, h: 18, d: 4, color: ANTENNA });
   } else {
     // the stepped one
-    tower(0, 30, 70, 0xe3c9a0);
-    tower(70, 22, 30, 0xe3c9a0);
-    tower(100, 14, 20, 0xe3c9a0);
+    tower(0, 30, 70, 0xc9d4df);
+    tower(70, 22, 30, 0xc9d4df);
+    tower(100, 14, 20, 0xc9d4df);
     out.cylinders.push({ x, z, y: 120, w: 1, h: 20, d: 1, color: ANTENNA });
   }
 }
@@ -307,8 +307,8 @@ export const CAR_RANGE = 300;
 export const LANE = CITY.roadHalf / 2;
 export const MAX_CARS = 12;
 
-const CAR_COLORS = [0xe8534a, 0x4a90d9, 0xf2c94c, 0xffffff, 0x6fcf97, 0xbb6bd9, 0x2d3142, 0xf2994a];
-const BUS_COLOR = 0xf2b632;
+const CAR_COLORS = [0x6699cc, 0x4d7399, 0xaabfd5, 0xffffff, 0x5fa8a0, 0x3d454d, 0x26394d, 0x8c9fd9];
+const BUS_COLOR = 0x6699cc;
 
 /** A dozen vehicles, one per lane of the streets nearest the building, so no two ever share a lane. */
 export function carRoutes(seed = CITY.seed): CarRoute[] {

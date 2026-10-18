@@ -21,7 +21,7 @@ export default function Plane({ run, elevation }: SceneProps) {
   const path = useMemo(() => {
     const r = seeded(run.seed);
     const dir = r() < 0.5 ? 1 : -1;
-    return { dir, x: s * (290 + r() * 50), y: eyeAbove(elevation) + 70 + r() * 20, z0: -dir * 430, z1: dir * 430, livery: ['#e63946', '#1d3557', '#2a9d8f', '#f4a261'][Math.floor(r() * 4)] };
+    return { dir, x: s * (290 + r() * 50), y: eyeAbove(elevation) + 70 + r() * 20, z0: -dir * 430, z1: dir * 430, livery: ['#6699CC', '#26394D', '#5FA8A0', '#4D7399'][Math.floor(r() * 4)] };
   }, [run.seed, s, elevation]);
   const scratch = useMemo(() => ({ m: new THREE.Matrix4(), q: new THREE.Quaternion(), v: new THREE.Vector3(), sc: new THREE.Vector3(), born: new Float32Array(PUFFS).fill(-1), pos: new Float32Array(PUFFS * 3), next: 0 }), []);
 
@@ -78,7 +78,7 @@ export default function Plane({ run, elevation }: SceneProps) {
     sound.jet?.set(heard.gain * inOut(t, CROSS, 6), heard.pan, 0.9 + 0.2 * (1 - k));
   });
 
-  const white = toonOut('#f4f6fa');
+  const white = toonOut('#F6F9FC');
   return (
     <group>
       <group ref={plane} scale={1.15}>
@@ -87,7 +87,7 @@ export default function Plane({ run, elevation }: SceneProps) {
           <capsuleGeometry args={[2.1, 30, 6, 12]} />
         </mesh>
         {[-2.02, 2.02].map((x) => (
-          <mesh key={x} material={toonOut('#2b3a55')} position={[x, 0.6, 1]}>
+          <mesh key={x} material={toonOut('#26394D')} position={[x, 0.6, 1]}>
             <boxGeometry args={[0.12, 0.45, 22]} />
           </mesh>
         ))}
@@ -101,7 +101,7 @@ export default function Plane({ run, elevation }: SceneProps) {
           <boxGeometry args={[12, 0.4, 3]} />
         </mesh>
         {[-7, 7].map((x) => (
-          <mesh key={x} material={toonOut('#9aa3b5')} position={[x, -1.8, 0.8]} rotation-x={Math.PI / 2}>
+          <mesh key={x} material={toonOut('#AEB8C2')} position={[x, -1.8, 0.8]} rotation-x={Math.PI / 2}>
             <cylinderGeometry args={[1, 1, 4.5, 10]} />
           </mesh>
         ))}

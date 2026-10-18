@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../../../store';
+import { SANS } from '../../draw';
 import { loop, placeAt } from '../../../ui/eventSfx';
 import { seeded } from '../director';
 import { eyeAbove, inOut, lerp, sign, toonOut, type SceneProps } from '../kit';
@@ -17,16 +18,16 @@ function bannerTexture(text: string) {
   c.width = 2048;
   c.height = 256;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#fffaf0';
+  ctx.fillStyle = '#26394D';
   ctx.fillRect(0, 0, c.width, c.height);
-  ctx.strokeStyle = '#e63946';
+  ctx.strokeStyle = '#AABFD5';
   ctx.lineWidth = 18;
   ctx.strokeRect(9, 9, c.width - 18, c.height - 18);
-  ctx.fillStyle = '#1f1d2b';
+  ctx.fillStyle = '#FFFFFF';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   let size = 170;
-  do ctx.font = `bold ${size}px "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+  do ctx.font = `700 ${size}px ${SANS}, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"`;
   while (ctx.measureText(text).width > c.width - 120 && (size -= 8) > 60);
   ctx.fillText(text, c.width / 2, c.height / 2 + 8);
   const tex = new THREE.CanvasTexture(c);
@@ -92,8 +93,8 @@ export default function Blimp({ run, elevation }: SceneProps) {
     sound.engine?.set(heard.gain * inOut(t, run.seconds, 4), heard.pan);
   });
 
-  const hull = toonOut('#dfe3ea');
-  const stripe = toonOut('#e63946');
+  const hull = toonOut('#DCE3EA');
+  const stripe = toonOut('#26394D');
   return (
     <group ref={blimp}>
       <mesh material={hull} scale={[6, 6, 21]}>
@@ -107,18 +108,18 @@ export default function Blimp({ run, elevation }: SceneProps) {
           <boxGeometry args={[0.4, 9, 4]} />
         </mesh>
       ))}
-      <mesh material={toonOut('#495057')} position={[0, -6.4, 2]}>
+      <mesh material={toonOut('#3D454D')} position={[0, -6.4, 2]}>
         <boxGeometry args={[2.2, 1.6, 5]} />
       </mesh>
       <group ref={props}>
         {[-1.6, 1.6].map((x) => (
-          <mesh key={x} material={toonOut('#2b2d42')} position={[x, -6.4, -0.8]}>
+          <mesh key={x} material={toonOut('#26394D')} position={[x, -6.4, -0.8]}>
             <boxGeometry args={[0.2, 2.6, 0.12]} />
           </mesh>
         ))}
       </group>
       {/* the tow line and the banner, behind the tail */}
-      <mesh material={toonOut('#2b2d42')} position={[0, -3, -26]} rotation-x={Math.PI / 2 - 0.25}>
+      <mesh material={toonOut('#26394D')} position={[0, -3, -26]} rotation-x={Math.PI / 2 - 0.25}>
         <cylinderGeometry args={[0.05, 0.05, 12, 4]} />
       </mesh>
       <mesh geometry={banner.geo} material={banner.mat} position={[0, -5, -32 - BANNER.w / 2]} rotation-y={p.turn} />

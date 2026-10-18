@@ -3,6 +3,7 @@ import { useThree } from '@react-three/fiber';
 import { shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import { attachOutline, detachOutline } from './outlineMesh';
+import { INK } from './palette';
 
 // Ink outlines: drei's <Outlines> (an inverted hull drawn behind its parent mesh), with the parts we use and one fix.
 // drei frees the outline's own geometry in a useEffect cleanup that reads its ref, which React 19 has already
@@ -10,7 +11,7 @@ import { attachOutline, detachOutline } from './outlineMesh';
 // buffers for the rest of the day. Here the cleanup holds on to what it made.
 
 const OutlinesMaterial = shaderMaterial(
-  { screenspace: false, color: new THREE.Color('black'), opacity: 1, thickness: 0.05, size: new THREE.Vector2() },
+  { screenspace: false, color: new THREE.Color(INK), opacity: 1, thickness: 0.05, size: new THREE.Vector2() },
   `#include <common>
    #include <morphtarget_pars_vertex>
    #include <skinning_pars_vertex>
@@ -83,10 +84,9 @@ export function sizeInks(gl: THREE.WebGLRenderer) {
   for (const m of inks.values()) gl.getDrawingBufferSize(m.size);
 }
 
-const INK = '#1f1d2b';
 
 /** An ink outline round the mesh it's placed in, `thickness` in drei's units. */
-export function Outlines({ color = 'black', thickness = 0.05, angle = Math.PI }: { color?: THREE.ColorRepresentation; thickness?: number; angle?: number }) {
+export function Outlines({ color = INK, thickness = 0.05, angle = Math.PI }: { color?: THREE.ColorRepresentation; thickness?: number; angle?: number }) {
   const ref = useRef<THREE.Group>(null);
   // clipping: the overview's cutaway (camera/rig.ts) takes the ink off what it cuts away too
   const [material] = useState(() => new OutlinesMaterial({ side: THREE.BackSide, clipping: true }) as OutlineMaterial);

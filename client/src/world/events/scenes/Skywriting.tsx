@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { repoOnFloor, useStore } from '../../../store';
+import { SANS } from '../../draw';
 import { loop, placeAt } from '../../../ui/eventSfx';
 import { seeded } from '../director';
 import { clamp01, eyeAbove, inOut, sign, smooth, toonOut, type SceneProps } from '../kit';
@@ -20,7 +21,7 @@ function letterPoints(text: string): { pts: [number, number][]; w: number; h: nu
   c.width = 900;
   c.height = 120;
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
-  ctx.font = 'bold 96px "Segoe UI", sans-serif';
+  ctx.font = `700 96px ${SANS}`;
   const w = Math.min(c.width - 10, Math.ceil(ctx.measureText(text).width) + 10);
   ctx.fillStyle = '#fff';
   ctx.textBaseline = 'middle';
@@ -120,16 +121,16 @@ export default function Skywriting({ run, elevation }: SceneProps) {
   return (
     <group>
       <group ref={plane} scale={1.4}>
-        <mesh material={toonOut('#f4a261')} rotation-x={Math.PI / 2}>
+        <mesh material={toonOut('#DCE3EA')} rotation-x={Math.PI / 2}>
           <capsuleGeometry args={[0.45, 3.2, 4, 8]} />
         </mesh>
-        <mesh material={toonOut('#e63946')} position={[0, 0, 0.6]}>
+        <mesh material={toonOut('#4D7399')} position={[0, 0, 0.6]}>
           <boxGeometry args={[6.5, 0.15, 1.1]} />
         </mesh>
-        <mesh material={toonOut('#e63946')} position={[0, 0.5, -1.8]}>
+        <mesh material={toonOut('#4D7399')} position={[0, 0.5, -1.8]}>
           <boxGeometry args={[0.12, 1, 0.8]} />
         </mesh>
-        <mesh material={toonOut('#e63946')} position={[0, 0.1, -1.9]}>
+        <mesh material={toonOut('#4D7399')} position={[0, 0.1, -1.9]}>
           <boxGeometry args={[2.2, 0.1, 0.6]} />
         </mesh>
       </group>

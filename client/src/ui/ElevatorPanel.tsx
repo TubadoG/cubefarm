@@ -24,7 +24,7 @@ export function ElevatorPanel() {
     <Panel title="🛗 Elevator">
       <div className="elevator">
         {/* the roof: always the top stop, however many floors there are */}
-        <button className={`floor-btn ${floor === ROOF ? 'floor-btn-here' : ''}`} style={{ ['--accent' as string]: '#7cc6fe' }} onClick={() => goToFloor(ROOF)}>
+        <button className={`floor-btn ${floor === ROOF ? 'floor-btn-here' : ''}`} style={{ ['--accent' as string]: '#7FB7D9' }} onClick={() => goToFloor(ROOF)}>
           <span className="floor-btn-num">R</span>
           <span className="floor-btn-name">Roof terrace</span>
           <span className="floor-btn-meta">garden · deck chairs · telescope · barbecue</span>
@@ -43,7 +43,7 @@ export function ElevatorPanel() {
             </button>
           );
         })}
-        <button className={`floor-btn ${floor === 0 ? 'floor-btn-here' : ''}`} style={{ ['--accent' as string]: '#ff8a5b' }} onClick={() => goToFloor(0)}>
+        <button className={`floor-btn ${floor === 0 ? 'floor-btn-here' : ''}`} style={{ ['--accent' as string]: '#6699CC' }} onClick={() => goToFloor(0)}>
           <span className="floor-btn-num">G</span>
           <span className="floor-btn-name">Lobby &amp; manager's office</span>
           <span className="floor-btn-meta">connect repos · hire · file issues</span>

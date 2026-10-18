@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { markBloom, type BloomWhen } from './gfx/bloomMarks';
+import { GLASS } from './palette';
 
 // Three-step ramp gives the flat, cel-shaded cartoon look.
 const ramp = new THREE.DataTexture(new Uint8Array([110, 190, 255]), 3, 1, THREE.RedFormat);
@@ -58,7 +59,7 @@ export function glow(color: string, when: BloomWhen = 'always') {
 }
 
 export const glass = new THREE.MeshPhysicalMaterial({
-  color: '#bfe8ff',
+  color: GLASS,
   transparent: true,
   opacity: 0.22,
   roughness: 0.05,

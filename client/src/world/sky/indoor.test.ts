@@ -24,8 +24,8 @@ describe('indoorLight', () => {
   it('keeps the afternoon as the office looked before the clock', () => {
     const l = indoorLight(0.6);
     expect(l.keyIntensity).toBeCloseTo(1.55, 5);
-    expect(l.hemiSky).toBe(0xfffaf0);
-    expect(l.hemiGround).toBe(0xa48a6a);
+    expect(l.hemiSky).toBe(0xf6f9fc);
+    expect(l.hemiGround).toBe(0xbac6d3);
     expect(l.hemiIntensity).toBe(0.95);
     expect(l.ambient).toBeCloseTo(0.18, 5);
   });

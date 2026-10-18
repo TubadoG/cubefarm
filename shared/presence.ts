@@ -22,7 +22,7 @@ export const MAX_MESSAGE = 1024;
 
 export const DEFAULT_NAME = 'Visitor';
 /** Profile colours to pick from (Settings → Profile); a new browser gets one at random. */
-export const VISITOR_COLORS = ['#ef476f', '#f78c6b', '#ffd166', '#06d6a0', '#118ab2', '#8338ec', '#ff70a6', '#3a86ff'] as const;
+export const VISITOR_COLORS = ['#6699cc', '#9c8fc4', '#5fa8a0', '#8c9fd9', '#4d7399', '#7fb7d9', '#b4a7d6', '#86b39a'] as const;
 
 export const EMOTES: readonly EmoteId[] = ['wave', 'thumbs', 'clap', 'point', 'laugh'];
 export const EMOTE_EMOJI: Record<EmoteId, string> = { wave: '👋', thumbs: '👍', clap: '👏', point: '👉', laugh: '😂' };

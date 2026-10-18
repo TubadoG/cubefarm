@@ -76,7 +76,7 @@ describe('parsePresenceEvent', () => {
   });
 
   it('cleans names and labels on the way in', () => {
-    expect(parsePresenceEvent({ type: 'hello', name: `  ${'N'.repeat(60)}\u0000`, color: 'blue' })).toEqual({ type: 'hello', name: 'N'.repeat(NAME_MAX), color: '#ef476f' });
+    expect(parsePresenceEvent({ type: 'hello', name: `  ${'N'.repeat(60)}\u0000`, color: 'blue' })).toEqual({ type: 'hello', name: 'N'.repeat(NAME_MAX), color: '#6699cc' });
     expect(parsePresenceEvent({ type: 'ping', x: 1, y: 99, z: 2, label: ' the\nwhiteboard ' })).toEqual({ type: 'ping', x: 1, y: 5, z: 2, label: 'the whiteboard' });
   });
 

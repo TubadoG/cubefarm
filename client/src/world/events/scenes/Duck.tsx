@@ -36,7 +36,7 @@ export default function Duck({ run, elevation }: SceneProps) {
 
   const yellow = toonOut('#ffd23f');
   const orange = toonOut('#ff8c1a');
-  const ink = toonOut('#1f1d2b');
+  const ink = toonOut('#26394D');
   return (
     <group ref={duck}>
       <group scale={SIZE}>

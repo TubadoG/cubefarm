@@ -133,7 +133,7 @@ function Cake({ at }: { at: Spot[] }) {
   const cake = useMemo(
     () =>
       mergeParts([
-        part(cyl(0.2, 0.2, 0.02, 20), '#e9ecef', [0, 0.01, 0]),
+        part(cyl(0.2, 0.2, 0.02, 20), '#DCE3EA', [0, 0.01, 0]),
         part(cyl(0.17, 0.17, 0.12, 20), '#ffc8dd', [0, 0.08, 0]),
         part(cyl(0.12, 0.12, 0.1, 20), '#fff0f3', [0, 0.19, 0]),
         ...Array.from({ length: 10 }, (_, i) => part(sphere(0.022, 6, 5), '#ff5d8f', [Math.cos(i * 0.63) * 0.17, 0.14, Math.sin(i * 0.63) * 0.17])),

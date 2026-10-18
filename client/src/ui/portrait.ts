@@ -19,15 +19,12 @@ export function drawPortrait(ctx: CanvasRenderingContext2D, s: number, agent: Pi
   ctx.scale(k, k);
   ctx.clearRect(0, 0, 160, 160);
   // backdrop
-  const g = ctx.createLinearGradient(0, 0, 0, 160);
-  g.addColorStop(0, '#fff4e0');
-  g.addColorStop(1, '#ffd6a5');
-  ctx.fillStyle = g;
+  ctx.fillStyle = '#DCE3EA';
   ctx.beginPath();
-  ctx.roundRect(0, 0, 160, 160, 26);
+  ctx.roundRect(0, 0, 160, 160, 18);
   ctx.fill();
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#1f1d2b';
+  ctx.strokeStyle = '#26394D';
   ctx.lineWidth = 3;
 
   // body: shoulders in their shirt
@@ -51,7 +48,7 @@ export function drawPortrait(ctx: CanvasRenderingContext2D, s: number, agent: Pi
     ctx.moveTo(88, 120);
     ctx.lineTo(90, 142);
     ctx.stroke();
-    ctx.strokeStyle = '#1f1d2b';
+    ctx.strokeStyle = '#26394D';
   } else if (look.outfit === 'sweater') {
     ellipse(ctx, 80, 118, 18, 7, accent);
   }
@@ -113,8 +110,8 @@ export function drawPortrait(ctx: CanvasRenderingContext2D, s: number, agent: Pi
       break;
   }
   // face
-  ellipse(ctx, 69, hy + 2, 3.5, 4.5, '#1f1d2b');
-  ellipse(ctx, 91, hy + 2, 3.5, 4.5, '#1f1d2b');
+  ellipse(ctx, 69, hy + 2, 3.5, 4.5, '#26394D');
+  ellipse(ctx, 91, hy + 2, 3.5, 4.5, '#26394D');
   ellipse(ctx, 63, hy + 13, 6, 3.5, 'rgba(255,120,120,0.35)');
   ellipse(ctx, 97, hy + 13, 6, 3.5, 'rgba(255,120,120,0.35)');
   if (look.facialHair === 'beard') {
@@ -128,7 +125,7 @@ export function drawPortrait(ctx: CanvasRenderingContext2D, s: number, agent: Pi
   ctx.arc(80, hy + 13, 9, 0.15 * Math.PI, 0.85 * Math.PI);
   ctx.stroke();
   if (look.glasses !== 'none') {
-    ctx.strokeStyle = accent === '#ffffff' ? '#2b2d42' : accent;
+    ctx.strokeStyle = accent === '#ffffff' ? '#26394D' : accent;
     ctx.lineWidth = 3;
     for (const x of [69, 91]) {
       ctx.beginPath();
@@ -140,30 +137,30 @@ export function drawPortrait(ctx: CanvasRenderingContext2D, s: number, agent: Pi
     ctx.moveTo(78, hy);
     ctx.lineTo(82, hy);
     ctx.stroke();
-    ctx.strokeStyle = '#1f1d2b';
+    ctx.strokeStyle = '#26394D';
   }
   if (look.headphones) {
     ctx.lineWidth = 6;
-    ctx.strokeStyle = '#2b2d42';
+    ctx.strokeStyle = '#26394D';
     ctx.beginPath();
     ctx.arc(80, hy - 2, 36, Math.PI * 1.05, Math.PI * 1.95);
     ctx.stroke();
-    ellipse(ctx, 46, hy + 2, 8, 12, accent === '#ffffff' ? '#ef476f' : accent);
-    ellipse(ctx, 114, hy + 2, 8, 12, accent === '#ffffff' ? '#ef476f' : accent);
+    ellipse(ctx, 46, hy + 2, 8, 12, accent === '#ffffff' ? '#6699CC' : accent);
+    ellipse(ctx, 114, hy + 2, 8, 12, accent === '#ffffff' ? '#6699CC' : accent);
     ctx.lineWidth = 3;
-    ctx.strokeStyle = '#1f1d2b';
+    ctx.strokeStyle = '#26394D';
   }
   if (look.headwear === 'beanie') {
     ctx.beginPath();
     ctx.ellipse(80, hy - 12, 32, 28, 0, Math.PI, Math.PI * 2);
-    ctx.fillStyle = accent === '#ffffff' ? '#118ab2' : accent;
+    ctx.fillStyle = accent === '#ffffff' ? '#4D7399' : accent;
     ctx.fill();
     ctx.stroke();
     ellipse(ctx, 80, hy - 42, 7, 7, '#ffffff');
   } else if (look.headwear === 'cap') {
     ctx.beginPath();
     ctx.ellipse(80, hy - 14, 31, 22, 0, Math.PI, Math.PI * 2);
-    ctx.fillStyle = accent === '#ffffff' ? '#ef476f' : accent;
+    ctx.fillStyle = accent === '#ffffff' ? '#6699CC' : accent;
     ctx.fill();
     ctx.stroke();
     ctx.fillRect(80, hy - 18, 40, 7);

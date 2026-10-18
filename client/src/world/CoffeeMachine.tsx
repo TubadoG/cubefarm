@@ -8,6 +8,7 @@ import { PLAYER, type Mug, type Slot } from './coffeeBreak';
 import { BREW, BREW_CUES, EMPTY, canPlace, cuesPassed, level, placeMug, pouring, pressButton, progress, takeMug, tick, type BrewState } from './coffee';
 import { useInteractable } from './interact';
 import { glow, toon } from './materials';
+import { BEZEL, DARK, LED_OK, LED_ON, LED_WARN, METAL, METAL_LIGHT, SCREEN_OFF } from './palette';
 import { MUG_SIZE, MugLook, Steam, mugColor } from './toys/mugLook';
 import { MUG, stowMug } from './toys/mugs';
 import { Box, Cyl } from './Toon';
@@ -191,9 +192,9 @@ const SPOUT_Y = 0.21;
 const PUFFS = [0, 1, 2, 3];
 const ROT_HANDLE: [number, number, number] = [0, -Math.PI / 2, 0];
 
-const lightOff = toon('#ced4da');
-const lightBrewing = glow('#ffb703');
-const lightReady = glow('#80ed99');
+const lightOff = toon(METAL_LIGHT);
+const lightBrewing = glow(LED_WARN);
+const lightReady = glow(LED_OK);
 
 /** The coffee machine, standing on the counter at `position` (the counter top under its middle). */
 export function CoffeeMachine({ position }: { position: [number, number, number] }) {
@@ -309,17 +310,17 @@ export function CoffeeMachine({ position }: { position: [number, number, number]
     <group ref={root} position={position}>
       {/* rumbles while it brews */}
       <group ref={body}>
-        <Box size={[0.45, 0.55, 0.4]} position={[0.05, 0.28, 0]} color="#343a40" outline />
+        <Box size={[0.45, 0.55, 0.4]} position={[0.05, 0.28, 0]} color={DARK} outline />
         {/* head over the drip tray, and its spout */}
-        <Box size={[0.22, 0.1, 0.28]} position={[SLOT.x + 0.01, SPOUT_Y + 0.07, 0]} color="#495057" outline />
-        <Cyl r={0.018} h={0.03} position={[SLOT.x, SPOUT_Y + 0.005, 0]} color="#adb5bd" />
+        <Box size={[0.22, 0.1, 0.28]} position={[SLOT.x + 0.01, SPOUT_Y + 0.07, 0]} color={SCREEN_OFF} outline />
+        <Cyl r={0.018} h={0.03} position={[SLOT.x, SPOUT_Y + 0.005, 0]} color={METAL} />
         {/* power light */}
-        <mesh position={[-0.2, 0.39, 0.13]} rotation={[0, -Math.PI / 2, 0]} material={glow('#ff6b6b')}>
+        <mesh position={[-0.2, 0.39, 0.13]} rotation={[0, -Math.PI / 2, 0]} material={glow(LED_ON)}>
           <circleGeometry args={[0.02, 12]} />
         </mesh>
         {/* the brew button: lights up while brewing, green when the coffee is ready */}
         <group ref={button} position={[-0.18, 0.42, -0.06]}>
-          <Cyl r={0.045} h={0.02} rotation={[0, 0, Math.PI / 2]} color="#212529" />
+          <Cyl r={0.045} h={0.02} rotation={[0, 0, Math.PI / 2]} color={BEZEL} />
           <mesh position={[-0.012, 0, 0]} rotation={[0, 0, Math.PI / 2]} material={view.kind === 'brewing' ? lightBrewing : view.kind === 'ready' ? lightReady : lightOff}>
             <cylinderGeometry args={[0.032, 0.034, 0.018, 18]} />
           </mesh>
@@ -338,7 +339,7 @@ export function CoffeeMachine({ position }: { position: [number, number, number]
       </group>
       {/* drip tray and the mug slot */}
       <group ref={tray}>
-        <Box size={[0.2, SLOT.tray, 0.26]} position={[SLOT.x, SLOT.tray / 2, 0]} color="#6c757d" outline />
+        <Box size={[0.2, SLOT.tray, 0.26]} position={[SLOT.x, SLOT.tray / 2, 0]} color="#6B7580" outline />
         {view.kind !== 'empty' && (
           <group position={[SLOT.x, SLOT.tray + MUG_SIZE.h / 2, 0]} rotation={ROT_HANDLE}>
             <MugLook color={mugColor(view.mug.id)} sips={0} steam={false} />

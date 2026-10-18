@@ -29,7 +29,7 @@ import { THEMES } from './themes';
 // marshmallows) from the coffee machines.
 
 const DEF = THEMES.christmas;
-const ORNAMENTS = ['#e63946', '#ffd166', '#4cc9f0', '#f8f9fa', '#c77dff', '#ff8fab'];
+const ORNAMENTS = ['#e63946', '#ffd166', '#4cc9f0', '#F6F9FC', '#c77dff', '#ff8fab'];
 
 // ---------- the tree ----------
 
@@ -112,7 +112,7 @@ function TreeLights() {
 /** Under the tree, in the tree's frame (its front, +z, faces the lobby). */
 const PRESENTS = [
   { x: -0.95, z: 0.55, w: 0.45, h: 0.32, paper: '#e63946', ribbon: '#ffd166' },
-  { x: -0.35, z: 1.05, w: 0.38, h: 0.42, paper: '#2a9d8f', ribbon: '#f8f9fa' },
+  { x: -0.35, z: 1.05, w: 0.38, h: 0.42, paper: '#2a9d8f', ribbon: '#F6F9FC' },
   { x: 0.35, z: 1.1, w: 0.5, h: 0.28, paper: '#ffd166', ribbon: '#e63946' },
   { x: 0.98, z: 0.5, w: 0.36, h: 0.36, paper: '#9b5de5', ribbon: '#ffd166' },
   { x: 0.05, z: -1.05, w: 0.42, h: 0.38, paper: '#4cc9f0', ribbon: '#e63946' },
@@ -220,16 +220,16 @@ function useOpened(day: string) {
 
 function snowmanGeometry() {
   return mergeParts([
-    part(sphere(0.32, 16, 12), '#f8f9fa', [0, 0.3, 0]),
-    part(sphere(0.24, 16, 12), '#f8f9fa', [0, 0.72, 0]),
-    part(sphere(0.17, 14, 10), '#f8f9fa', [0, 1.04, 0]),
+    part(sphere(0.32, 16, 12), '#F6F9FC', [0, 0.3, 0]),
+    part(sphere(0.24, 16, 12), '#F6F9FC', [0, 0.72, 0]),
+    part(sphere(0.17, 14, 10), '#F6F9FC', [0, 1.04, 0]),
     part(cone(0.035, 0.16, 8), '#f77f00', [0, 1.04, 0.22], [Math.PI / 2, 0, 0]),
-    ...[-0.06, 0.06].map((x) => part(sphere(0.022, 6, 5), '#1f1d2b', [x, 1.1, 0.15])),
-    ...[0.62, 0.74, 0.86].map((y) => part(sphere(0.025, 6, 5), '#1f1d2b', [0, y, 0.235 - Math.abs(y - 0.74) * 0.4])),
+    ...[-0.06, 0.06].map((x) => part(sphere(0.022, 6, 5), '#26394D', [x, 1.1, 0.15])),
+    ...[0.62, 0.74, 0.86].map((y) => part(sphere(0.025, 6, 5), '#26394D', [0, y, 0.235 - Math.abs(y - 0.74) * 0.4])),
     part(torus(0.15, 0.04, 6, 18), '#e63946', [0, 0.92, 0], [Math.PI / 2, 0, 0]),
     part(box(0.07, 0.25, 0.03), '#e63946', [0.1, 0.8, 0.16], [0.2, 0, 0.2]),
-    part(cyl(0.16, 0.16, 0.025, 14), '#1f1d2b', [0, 1.17, 0]),
-    part(cyl(0.11, 0.11, 0.18, 14), '#1f1d2b', [0, 1.27, 0]),
+    part(cyl(0.16, 0.16, 0.025, 14), '#26394D', [0, 1.17, 0]),
+    part(cyl(0.11, 0.11, 0.18, 14), '#26394D', [0, 1.27, 0]),
     ...[-1, 1].map((s) => part(cyl(0.012, 0.015, 0.4, 5), '#7f4f24', [s * 0.32, 0.78, 0], [0, 0, s * 1.0])),
   ]);
 }

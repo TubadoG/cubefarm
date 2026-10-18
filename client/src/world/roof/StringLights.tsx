@@ -23,8 +23,8 @@ const STRANDS: [number, number][] = [
 ];
 const TOP = POLE.h - 0.12; // where the wires hang from
 const SPACING = 0.62; // metres between bulbs
-const TINTS = ['#fff1c9', '#fff1c9', '#ffb86b', '#ff8fab', '#8ecae6', '#fff1c9', '#b9fbc0'];
-const OFF = new THREE.Color('#bdb6a6');
+const TINTS = ['#F6F9FC', '#F6F9FC', '#E2C26E', '#B4A7D6', '#8FB5DD', '#F6F9FC', '#AABFD5'];
+const OFF = new THREE.Color('#C9D2DB');
 const ON = new THREE.Color('#ffffff');
 
 /** Points along a wire from a to b, sagging `sag` in the middle (a parabola is close enough to a catenary here). */
@@ -79,7 +79,7 @@ export function StringLights() {
       poles,
       bulbGeo: new THREE.SphereGeometry(0.055, 10, 8).scale(1, 1.3, 1),
       bulbMat: new THREE.MeshBasicMaterial({ color: OFF.clone(), toneMapped: false }),
-      wireMat: new THREE.LineBasicMaterial({ color: '#2b2d42' }),
+      wireMat: new THREE.LineBasicMaterial({ color: '#26394D' }),
       haloMat: new THREE.PointsMaterial({ size: 0.55, map: haloTexture(), vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
       level: -1,
     };
@@ -114,7 +114,7 @@ export function StringLights() {
 
   return (
     <group>
-      <mesh geometry={built.poles} material={toon('#3d405b')} castShadow />
+      <mesh geometry={built.poles} material={toon('#3D454D')} castShadow />
       <lineSegments geometry={built.wireGeo} material={built.wireMat} />
       <instancedMesh ref={bulbs} args={[built.bulbGeo, built.bulbMat, built.at.length]} />
       <points ref={halos} geometry={built.haloGeo} material={built.haloMat} visible={false} renderOrder={2} />

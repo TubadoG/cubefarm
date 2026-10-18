@@ -28,7 +28,7 @@ function haloTexture() {
 
 const lampHalo = new THREE.MeshBasicMaterial({
   map: haloTexture(),
-  color: '#ffcf85',
+  color: '#F2D9A0',
   transparent: true,
   opacity: 0,
   blending: THREE.AdditiveBlending,
@@ -45,8 +45,8 @@ const haloGeometry = {
   bulb: new THREE.PlaneGeometry(1.5, 1.5).rotateX(Math.PI / 2),
 };
 
-const BULB_OFF = new THREE.Color('#d6d0c2');
-const BULB_ON = new THREE.Color('#fffbe8');
+const BULB_OFF = new THREE.Color('#DCE3EA');
+const BULB_ON = new THREE.Color('#FFFFFF');
 /** The balcony lamps' bulbs: a dull diffuser by day, lit at night. */
 export const balconyBulb = markBloom(new THREE.MeshBasicMaterial({ color: BULB_OFF, toneMapped: false }), 'night');
 

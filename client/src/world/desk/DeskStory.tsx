@@ -25,8 +25,8 @@ function useNow(ms: number) {
 
 // ---------- models ----------
 
-const shelfModel = () => model('story-shelf', () => [box(SHELF.w, SHELF.h, SHELF.d, '#8d5a3b'), box(0.03, 0.03, 0.02, '#6f4530', [-0.4, -0.02, -0.03]), box(0.03, 0.03, 0.02, '#6f4530', [0.4, -0.02, -0.03])]);
-const plaqueModel = () => model('story-plaque', () => [box(PLAQUE.w, PLAQUE.h, PLAQUE.d, '#5c3d2e'), box(PLAQUE.w + 0.01, 0.012, PLAQUE.d + 0.012, '#3d2a20', [0, -PLAQUE.h / 2 + 0.004, 0])]);
+const shelfModel = () => model('story-shelf', () => [box(SHELF.w, SHELF.h, SHELF.d, '#5C6B7A'), box(0.03, 0.03, 0.02, '#3D454D', [-0.4, -0.02, -0.03]), box(0.03, 0.03, 0.02, '#3D454D', [0.4, -0.02, -0.03])]);
+const plaqueModel = () => model('story-plaque', () => [box(PLAQUE.w, PLAQUE.h, PLAQUE.d, '#3D4F63'), box(PLAQUE.w + 0.01, 0.012, PLAQUE.d + 0.012, '#26394D', [0, -PLAQUE.h / 2 + 0.004, 0])]);
 
 function starGeometry() {
   const s = new THREE.Shape();
@@ -38,49 +38,49 @@ function starGeometry() {
   }
   return new THREE.ExtrudeGeometry(s, { depth: 0.012, bevelEnabled: false }).translate(0, 0, -0.006);
 }
-const starModel = () => model('story-star', () => [{ geo: starGeometry(), color: '#ffd43b' }, cyl(0.006, 0.006, 0.03, '#e9c46a', [0, -0.045, 0]), cyl(0.02, 0.02, 0.006, '#e9c46a', [0, -0.058, 0])]);
+const starModel = () => model('story-star', () => [{ geo: starGeometry(), color: '#D4B483' }, cyl(0.006, 0.006, 0.03, '#A88E5E', [0, -0.045, 0]), cyl(0.02, 0.02, 0.006, '#A88E5E', [0, -0.058, 0])]);
 
-const potModel = () => model('story-pot', () => [cyl(0.07, 0.06, 0.09, '#e07a5f', [0, 0.045, 0]), cyl(0.066, 0.066, 0.01, '#6f4530', [0, 0.088, 0])]);
+const potModel = () => model('story-pot', () => [cyl(0.07, 0.06, 0.09, '#AABFD5', [0, 0.045, 0]), cyl(0.066, 0.066, 0.01, '#6f4530', [0, 0.088, 0])]);
 // The plant above its pot, scaled as it grows.
 const foliageModel = () =>
-  model('story-foliage', () => [cyl(0.008, 0.01, 0.06, '#40916c', [0, 0.03, 0]), ball(0.075, '#52b788', [0, 0.08, 0]), ball(0.05, '#40916c', [0.05, 0.12, 0.02]), ball(0.045, '#74c69d', [-0.045, 0.13, -0.01]), ball(0.035, '#52b788', [0, 0.17, 0])]);
+  model('story-foliage', () => [cyl(0.008, 0.01, 0.06, '#447A62', [0, 0.03, 0]), ball(0.075, '#5E9C7E', [0, 0.08, 0]), ball(0.05, '#447A62', [0.05, 0.12, 0.02]), ball(0.045, '#7FB596', [-0.045, 0.13, -0.01]), ball(0.035, '#5E9C7E', [0, 0.17, 0])]);
 
 const PHOTO = { w: 0.11, h: 0.14 };
-const frameModel = () => model('story-frame', () => [box(PHOTO.w, PHOTO.h, 0.012, '#2b2d42', [0, PHOTO.h / 2 + 0.005, 0]), box(0.012, 0.11, 0.012, '#2b2d42', [0, 0.055, -0.04], [0.5, 0, 0])]);
+const frameModel = () => model('story-frame', () => [box(PHOTO.w, PHOTO.h, 0.012, '#26394D', [0, PHOTO.h / 2 + 0.005, 0]), box(0.012, 0.11, 0.012, '#26394D', [0, 0.055, -0.04], [0.5, 0, 0])]);
 
 const TOYS: Record<DeskToy, () => THREE.BufferGeometry> = {
   duck: () =>
     model('toy-duck', () => [
-      ball(0.05, '#ffd166', [0, 0.042, 0], [1.25, 0.85, 1]),
-      ball(0.033, '#ffd166', [0.035, 0.1, 0]),
-      cone(0.016, 0.03, '#f77f00', [0.077, 0.098, 0], [0, 0, -Math.PI / 2], 8),
-      ball(0.006, '#1f1d2b', [0.055, 0.112, 0.02], undefined, 6),
-      ball(0.006, '#1f1d2b', [0.055, 0.112, -0.02], undefined, 6),
-      cone(0.02, 0.03, '#ffd166', [-0.065, 0.06, 0], [0, 0, Math.PI / 3], 8),
+      ball(0.05, '#E2C26E', [0, 0.042, 0], [1.25, 0.85, 1]),
+      ball(0.033, '#E2C26E', [0.035, 0.1, 0]),
+      cone(0.016, 0.03, '#A88E5E', [0.077, 0.098, 0], [0, 0, -Math.PI / 2], 8),
+      ball(0.006, '#26394D', [0.055, 0.112, 0.02], undefined, 6),
+      ball(0.006, '#26394D', [0.055, 0.112, -0.02], undefined, 6),
+      cone(0.02, 0.03, '#E2C26E', [-0.065, 0.06, 0], [0, 0, Math.PI / 3], 8),
     ]),
   speaker: () =>
     model('toy-speaker', () => [
-      box(0.08, 0.12, 0.07, '#2b2d42', [0, 0.06, 0]),
-      cyl(0.026, 0.026, 0.006, '#adb5bd', [0, 0.045, 0.036], [Math.PI / 2, 0, 0]),
-      torus(0.026, 0.004, '#495057', [0, 0.045, 0.037]),
-      cyl(0.011, 0.011, 0.006, '#e9ecef', [0, 0.095, 0.036], [Math.PI / 2, 0, 0]),
+      box(0.08, 0.12, 0.07, '#26394D', [0, 0.06, 0]),
+      cyl(0.026, 0.026, 0.006, '#AEB8C2', [0, 0.045, 0.036], [Math.PI / 2, 0, 0]),
+      torus(0.026, 0.004, '#3D454D', [0, 0.045, 0.037]),
+      cyl(0.011, 0.011, 0.006, '#DCE3EA', [0, 0.095, 0.036], [Math.PI / 2, 0, 0]),
     ]),
   cradle: () =>
     model('toy-cradle', () => {
-      const parts: Part[] = [box(0.16, 0.012, 0.08, '#2b2d42', [0, 0.006, 0])];
-      for (const z of [-0.03, 0.03]) for (const x of [-0.07, 0.07]) parts.push(cyl(0.003, 0.003, 0.11, '#adb5bd', [x, 0.06, z]));
-      for (const z of [-0.03, 0.03]) parts.push(cyl(0.003, 0.003, 0.14, '#adb5bd', [0, 0.115, z], [0, 0, Math.PI / 2]));
+      const parts: Part[] = [box(0.16, 0.012, 0.08, '#26394D', [0, 0.006, 0])];
+      for (const z of [-0.03, 0.03]) for (const x of [-0.07, 0.07]) parts.push(cyl(0.003, 0.003, 0.11, '#AEB8C2', [x, 0.06, z]));
+      for (const z of [-0.03, 0.03]) parts.push(cyl(0.003, 0.003, 0.14, '#AEB8C2', [0, 0.115, z], [0, 0, Math.PI / 2]));
       for (let i = 0; i < 5; i++) {
         const x = -0.04 + i * 0.02;
-        parts.push(cyl(0.001, 0.001, 0.07, '#ced4da', [x, 0.08, 0]), ball(0.0098, '#dee2e6', [x, 0.04, 0], undefined, 8));
+        parts.push(cyl(0.001, 0.001, 0.07, '#AEB8C2', [x, 0.08, 0]), ball(0.0098, '#DCE3EA', [x, 0.04, 0], undefined, 8));
       }
       return parts;
     }),
   magnifier: () =>
     model('toy-magnifier', () => [
-      torus(0.04, 0.007, '#2b2d42', [0, 0.008, 0], [Math.PI / 2, 0, 0]),
-      cyl(0.036, 0.036, 0.004, '#bde0fe', [0, 0.008, 0]),
-      cyl(0.008, 0.009, 0.08, '#8d5a3b', [0.08, 0.008, 0], [0, 0, Math.PI / 2]),
+      torus(0.04, 0.007, '#26394D', [0, 0.008, 0], [Math.PI / 2, 0, 0]),
+      cyl(0.036, 0.036, 0.004, '#D6E4F2', [0, 0.008, 0]),
+      cyl(0.008, 0.009, 0.08, '#5C6B7A', [0.08, 0.008, 0], [0, 0, Math.PI / 2]),
     ]),
 };
 
@@ -100,19 +100,16 @@ function drawLabel(ctx: CanvasRenderingContext2D, l: Label, x: number, y: number
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   if (l.kind === 'plaque' || l.kind === 'more') {
-    const g = ctx.createLinearGradient(0, 0, c, c);
-    g.addColorStop(0, '#ffe8a3');
-    g.addColorStop(1, '#e9b949');
-    ctx.fillStyle = g;
+    ctx.fillStyle = '#D4B483';
     ctx.fillRect(2, 2, c - 4, c - 4);
-    ctx.strokeStyle = '#8a6116';
+    ctx.strokeStyle = '#A88E5E';
     ctx.lineWidth = 3;
     ctx.strokeRect(4, 4, c - 8, c - 8);
     const text = l.kind === 'more' ? `+${l.n}` : `#${l.n}`;
     let size = 28;
     ctx.font = `700 ${size}px ${SANS}`;
     while (size > 12 && ctx.measureText(text).width > c - 12) ctx.font = `700 ${(size -= 2)}px ${SANS}`;
-    ctx.fillStyle = '#4a3410';
+    ctx.fillStyle = '#26394D';
     ctx.fillText(text, c / 2, c / 2 + 2);
   } else {
     // a few tiny snapshots: a sunset, a heart, a cat, the mountains
@@ -315,13 +312,13 @@ export function MvpSign({ agents }: { agents: Agent[] }) {
     104,
     (ctx) => {
       roundRect(ctx, 0, 0, 1024, 104, 26);
-      ctx.fillStyle = mvp ? '#ffd166' : '#e9ecef';
+      ctx.fillStyle = mvp ? '#D4B483' : '#DCE3EA';
       ctx.fill();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#2d3142';
+      ctx.fillStyle = '#26394D';
       ctx.font = `700 52px ${SANS}`;
-      ctx.fillText(text, 512, 56);
+      ctx.fillText(text, 512, 56, 980); // Komet runs wide: squeeze rather than clip
     },
     [text, !!mvp],
   );

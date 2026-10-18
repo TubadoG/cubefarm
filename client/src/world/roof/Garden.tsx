@@ -3,13 +3,13 @@ import * as THREE from 'three';
 import { Outlines } from '../Outlines';
 import { GARDEN_BEDS, PICNIC, TREE_PLANTERS, WATER_TANK, type Rect } from '../layout';
 import { toon } from '../materials';
+import { DARK, INK, WOOD_DARK, WOOD_LIGHT } from '../palette';
 import { boxesGeometry, merged, type BoxSpec } from '../shapes';
 
 // The roof's garden and its bits of furniture: raised beds along the north parapet (sunflowers and herbs, tomatoes on
 // canes, lettuces), two little trees in planters by the decking, the old wooden water tank on its stand, and the
 // picnic table by the grill. All static, merged into a handful of meshes by material.
 
-const INK = '#1f1d2b';
 
 /** A seeded wobble, so the garden grows the same way every visit. */
 function rand(seed: number) {
@@ -126,7 +126,7 @@ export function Garden() {
   useEffect(() => () => [...Object.values(g), ...Object.values(tank), ...Object.values(picnic)].forEach((x) => x.dispose()), [g, tank, picnic]);
   return (
     <group>
-      <mesh geometry={g.wood} material={toon('#b07d4f')} castShadow receiveShadow>
+      <mesh geometry={g.wood} material={toon(WOOD_DARK)} castShadow receiveShadow>
         <Outlines thickness={0.02} color={INK} />
       </mesh>
       <mesh geometry={g.soil} material={toon('#5e4433')} receiveShadow />
@@ -136,19 +136,19 @@ export function Garden() {
       <mesh geometry={g.yellow} material={toon('#ffc93c')} castShadow />
       <mesh geometry={g.brown} material={toon('#7a5a3c')} castShadow />
 
-      <mesh geometry={tank.stand} material={toon('#5e4a3c')} castShadow />
-      <mesh geometry={tank.tank} material={toon('#a8744a')} castShadow receiveShadow>
+      <mesh geometry={tank.stand} material={toon(WOOD_DARK)} castShadow />
+      <mesh geometry={tank.tank} material={toon('#9AA7B4')} castShadow receiveShadow>
         <Outlines thickness={0.025} color={INK} />
       </mesh>
-      <mesh geometry={tank.hoops} material={toon('#495057')} />
-      <mesh geometry={tank.hat} material={toon('#6b4a33')} castShadow>
+      <mesh geometry={tank.hoops} material={toon(DARK)} />
+      <mesh geometry={tank.hat} material={toon('#3D4F63')} castShadow>
         <Outlines thickness={0.025} color={INK} />
       </mesh>
 
-      <mesh geometry={picnic.top} material={toon('#c9905a')} castShadow receiveShadow>
+      <mesh geometry={picnic.top} material={toon(WOOD_LIGHT)} castShadow receiveShadow>
         <Outlines thickness={0.018} color={INK} />
       </mesh>
-      <mesh geometry={picnic.legs} material={toon('#8a5a32')} castShadow />
+      <mesh geometry={picnic.legs} material={toon(WOOD_DARK)} castShadow />
     </group>
   );
 }

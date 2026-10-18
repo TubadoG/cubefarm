@@ -77,10 +77,10 @@ function BallLook({ live }: { live: () => boolean }) {
   });
   return (
     <group ref={g} visible={false}>
-      <mesh material={toon('#ff9f1c')} castShadow>
+      <mesh material={toon('#F6F9FC')} castShadow>
         <sphereGeometry args={[R, 16, 12]} />
       </mesh>
-      <mesh material={toon('#fff8e7')} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh material={toon('#DCE3EA')} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[R * 1.01, R * 0.18, 6, 20]} />
       </mesh>
     </group>
@@ -92,7 +92,7 @@ function Trail({ body, live }: { body: RefObject<RapierRigidBody | null>; live: 
   const line = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL * 3), 3));
-    const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: '#ffd166', transparent: true, opacity: 0.5 }));
+    const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.5 }));
     l.frustumCulled = false;
     l.visible = false;
     return l;

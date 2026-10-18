@@ -8,6 +8,7 @@ import { doorOpen, resetDoors, tickDoors } from './doors';
 import { drawFacade } from './draw';
 import { BALCONY, BALCONY_LIGHTS, BALCONY_OUT, BENCH, FLOOR_HEIGHT, HALF_D, HALF_W, PLANTER, SIDE_DOOR, SIDE_OPENINGS, SIDES, WALL_H, WALL_T, WINDOW, balconyFurniture, floorElevation, sideSign, type Side } from './layout';
 import { toon, toonMap } from './materials';
+import { DARK, INK, METAL_LIGHT, PLANT, WOOD_DARK } from './palette';
 import { OutsideSounds } from './OutsideSounds';
 import { doorWalkers } from './hiringState';
 import { bodyState } from './people';
@@ -20,7 +21,6 @@ import { LampHalos, balconyBulb } from './sky/lamps';
 // is the ground). Everything static is merged into a few meshes, so all of it costs a handful of draw calls.
 
 type FloorKind = 'office' | 'lobby';
-const INK = '#1f1d2b';
 const wallX = (side: Side) => sideSign(side) * (HALF_W + WALL_T / 2);
 
 // ---------- side doors ----------
@@ -86,7 +86,7 @@ function SideDoors({ kind, floor }: { kind: FloorKind; floor: number }) {
         return (
           <group key={i} ref={(g) => void (leaves.current[i] = g)} position={[wallX(side), 0, SIDE_OPENINGS[kind][side].door + dir * (LEAF_W / 2 - 0.02)]}>
             <mesh geometry={geo.glass} material={paneMaterial()} renderOrder={1} />
-            <mesh geometry={geo.frames[i & 1]} material={toon('#e9ecef')} />
+            <mesh geometry={geo.frames[i & 1]} material={toon(METAL_LIGHT)} />
           </group>
         );
       })}
@@ -172,20 +172,20 @@ function Balconies({ kind, floor, top }: { kind: FloorKind; floor: number; top: 
   useEffect(() => () => [...Object.values(shell), ...Object.values(stuff)].forEach((g) => g.dispose()), [shell, stuff]);
   return (
     <group>
-      <mesh geometry={shell.slabs} material={toon('#d6d0c4')} />
-      <mesh geometry={shell.patio} material={toon('#e3b98f')} />
-      <mesh geometry={shell.rails} material={toon('#5c677d')} />
+      <mesh geometry={shell.slabs} material={toon('#D6DDE4')} />
+      <mesh geometry={shell.patio} material={toon('#C9D2DB')} />
+      <mesh geometry={shell.rails} material={toon(DARK)} />
       <mesh geometry={shell.glass} material={paneMaterial()} renderOrder={1} />
-      <mesh geometry={stuff.planters} material={toon('#e07a5f')}>
+      <mesh geometry={stuff.planters} material={toon('#4D7399')}>
         <Outlines thickness={0.018} color={INK} />
       </mesh>
-      <mesh geometry={stuff.shrubs} material={toon('#52b788')} />
-      <mesh geometry={stuff.flowers} material={toon('#ff8fab')} />
-      <mesh geometry={stuff.bench} material={toon('#c9905a')}>
+      <mesh geometry={stuff.shrubs} material={toon(PLANT)} />
+      <mesh geometry={stuff.flowers} material={toon('#4D7399')} />
+      <mesh geometry={stuff.bench} material={toon(WOOD_DARK)}>
         <Outlines thickness={0.018} color={INK} />
       </mesh>
-      <mesh geometry={stuff.legs} material={toon('#495057')} />
-      <mesh geometry={stuff.lamps} material={toon('#e9ecef')} />
+      <mesh geometry={stuff.legs} material={toon(DARK)} />
+      <mesh geometry={stuff.lamps} material={toon(METAL_LIGHT)} />
       <mesh geometry={stuff.bulbs} material={balconyBulb} />
       <LampHalos positions={BULB_HALOS} size="bulb" />
     </group>
@@ -251,9 +251,9 @@ export function BuildingBelow({ top }: { top: number }) {
   useEffect(() => () => Object.values(shell).forEach((g) => g.dispose()), [shell]);
   return (
     <group>
-      <mesh geometry={shell.slabs} material={toon('#d6d0c4')} />
-      <mesh geometry={shell.patio} material={toon('#e3b98f')} />
-      <mesh geometry={shell.rails} material={toon('#5c677d')} />
+      <mesh geometry={shell.slabs} material={toon('#D6DDE4')} />
+      <mesh geometry={shell.patio} material={toon('#C9D2DB')} />
+      <mesh geometry={shell.rails} material={toon(DARK)} />
       <mesh geometry={shell.glass} material={paneMaterial()} renderOrder={1} />
       <Facade floor={floor} top={top} />
     </group>

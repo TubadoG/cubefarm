@@ -17,7 +17,7 @@ import { FACES_CAMERA } from './viewTags';
 // texture is drawn once and shared, so a frame allocates nothing.
 
 const SIGN = { ...SIGN_SIZE, px: 640, py: 120 };
-const INK = '#1f1d2b';
+const INK = '#26394D';
 const CHECK_MS = 500;
 const FADE_S = 0.16;
 const KEEP = 64; // sign textures kept; the least recently shown go first
@@ -28,18 +28,18 @@ const keyOf = (a: AgentActivity | null) => (a ? `${a.kind}|${a.detail}` : '');
 
 function drawSign(ctx: CanvasRenderingContext2D, icon: string, detail: string) {
   const { px: w, py: h } = SIGN;
-  const font = `600 44px ${SANS}`;
+  const font = `700 44px ${SANS}`;
   ctx.clearRect(0, 0, w, h);
   ctx.font = font;
   const room = w - 130;
   const text = detail ? Math.min(ctx.measureText(detail).width, room) : 0;
   const bw = 92 + (detail ? text + 26 : 0);
   const x0 = (w - bw) / 2;
-  roundRect(ctx, x0, 8, bw, h - 16, (h - 16) / 2);
-  ctx.fillStyle = 'rgba(255,253,245,0.96)';
+  roundRect(ctx, x0, 8, bw, h - 16, 28);
+  ctx.fillStyle = '#FFFFFF';
   ctx.fill();
-  ctx.lineWidth = 7;
-  ctx.strokeStyle = INK;
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#AABFD5';
   ctx.stroke();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';

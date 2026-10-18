@@ -20,8 +20,8 @@ const STARS = 700;
 const FOG_NEAR = 30;
 const FOG_FAR_DAY = 70;
 const FOG_FAR_NIGHT = 62;
-const NIGHT_CLOUD = new THREE.Color(0x5d6788);
-const STORM_CLOUD = new THREE.Color(0x6c7380);
+const NIGHT_CLOUD = new THREE.Color(0x4d6680);
+const STORM_CLOUD = new THREE.Color(0x6b7580);
 const FLASH = new THREE.Color(0xe8eeff);
 /** How much closer the fog comes in thick fog (metres off its near and far), kept off the office's own far wall. */
 const FOG_IN = { near: 6, far: 26 };
@@ -163,8 +163,8 @@ export function Sky() {
       axis,
       matrix: new THREE.Matrix4(),
       tmp: new THREE.Color(),
-      fog: new THREE.Fog(0xf3ece2, FOG_NEAR, FOG_FAR_DAY),
-      background: new THREE.Color(0xbfe3ff),
+      fog: new THREE.Fog(0xeef3f8, FOG_NEAR, FOG_FAR_DAY),
+      background: new THREE.Color(0xcfe0f0),
       drift: 0,
       lastDrift: -1,
       lastSwell: -1,
@@ -193,7 +193,7 @@ export function Sky() {
         fragmentShader: CLOUD_FRAG,
         uniforms: {
           uLit: { value: new THREE.Color(0xffffff) },
-          uShade: { value: new THREE.Color(0xd8e4f4) },
+          uShade: { value: new THREE.Color(0xdce3ea) },
           uLight: { value: new THREE.Vector3(0, 1, 0) },
         },
       }),

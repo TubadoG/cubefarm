@@ -120,9 +120,9 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 /** Four boards' worth: the team at work, merges, the backlog, and the company's own ad. */
 export function boardTexts(n: OfficeNumbers): BoardText[] {
   return [
-    { top: 'AGENTS AT WORK RIGHT NOW', big: `${n.working} / ${n.agents}`, under: `on ${plural(n.floors, 'floor')}`, bg: '#ffd166', fg: '#2b2d42' },
-    { top: 'PULL REQUESTS MERGED', big: String(n.merged), under: `${n.openPrs} open · ${n.inQa} in QA`, bg: '#06d6a0', fg: '#073b4c' },
-    { top: 'OPEN ISSUES', big: String(n.issues), under: n.issues ? 'the backlog awaits' : 'inbox zero!', bg: '#ef476f', fg: '#ffffff' },
-    { top: (n.company || 'cubefarm').toUpperCase(), big: 'SHIP IT', under: 'small PRs, happy reviewers', bg: '#3a86ff', fg: '#ffffff' },
+    { top: 'AGENTS AT WORK RIGHT NOW', big: `${n.working} / ${n.agents}`, under: `on ${plural(n.floors, 'floor')}`, bg: '#AABFD5', fg: '#1B2732' },
+    { top: 'PULL REQUESTS MERGED', big: String(n.merged), under: `${n.openPrs} open · ${n.inQa} in QA`, bg: '#5FA8A0', fg: '#1B2732' },
+    { top: 'OPEN ISSUES', big: String(n.issues), under: n.issues ? 'the backlog awaits' : 'inbox zero!', bg: '#26394D', fg: '#FFFFFF' },
+    { top: (n.company || 'cubefarm').toUpperCase(), big: 'SHIP IT', under: 'small PRs, happy reviewers', bg: '#4D7399', fg: '#FFFFFF' },
   ];
 }

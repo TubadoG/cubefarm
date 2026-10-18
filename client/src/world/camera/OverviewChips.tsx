@@ -28,19 +28,20 @@ function drawChip(ctx: CanvasRenderingContext2D, name: string, kind: ChipKind) {
   const line = `${text} · ${label}`;
   const width = Math.min(w - 8, ctx.measureText(line).width + 64);
   const x0 = (w - width) / 2;
-  roundRect(ctx, x0, 6, width, h - 12, (h - 12) / 2);
-  ctx.fillStyle = 'rgba(255,253,246,0.96)';
+  roundRect(ctx, x0, 6, width, h - 12, 18);
+  ctx.fillStyle = '#FFFFFF';
   ctx.fill();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = '#1f1d2b';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#AABFD5';
   ctx.stroke();
   ctx.beginPath();
   ctx.arc(x0 + 28, h / 2, 11, 0, Math.PI * 2);
   ctx.fillStyle = CHIP_COLORS[kind];
   ctx.fill();
   ctx.lineWidth = 3;
+  ctx.strokeStyle = '#26394D';
   ctx.stroke();
-  ctx.fillStyle = '#1f1d2b';
+  ctx.fillStyle = '#26394D';
   ctx.textBaseline = 'middle';
   ctx.fillText(line, x0 + 48, h / 2 + 1);
 }

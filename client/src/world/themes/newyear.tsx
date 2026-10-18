@@ -28,7 +28,7 @@ import { THEMES } from './themes';
 // side to cheer.
 
 const DEF = THEMES.newyear;
-const STREAMERS = ['#ffd23f', '#c77dff', '#4cc9f0', '#ff5d8f', '#f8f9fa'];
+const STREAMERS = ['#ffd23f', '#c77dff', '#4cc9f0', '#ff5d8f', '#F6F9FC'];
 
 /** Curly ribbons hanging from the ceiling over the walkways (well above anyone's head). */
 function Streamers({ kind }: { kind: 'office' | 'lobby' }) {
@@ -58,7 +58,7 @@ function Champagne({ at }: { at: Spot[] }) {
         part(cyl(0.05, 0.05, 0.22, 12), '#1b4332', [0, 0.11, 0]),
         part(cyl(0.018, 0.05, 0.1, 12), '#1b4332', [0, 0.27, 0]),
         part(cyl(0.022, 0.022, 0.06, 10), '#ffd23f', [0, 0.33, 0]),
-        part(box(0.07, 0.06, 0.005), '#f8f9fa', [0, 0.12, 0.05]),
+        part(box(0.07, 0.06, 0.005), '#F6F9FC', [0, 0.12, 0.05]),
         ...[-0.14, 0.13].flatMap((x) => [
           part(cyl(0.035, 0.012, 0.09, 10, true), '#e0f2ff', [x, 0.16, 0.04]),
           part(cyl(0.004, 0.004, 0.08, 4), '#e0f2ff', [x, 0.075, 0.04]),
@@ -82,10 +82,7 @@ const ITEMS: ItemRenderers = { champagne: Champagne };
 
 /** The countdown as words: "2027 in 3:12:05", the big number, or the greeting. */
 function drawCountdown(ctx: CanvasRenderingContext2D, w: number, h: number, s: NewYearState, big: boolean) {
-  const g = ctx.createLinearGradient(0, 0, w, h);
-  g.addColorStop(0, '#14143a');
-  g.addColorStop(1, '#3a1458');
-  ctx.fillStyle = g;
+  ctx.fillStyle = '#26394D';
   ctx.beginPath();
   ctx.roundRect(0, 0, w, h, 26);
   ctx.fill();
@@ -107,7 +104,7 @@ function drawCountdown(ctx: CanvasRenderingContext2D, w: number, h: number, s: N
     return;
   }
   ctx.fillStyle = '#ffffff';
-  ctx.font = `600 ${Math.round(h * 0.2)}px ${SANS}`;
+  ctx.font = `700 ${Math.round(h * 0.2)}px ${SANS}`;
   ctx.fillText(`🥂 Countdown to ${s.year}`, w / 2, h * 0.3);
   ctx.fillStyle = '#ffd23f';
   ctx.font = `700 ${Math.round(h * 0.36)}px ${SANS}`;
@@ -120,7 +117,7 @@ function LobbyBoard({ s }: { s: NewYearState }) {
   const tex = useCanvasTexture(1024, 400, (ctx) => drawCountdown(ctx, 1024, 400, s, true), [key, s.year]);
   return (
     <group position={[3, 2.75, 0.5]}>
-      <mesh position={[0, 0, -0.03]} material={toon('#2b2d42')}>
+      <mesh position={[0, 0, -0.03]} material={toon('#26394D')}>
         <boxGeometry args={[3.3, 1.35, 0.05]} />
       </mesh>
       <mesh position={[0, 0, 0.001]}>

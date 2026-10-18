@@ -21,7 +21,7 @@ const PIECES = 90; // per burst
 const LIFE = 2.4; // seconds
 const GRAVITY = 3.2;
 const DRAG = 1.6;
-const PALETTE = ['#ff5d8f', '#ffd23f', '#3bceac', '#3a86ff', '#ff8c42', '#9b5de5'];
+const PALETTE = ['#6699CC', '#AABFD5', '#5FA8A0', '#4D7399', '#D4B483', '#FFFFFF'];
 
 interface Slot {
   key: string | null; // the desk (agent id), 'board' or 'gong' while flying, null when free
@@ -91,7 +91,7 @@ export function MergeConfetti({ repo, agents }: { repo: RepoView; agents: Agent[
         { length: SLOTS },
         () =>
           new THREE.SpriteMaterial({
-            color: new THREE.Color(repo.color).lerp(new THREE.Color('#ffd166'), 0.7),
+            color: new THREE.Color(repo.color).lerp(new THREE.Color('#D4B483'), 0.7),
             transparent: true,
             opacity: 0,
             depthWrite: false,

@@ -19,7 +19,7 @@ import { stripeTexture } from './textures';
 
 type V3 = [number, number, number];
 
-const COLOURS = ['#e63946', '#3a86ff', '#ffb703', '#2a9d8f'];
+const COLOURS = ['#6699CC', '#4D7399', '#AABFD5', '#5FA8A0'];
 // Chair-space (origin on the deck under the sitter's hips, facing −z): the canvas hangs from the front bar down to the
 // low point of the seat and up to the top bar, tipped back RECLINE from upright.
 export const RECLINE = 0.45;
@@ -139,11 +139,11 @@ export function DeckChairs() {
   useRoofReport('chairs', () => DECK_CHAIRS.xs.map((_, i) => (useRoof.getState().sitting === i ? 'you' : takenByVisitor(i) ? 'taken' : 'free')));
   return (
     <group>
-      <mesh geometry={geo.frame} material={toon('#c08552')} castShadow>
-        <Outlines thickness={0.012} color="#1f1d2b" />
+      <mesh geometry={geo.frame} material={toon('#B9C3CC')} castShadow>
+        <Outlines thickness={0.012} color="#26394D" />
       </mesh>
       <mesh geometry={geo.canvas} material={canvasMat} castShadow receiveShadow />
-      <mesh geometry={geo.tables} material={toon('#e9ecef')} castShadow receiveShadow />
+      <mesh geometry={geo.tables} material={toon('#DCE3EA')} castShadow receiveShadow />
       {DECK_CHAIRS.xs.map((_, i) => (
         <ChairTarget key={i} i={i} />
       ))}

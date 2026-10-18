@@ -7,6 +7,7 @@ import { roombaChirp } from '../../ui/sfx';
 import { playerAt } from '../camera/rig';
 import { useInteractable } from '../interact';
 import { toon } from '../materials';
+import { BEZEL, DARK, INK, METAL, METAL_LIGHT } from '../palette';
 import { BALLS, type ToyFloor } from './balls';
 import { setNpcRoomba, setRoombaRound } from './npc';
 import { onPoke } from './poke';
@@ -18,9 +19,8 @@ import { Vacuum } from './RoombaVacuum';
 // The floor's robot vacuum and its charging dock. roombaBrain.ts decides where it goes; this steers a kinematic
 // body there every physics step (so balls it bumps get nudged) and animates the brush and status light.
 
-const INK = '#1f1d2b';
 const UP = new THREE.Vector3(0, 1, 0);
-const LIGHT = { clean: new THREE.Color('#4cc9f0'), home: new THREE.Color('#ffd166'), charge: new THREE.Color('#ff9f1c'), full: new THREE.Color('#06d6a0'), off: new THREE.Color('#3a3f4b') };
+const LIGHT = { clean: new THREE.Color('#8FB5DD'), home: new THREE.Color('#B4A7D6'), charge: new THREE.Color('#E2C26E'), full: new THREE.Color('#7FC4A0'), off: new THREE.Color('#4D6680') };
 
 const hintFor = (b: Brain) => `Roomba · ${roombaStatus(b)} (battery ${Math.round(b.battery * 100)}%)`;
 
@@ -51,18 +51,18 @@ function Look({ brain, light }: { brain: Brain; light: THREE.MeshBasicMaterial }
   return (
     // userData.moving: High's contact-shadow bake (gfx/ContactShadows.tsx) leaves it out, so it leaves no ghost behind
     <group userData={{ moving: true }}>
-      <mesh position={[0, 0.045, 0]} castShadow material={toon('#f1f3f5')}>
+      <mesh position={[0, 0.045, 0]} castShadow material={toon('#F2F5F9')}>
         <cylinderGeometry args={[r, r, 0.07, 32]} />
         <Outlines thickness={0.01} color={INK} />
       </mesh>
       {/* front bumper: half a ring round the nose */}
-      <mesh position={[0, 0.04, 0]} material={toon('#495057')}>
+      <mesh position={[0, 0.04, 0]} material={toon(DARK)}>
         <cylinderGeometry args={[r + 0.008, r + 0.008, 0.045, 24, 1, false, 0, Math.PI]} />
       </mesh>
-      <mesh position={[0, 0.084, 0]} material={toon('#ced4da')}>
+      <mesh position={[0, 0.084, 0]} material={toon(METAL_LIGHT)}>
         <cylinderGeometry args={[0.12, 0.12, 0.012, 28]} />
       </mesh>
-      <mesh position={[-0.02, 0.092, 0]} material={toon('#868e96')}>
+      <mesh position={[-0.02, 0.092, 0]} material={toon('#6B7580')}>
         <cylinderGeometry args={[0.035, 0.035, 0.008, 16]} />
       </mesh>
       <mesh position={[0.085, 0.09, 0]} material={light}>
@@ -71,11 +71,11 @@ function Look({ brain, light }: { brain: Brain; light: THREE.MeshBasicMaterial }
       {/* side brush, front right */}
       <group ref={brush} position={[0.115, 0.012, 0.095]}>
         {[0, 1, 2].map((i) => (
-          <mesh key={i} rotation={[0, (i * 2 * Math.PI) / 3, 0]} position={[0, 0, 0]} material={toon('#adb5bd')}>
+          <mesh key={i} rotation={[0, (i * 2 * Math.PI) / 3, 0]} position={[0, 0, 0]} material={toon(METAL)}>
             <boxGeometry args={[0.13, 0.006, 0.008]} />
           </mesh>
         ))}
-        <mesh material={toon('#495057')}>
+        <mesh material={toon(DARK)}>
           <cylinderGeometry args={[0.018, 0.018, 0.012, 10]} />
         </mesh>
       </group>
@@ -95,22 +95,22 @@ function DockLook({ dock, led, groups }: { dock: Dock; led: THREE.MeshBasicMater
       <RigidBody type="fixed" colliders={false}>
         <CuboidCollider args={[w / 2, h / 2, d / 2]} position={[0, h / 2, 0]} collisionGroups={groups} />
       </RigidBody>
-      <mesh position={[0, h / 2, 0]} castShadow material={toon('#343a40')}>
+      <mesh position={[0, h / 2, 0]} castShadow material={toon('#26394D')}>
         <boxGeometry args={[w, h, d]} />
         <Outlines thickness={0.012} color={INK} />
       </mesh>
-      <mesh position={[0, h - 0.02, 0]} material={toon('#495057')}>
+      <mesh position={[0, h - 0.02, 0]} material={toon(DARK)}>
         <boxGeometry args={[w + 0.02, 0.04, d + 0.02]} />
       </mesh>
       <mesh position={[0, h * 0.62, d / 2 + 0.004]} material={led}>
         <circleGeometry args={[0.022, 14]} />
       </mesh>
       {/* charging contacts on the floor, under the parked roomba's nose */}
-      <mesh position={[0, 0.004, d / 2 + 0.09]} material={toon('#2b2d42')}>
+      <mesh position={[0, 0.004, d / 2 + 0.09]} material={toon(BEZEL)}>
         <boxGeometry args={[0.3, 0.008, 0.18]} />
       </mesh>
       {[-0.07, 0.07].map((x) => (
-        <mesh key={x} position={[x, 0.009, d / 2 + 0.06]} material={toon('#ced4da')}>
+        <mesh key={x} position={[x, 0.009, d / 2 + 0.06]} material={toon(METAL_LIGHT)}>
           <boxGeometry args={[0.05, 0.004, 0.08]} />
         </mesh>
       ))}

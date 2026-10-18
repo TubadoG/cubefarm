@@ -27,7 +27,7 @@ function drawBoard(ctx: CanvasRenderingContext2D, k: number, b: BoardText) {
   const y = Math.floor(k / 2) * CELL.h;
   const w = CELL.w;
   const h = FACE_H;
-  ctx.fillStyle = '#2b2d42';
+  ctx.fillStyle = '#26394D';
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = b.bg;
   roundRect(ctx, x + 14, y + 14, w - 28, h - 28, 26);
@@ -46,9 +46,9 @@ function drawBoard(ctx: CanvasRenderingContext2D, k: number, b: BoardText) {
   ctx.textBaseline = 'middle';
   ctx.font = `700 54px ${SANS}`;
   ctx.fillText(b.top, x + w / 2, y + 92, w - 120);
-  ctx.font = `800 176px ${SANS}`;
+  ctx.font = `700 176px ${SANS}`;
   ctx.fillText(b.big, x + w / 2, y + h / 2 + 18, w - 120);
-  ctx.font = `600 46px ${SANS}`;
+  ctx.font = `400 46px ${SANS}`;
   ctx.fillText(b.under, x + w / 2, y + h - 82, w - 120);
 }
 
@@ -108,7 +108,7 @@ export function Billboards({ top }: { top: number }) {
   const mats = useMemo(
     () => ({
       face: new THREE.MeshBasicMaterial({ map: atlas, fog: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2 }),
-      frame: new THREE.MeshBasicMaterial({ color: '#3d405b', fog: false }),
+      frame: new THREE.MeshBasicMaterial({ color: '#3D454D', fog: false }),
     }),
     [atlas],
   );
