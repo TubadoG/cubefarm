@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type CeoInfo, type CliView, type DoctorFinding, type HireRequestView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
+import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type CeoInfo, type CliView, type DoctorFinding, type EmailSenderView, type EmailView, type HireRequestView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
 import { blockers } from '../../shared/issues';
 import { latestListed } from '../../shared/watch';
 import { DEFAULT_WEATHER, DEFAULT_WORLD_EVENTS, EMPTY_WEATHER_VIEW, type WeatherView } from '../../shared/outside';
 import { DEFAULT_NOTIFY } from '../../shared/notify';
+import { DEFAULT_EMAIL } from '../../shared/email';
 import { speechText } from '../../shared/speech';
 import { showDesktopNote } from './notifications';
 import { EMPTY_OPS, newAlarms } from './ops';
@@ -126,6 +127,8 @@ interface State {
   voiceSpeaking: number | null; // the phone message being read aloud in this tab (ui/voiceMessages.ts)
   weather: WeatherView; // the real local weather's place and latest reading (Settings → Weather)
   ticker: TickerItem[]; // the floors' recent activity lines, oldest first (world/ActivityTicker.tsx)
+  emails: EmailView[]; // the CEO's emails: pending ones wait for the manager's OK (Approvals)
+  emailSender: EmailSenderView; // whether email's sender is set up on the server (its kind and a hint only)
   notifyChannels: NotifyChannelsView; // which chat apps have a webhook saved (hints only) and how many devices get push
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   restarting: boolean; // the connection dropped because the office is restarting to update
@@ -228,6 +231,7 @@ export const useStore = create<State>((set, get) => ({
     worldEvents: DEFAULT_WORLD_EVENTS,
     listen: { provider: 'off', autoSend: false, handsFree: false },
     notify: DEFAULT_NOTIFY,
+    email: DEFAULT_EMAIL,
   },
   clis: [],
   repos: [],
@@ -253,6 +257,8 @@ export const useStore = create<State>((set, get) => ({
   weather: EMPTY_WEATHER_VIEW,
   ticker: [],
   notifyChannels: { webhooks: { ntfy: { set: false, hint: '' } }, pushDevices: 0 },
+  emails: [],
+  emailSender: { set: false, mode: null, hint: '' },
   pong: {},
   restarting: false,
   visitors: [],
@@ -322,6 +328,8 @@ export const useStore = create<State>((set, get) => ({
           weather: d.weather ?? EMPTY_WEATHER_VIEW,
           ticker: d.ticker ?? [],
           notifyChannels: d.notifyChannels ?? get().notifyChannels,
+          emails: d.emails ?? [],
+          emailSender: d.emailSender ?? get().emailSender,
           progress: d.progress ?? { floors: {}, achievements: [], coffees: 0, merges: 0 },
           pong: d.pong ?? {},
           restarting: false,
@@ -447,6 +455,12 @@ export const useStore = create<State>((set, get) => ({
         set({ requests: requests.sort((a, b) => a.createdAt - b.createdAt) });
         break;
       }
+      case 'email':
+        set({ emails: [...get().emails.filter((e) => e.id !== ev.email.id), ev.email].sort((a, b) => a.createdAt - b.createdAt) });
+        break;
+      case 'emailSender':
+        set({ emailSender: ev.emailSender });
+        break;
       case 'ceo':
         set({ ceo: ev.ceo });
         break;
@@ -602,17 +616,19 @@ export const coversView = (o: Overlay | null) => o?.kind === 'kanban' || o?.kind
 
 export const isBusy = (a: Agent) => a.status === 'preparing' || a.status === 'working';
 
-/** CEO messages the manager hasn't seen yet (proposals are counted by pendingRequests instead). */
-export const unreadMessages = (messages: PhoneMessage[], readAt: number) => messages.filter((m) => m.from === 'ceo' && !m.requestId && m.at > readAt).length;
+/** CEO messages the manager hasn't seen yet (proposals and emails are counted by pendingRequests / pendingEmails instead). */
+export const unreadMessages = (messages: PhoneMessage[], readAt: number) => messages.filter((m) => m.from === 'ceo' && !m.requestId && !m.emailId && m.at > readAt).length;
 
 export const pendingRequests = (requests: HireRequestView[]) => requests.filter((r) => r.status === 'pending');
+export const pendingEmails = (emails: EmailView[]) => emails.filter((e) => e.status === 'pending');
 
 /** The red dot on the phone: decisions waiting on the manager plus unread messages. */
 export function usePhoneBadge() {
   const requests = useStore((s) => s.requests);
   const messages = useStore((s) => s.messages);
   const readAt = useStore((s) => s.phoneReadAt);
-  return pendingRequests(requests).length + unreadMessages(messages, readAt);
+  const emails = useStore((s) => pendingEmails(s.emails).length);
+  return pendingRequests(requests).length + emails + unreadMessages(messages, readAt);
 }
 
 export interface KanbanCard {

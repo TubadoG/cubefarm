@@ -5474,3 +5474,36 @@ html[data-high-contrast] :is(button, a, input, select, textarea, summary, [tabin
   outline-offset: 2px;
   box-shadow: 0 0 0 6px #8FB5DD;
 }
+
+/* the CEO's emails (ui/EmailCard.tsx) and Settings → Email's list (ui/EmailSettings.tsx) */
+.email-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.email-preview summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.email-body {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  background: var(--sunken);
+  border-radius: var(--radius-md);
+}
+.email-list {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+.email-list li {
+  padding: 6px 0;
+  border-top: 1px solid var(--border-hairline);
+  overflow-wrap: anywhere;
+}

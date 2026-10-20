@@ -280,6 +280,12 @@ app.post(
   ),
 );
 app.post('/api/requests/:id/reject', route((req) => swarm.rejectRequest(String(req.params.id), str(req.body?.note))));
+// The CEO's email (docs/email.md): the sender's credentials (write-only), a test, and the emails waiting for the manager.
+app.put('/api/email/sender', route((req) => swarm.mailer.setSender(req.body ?? {})));
+app.delete('/api/email/sender', route(() => swarm.mailer.removeSender()));
+app.post('/api/email/test', route(() => swarm.testEmail()));
+app.post('/api/emails/:id/send', route((req) => swarm.approveEmail(String(req.params.id))));
+app.post('/api/emails/:id/decline', route((req) => swarm.declineEmail(String(req.params.id), str(req.body?.note))));
 // The demo office only: the CEO grows (or shrinks) a floor's team on demand.
 app.post('/api/demo/proposals', route((req) => swarm.demoPropose(req.body?.kind, req.body?.floor)));
 

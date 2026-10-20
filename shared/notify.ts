@@ -7,6 +7,7 @@ export const NOTIFY_EVENTS: { id: NotifyEvent; label: string }[] = [
   { id: 'needsHuman', label: 'A pull request needs me' },
   { id: 'ceoMessage', label: 'A message from the CEO' },
   { id: 'hire', label: 'A team change waits for my decision' },
+  { id: 'email', label: 'An email waits for my OK' },
   { id: 'agentError', label: 'Someone is stuck in an error for over 10 minutes' },
   { id: 'usage', label: "Claude's usage limit pauses or paces the office" },
   { id: 'merge', label: 'Every merge' },
@@ -17,7 +18,7 @@ export const NOTIFY_CHANNELS: NotifyChannel[] = ['desktop', 'push', ...NOTIFY_WE
 
 /** Merges are optional: on a busy office they're the noisiest event. */
 export const DEFAULT_NOTIFY: NotifySettings = {
-  events: { needsHuman: true, ceoMessage: true, hire: true, agentError: true, usage: true, merge: false },
+  events: { needsHuman: true, ceoMessage: true, hire: true, email: true, agentError: true, usage: true, merge: false },
   channels: { desktop: true, push: true, ntfy: true },
   officeUrl: '',
 };
@@ -57,7 +58,7 @@ export function notifySettings(base: NotifySettings, patch: unknown): NotifySett
 
 /** The pocket tab a notification about `event` opens. */
 export function noteTab(event: NotifyEvent | 'test'): string {
-  if (event === 'needsHuman' || event === 'hire') return 'approvals';
+  if (event === 'needsHuman' || event === 'hire' || event === 'email') return 'approvals';
   if (event === 'ceoMessage') return 'chat';
   if (event === 'agentError') return 'team';
   return 'company';

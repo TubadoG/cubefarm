@@ -1,5 +1,5 @@
 // Pocket mode's Approvals tab: everything waiting on the manager's decision. Team changes (new agents and let-gos, the
-// phone's cards), stuck PRs with the Kanban's Retry QA / Send back / Merge / Close, and passed PRs on floors that don't
+// phone's cards), the CEO's emails waiting for an OK, stuck PRs with the Kanban's Retry QA / Send back / Merge / Close, and passed PRs on floors that don't
 // merge on their own.
 import { useState } from 'react';
 import { api } from '../api';
@@ -8,6 +8,7 @@ import type { QaView, RepoView } from '../../../shared/types';
 import { qaCardNote } from '../qaCard';
 import { confirmDialog } from '../ui/Confirm';
 import { Resume } from '../ui/Phone';
+import { EmailCard } from '../ui/EmailCard';
 import { waitingOnYou } from './pocketData';
 
 function PrCard({ repo, qa, ready }: { repo: RepoView; qa: QaView; ready?: boolean }) {
@@ -100,14 +101,19 @@ export function Approvals() {
   const repos = useStore((s) => s.repos);
   const qa = useStore((s) => s.qa);
   const requests = useStore((s) => s.requests);
-  const w = waitingOnYou(repos, qa, requests);
-  const nothing = w.requests.length + w.stuck.length + w.ready.length === 0;
+  const emails = useStore((s) => s.emails);
+  const w = waitingOnYou(repos, qa, requests, emails);
+  const nothing = w.requests.length + w.emails.length + w.stuck.length + w.ready.length === 0;
   return (
     <div className="pk-page">
       {nothing && <p className="pk-empty">Nothing waits on you. The team carries on, and your phone hears when that changes.</p>}
       {w.requests.length > 0 && <h3 className="pk-h">👥 Team changes</h3>}
       {w.requests.map((r) => (
         <Resume key={r.id} req={r} />
+      ))}
+      {w.emails.length > 0 && <h3 className="pk-h">📧 Emails</h3>}
+      {w.emails.map((e) => (
+        <EmailCard key={e.id} email={e} />
       ))}
       {w.stuck.length > 0 && <h3 className="pk-h">⚠️ Pull requests that need you</h3>}
       {w.stuck.map((s) => (

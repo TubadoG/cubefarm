@@ -24,11 +24,12 @@ const PLURAL: Record<NotifyEvent, string> = {
   needsHuman: 'PRs need you',
   ceoMessage: 'messages from the CEO',
   hire: 'team changes wait for you',
+  email: 'emails wait for your OK',
   agentError: 'agents need help',
   usage: 'usage changes',
   merge: 'merges',
 };
-const ICON: Record<NotifyEvent | 'test', string> = { needsHuman: '⚠️', ceoMessage: '💬', hire: '📄', agentError: '🛑', usage: '⏸', merge: '🔀', test: '🔔' };
+const ICON: Record<NotifyEvent | 'test', string> = { needsHuman: '⚠️', ceoMessage: '💬', hire: '📄', email: '📧', agentError: '🛑', usage: '⏸', merge: '🔀', test: '🔔' };
 
 export const clip = (s: string, max = BODY_MAX) => {
   const t = s.replace(/\s+/g, ' ').trim();

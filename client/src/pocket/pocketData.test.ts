@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { HireRequestView, PullInfo, QaStatus, QaView, RepoView } from '../../../shared/types';
+import type { EmailView, HireRequestView, PullInfo, QaStatus, QaView, RepoView } from '../../../shared/types';
 import type { Agent, KanbanCard, KanbanColumns } from '../store';
 import { agentActions, approvalsBadge, assignChoices, doing, pipelineOf, waitingOnYou } from './pocketData';
 
@@ -67,5 +67,12 @@ describe('what waits on the manager', () => {
     expect(w.ready.map((s) => s.qa.prNumber)).toEqual([3]);
     expect(approvalsBadge(w)).toBe(2); // the proposal and #1; the CEO is still on #2
     expect(waitingOnYou([repo(true, pr(3))], { c: qa(3, 'passed') }, []).ready).toEqual([]); // it merges itself
+  });
+
+  it("counts the CEO's emails waiting for an OK", () => {
+    const mail = (id: string, status: EmailView['status']) => ({ id, status }) as EmailView;
+    const w = waitingOnYou([], {}, [], [mail('m1', 'pending'), mail('m2', 'sent'), mail('m3', 'declined')]);
+    expect(w.emails.map((e) => e.id)).toEqual(['m1']);
+    expect(approvalsBadge(w)).toBe(1);
   });
 });

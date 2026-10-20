@@ -13,6 +13,7 @@ import { LiveTerminal } from './LiveTerminal';
 import { MicButton } from './MicButton';
 import { OpsTab } from './MissionConsole';
 import { NotifySettings } from './NotifySettings';
+import { EmailSettings } from './EmailSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { Panel } from './Overlays';
 import { Resume } from './Phone';
@@ -785,6 +786,7 @@ function SettingsTab() {
       <VoiceSettings />
       <OutsideSettings />
       <NotifySettings />
+      <EmailSettings />
       <ThemeSettings />
     </div>
   );

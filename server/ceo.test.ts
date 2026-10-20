@@ -108,6 +108,7 @@ describe('office tools', () => {
       rerunChecks: async () => '',
       closePull: async () => '',
       escalate: async () => '',
+      sendEmail: async () => '',
     });
     const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
     await office.server.instance.connect(serverSide);
@@ -131,6 +132,7 @@ describe('office tools', () => {
       'retry_qa',
       'scale_team',
       'send_back',
+      'send_email',
       'set_dependencies',
       'set_floor_profile',
     ]);
@@ -270,6 +272,12 @@ describe('team guidance', () => {
     expect(prompt('approve')).toContain('A floor holds at most 8.');
     expect(prompt('approve')).toContain('Every floor keeps at least one agent.');
     for (const old of ['QA tester', 'job description', 'specialty', 'propose_hire', 'update_job']) expect(prompt('approve')).not.toContain(old);
+  });
+
+  it('has the send_email rule only while email is on', () => {
+    expect(prompt('approve')).not.toContain('send_email');
+    const on = ceoSystemPrompt({ name: 'Luna', company: 'Acme', manager: 'Sam', notesFile: 'notes.md', sessionLimit: 0, maxAgents: 8, scaling: 'approve', email: true });
+    expect(on).toContain('send_email only to people in email.canEmail.');
   });
 
   it('says who decides on team changes', () => {

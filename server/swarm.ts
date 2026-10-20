@@ -47,6 +47,8 @@ import { DEFAULT_LISTEN, DEFAULT_VOICE, listenSettings, speaks, Voice, voiceSett
 import { Notifier } from './notifier.ts';
 import { clip, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
+import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
+import { Mailer } from './email.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
 import { blockers, holdUps, waitsMessage } from '../shared/issues.ts';
@@ -73,6 +75,7 @@ import type {
   DoctorFinding,
   DoctorFix,
   EffortLevel,
+  EmailView,
   HireRequestView,
   IssueInfo,
   LogLine,
@@ -203,6 +206,7 @@ interface Persisted {
   agents: PersistedAgent[];
   qa: QaRecord[];
   requests: HireRequestView[];
+  emails: EmailView[]; // the CEO's emails: every pending one and the latest decided (KEEP_DECIDED_EMAILS)
   ceo: CeoState;
   messages: PhoneMessage[];
   phoneReadAt: number;
@@ -306,6 +310,7 @@ const DEFAULT_PROJECTS_DIR = defaultProjectsDir(path.resolve(import.meta.dirname
 const MAX_ISSUES_PER_JOB = 12;
 const KEEP_MESSAGES = 200;
 const KEEP_DECIDED_REQUESTS = 40;
+const KEEP_DECIDED_EMAILS = 50;
 
 const pick = <T>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
 const slugify = (s: string) =>
@@ -476,11 +481,13 @@ export class Swarm {
       worldEvents: { ...DEFAULT_WORLD_EVENTS },
       listen: { ...DEFAULT_LISTEN },
       notify: notifySettings(DEFAULT_NOTIFY, {}),
+      email: emailSettings(DEFAULT_EMAIL, {}),
     },
     repos: [],
     agents: [],
     qa: [],
     requests: [],
+    emails: [],
     ceo: { queue: [], job: null, lastReviewAt: null, lastFingerprint: null },
     messages: [],
     phoneReadAt: 0,
@@ -509,6 +516,7 @@ export class Swarm {
       rerunChecks: (a) => this.triageRerunChecks(a),
       closePull: (a) => this.triageClosePull(a),
       escalate: (a) => this.triageEscalate(a),
+      sendEmail: (a) => this.ceoEmail(a),
     });
   }
   private ceoIssues = new IssueCap(MAX_ISSUES_PER_JOB); // issues filed during the current CEO job
@@ -561,6 +569,10 @@ export class Swarm {
   private readonly envSecrets = envSecrets(process.env);
   /** Notifications to the manager's devices and chat apps (docs/pocket.md). The demo's only log what they'd send. */
   readonly notifier: Notifier;
+  /** The CEO's outbound email's sender (docs/email.md). The demo's only logs what it would send. */
+  readonly mailer: Mailer;
+  private emailSeq = 0;
+  private sendingEmails = new Set<string>(); // ids the manager approved that are on their way
   private toldStuck = new Set<string>(); // `${agentId}:${endedAt}`: agents in an error the manager was notified about
 
   constructor(private backend: Backend) {
@@ -597,6 +609,11 @@ export class Swarm {
       channelsChanged: (notifyChannels) => this.broadcast({ type: 'notifyChannels', notifyChannels }),
       log: (line) => console.warn(line),
     });
+    this.mailer = new Mailer({
+      transport: backend.email,
+      secretsFile: path.join(HOME_DIR, backend.demo ? 'demo-secrets.json' : 'secrets.json'),
+      changed: (emailSender) => this.broadcast({ type: 'emailSender', emailSender }),
+    });
     this.previews = new Previews(backend, {
       emit: (id) => {
         const r = this.state.repos.find((x) => x.id === id);
@@ -612,6 +629,7 @@ export class Swarm {
   // ---------- lifecycle ----------
 
   async init() {
+    let emailSaved = false;
     try {
       const raw = await fs.readFile(STATE_FILE, 'utf8');
       const loaded = JSON.parse(raw) as Partial<Persisted>;
@@ -659,6 +677,7 @@ export class Swarm {
           mergeNote: null,
         })),
         requests: (loaded.requests ?? []).map((raw) => legacyRequest<HireRequestView>(raw)),
+        emails: Array.isArray(loaded.emails) ? loaded.emails : [],
         ceo: { ...this.state.ceo, ...loaded.ceo },
         messages: loaded.messages ?? [],
         phoneReadAt: loaded.phoneReadAt ?? 0,
@@ -699,6 +718,8 @@ export class Swarm {
       this.state.settings.worldEvents = worldEventSettings(DEFAULT_WORLD_EVENTS, loaded.settings?.worldEvents);
       this.state.settings.listen = listenSettings(DEFAULT_LISTEN, loaded.settings?.listen);
       this.state.settings.notify = notifySettings(DEFAULT_NOTIFY, loaded.settings?.notify);
+      this.state.settings.email = emailSettings(DEFAULT_EMAIL, loaded.settings?.email ?? this.backend.email.demoSettings);
+      emailSaved = true;
       // Offices that were set up before the setup wizard existed skip it.
       if (loaded.settings && loaded.settings.setupDone === undefined && this.state.repos.length > 0) {
         Object.assign(this.state.settings, { setupDone: true, tutorialStep: -1 });
@@ -709,6 +730,10 @@ export class Swarm {
     await this.voice.init();
     await this.weather.init();
     await this.notifier.init();
+    await this.mailer.init();
+    if (!emailSaved && this.backend.email.demoSettings) {
+      this.state.settings.email = emailSettings(DEFAULT_EMAIL, this.backend.email.demoSettings);
+    }
     for (const r of this.state.repos) if (r.localPath) this.backend.setLocalPath(r.fullName, r.localPath);
     const interrupted: PersistedAgent[] = [];
     for (const a of this.state.agents) {
@@ -1048,6 +1073,8 @@ export class Swarm {
       weather: this.weather.current(),
       ticker: this.ticker.recent(),
       notifyChannels: this.notifier.channelsView(),
+      emails: this.state.emails,
+      emailSender: this.mailer.view(),
       version: VERSION,
       officeCommit: this.officeHead?.slice(0, 7) ?? null,
       officeUpdate: this.officeHead ? this.officeUpdateView() : undefined,
@@ -3224,6 +3251,11 @@ export class Swarm {
       if (url !== undefined && officeUrl(url) === null) throw new HttpError(400, 'The office URL must be an http(s) address, e.g. https://office.your-tailnet.ts.net');
       s.notify = notifySettings(s.notify, patch.notify);
     }
+    if (patch.email !== undefined) {
+      const problem = emailProblem(patch.email);
+      if (problem) throw new HttpError(400, problem);
+      s.email = emailSettings(s.email, patch.email);
+    }
     this.save();
     this.broadcast({ type: 'settings', settings: s });
     this.emitCeo();
@@ -3780,7 +3812,7 @@ export class Swarm {
 
   private ceoPromptInput(a: PersistedAgent): Parameters<typeof ceoSystemPrompt>[0] {
     const s = this.state.settings;
-    return { name: a.name, company: s.companyName, manager: s.managerName, notesFile: path.join(CEO_DIR, 'NOTES.md'), sessionLimit: s.sessionLimit, maxAgents: s.maxAgents, scaling: s.scaling };
+    return { name: a.name, company: s.companyName, manager: s.managerName, notesFile: path.join(CEO_DIR, 'NOTES.md'), sessionLimit: s.sessionLimit, maxAgents: s.maxAgents, scaling: s.scaling, email: s.email.enabled };
   }
 
   private async runCeoJob(a: PersistedAgent, job: CeoJob) {
@@ -4490,16 +4522,16 @@ export class Swarm {
 
   // ---------- the phone ----------
 
-  private postMessage(from: PhoneMessage['from'], text: string, requestId?: string) {
-    const m: PhoneMessage = { id: this.messageSeq++, from, text: text.trim().slice(0, 6000), at: Date.now(), ...(requestId ? { requestId } : {}) };
+  private postMessage(from: PhoneMessage['from'], text: string, requestId?: string, emailId?: string) {
+    const m: PhoneMessage = { id: this.messageSeq++, from, text: text.trim().slice(0, 6000), at: Date.now(), ...(requestId ? { requestId } : {}), ...(emailId ? { emailId } : {}) };
     const v = this.state.settings.voice;
     if (v.provider !== 'off' && speaks(m, v)) m.voice = v.provider; // what the phone's ▶ replays it with
     this.state.messages.push(m);
     if (this.state.messages.length > KEEP_MESSAGES) this.state.messages.splice(0, this.state.messages.length - KEEP_MESSAGES);
     this.broadcast({ type: 'message', message: m });
     this.save();
-    // Proposals are notified as such (proposeHire, proposeLetGo).
-    if (from === 'ceo' && !requestId) this.notifier.notify('ceoMessage', this.ceo().name, plainText(m.text), `${this.ceo().name}: ${plainText(m.text, 100)}`);
+    // Proposals and emails are notified as such (proposeHire, proposeLetGo, ceoEmail).
+    if (from === 'ceo' && !requestId && !emailId) this.notifier.notify('ceoMessage', this.ceo().name, plainText(m.text), `${this.ceo().name}: ${plainText(m.text, 100)}`);
     return m;
   }
 
@@ -4564,6 +4596,121 @@ export class Swarm {
     this.broadcast({ type: 'pong', repoId, board });
     this.save();
     return board;
+  }
+
+  // ---------- email ----------
+
+  private emitEmail(e: EmailView) {
+    this.broadcast({ type: 'email', email: e });
+    this.save();
+  }
+
+  private addEmail(e: EmailView) {
+    this.state.emails.push(e);
+    const decided = this.state.emails.filter((x) => x.status !== 'pending');
+    if (decided.length > KEEP_DECIDED_EMAILS) {
+      const drop = new Set(decided.slice(0, decided.length - KEEP_DECIDED_EMAILS));
+      this.state.emails = this.state.emails.filter((x) => !drop.has(x));
+    }
+    this.emitEmail(e);
+  }
+
+  /** Why an email to `to` can't go out now (off, no sender, not on the list), worded for the CEO; null when it can. */
+  private emailRefusal(to: string): string | null {
+    const s = this.state.settings.email;
+    if (!s.enabled) return 'Email is off. The manager turns it on in Settings → Email.';
+    if (!s.from || !this.mailer.ready) return 'No sender is set up for email yet. Ask the manager to finish Settings → Email.';
+    if (!findRecipient(s, to)) return `${to} is not on the manager's approved list; ask the manager to add them in Settings → Email.`;
+    return null;
+  }
+
+  /** Sends it now (the allowlist checked again), and records sent or failed with why. */
+  private async deliverEmail(e: EmailView): Promise<EmailView> {
+    const s = this.state.settings.email;
+    const refused = this.emailRefusal(e.to);
+    try {
+      if (refused) throw new Error(refused);
+      await this.mailer.send({ from: s.from, to: e.to, toName: e.toName, subject: e.subject, text: emailText(e.body, this.state.settings.companyName, s.from), bcc: s.copyTo || undefined });
+      Object.assign(e, { status: 'sent', decidedAt: Date.now() });
+      delete e.error;
+    } catch (err) {
+      Object.assign(e, { status: 'failed', error: oneLine(err).slice(0, 300), decidedAt: Date.now() });
+    }
+    this.emitEmail(e);
+    return e;
+  }
+
+  /** The CEO's send_email: only to people on the list; some wait for the manager's OK. */
+  private async ceoEmail(x: { to: string; subject: string; body: string }): Promise<string> {
+    const to = String(x.to ?? '').trim().toLowerCase();
+    const refused = this.emailRefusal(to);
+    if (refused) throw new Error(refused);
+    const now = Date.now();
+    if (emailsToday(this.state.emails, now) >= EMAILS_PER_DAY) throw new Error(`The office sends at most ${EMAILS_PER_DAY} emails a day, and today's are used up. Put it in your message to the manager instead, or try tomorrow.`);
+    const who = findRecipient(this.state.settings.email, to)!;
+    const e: EmailView = { id: `mail-${now.toString(36)}-${(this.emailSeq++).toString(36)}`, to: who.email, toName: who.name, subject: x.subject.trim().slice(0, 150), body: x.body.slice(0, 20_000), status: 'pending', createdAt: now, decidedAt: null };
+    this.addEmail(e);
+    if (who.approve) {
+      this.postMessage('ceo', `📧 I'd like to email ${who.name}: “${e.subject}”. It waits for your OK in Approvals.`, undefined, e.id);
+      this.notifier.notify('email', `Email to ${who.name}?`, `${this.ceo().name} wrote “${e.subject}”. ${plainText(e.body, 200)}`, `email to ${who.name}`);
+      return `Waiting for the manager's OK: the email to ${who.name} goes out once they approve it.`;
+    }
+    await this.deliverEmail(e);
+    if (e.status === 'sent') {
+      this.postMessage('office', `📧 Emailed ${who.name}: ${e.subject}`);
+      return `Sent to ${who.name} <${who.email}>.`;
+    }
+    this.postMessage('office', `📧 The email to ${who.name} didn't go out: ${e.error}`);
+    throw new Error(`The email to ${who.name} failed: ${e.error}`);
+  }
+
+  private pendingEmail(id: string) {
+    const e = this.state.emails.find((x) => x.id === id);
+    if (!e) throw new HttpError(404, 'That email no longer exists');
+    if (e.status !== 'pending') throw new HttpError(409, `That email was already ${e.status}`);
+    // A double tap while it's on its way doesn't send it twice.
+    if (this.sendingEmails.has(id)) throw new HttpError(409, 'That email is being sent');
+    return e;
+  }
+
+  /** The manager's OK: it goes out now, if its recipient is still on the list. */
+  async approveEmail(id: string): Promise<EmailView> {
+    const e = this.pendingEmail(id);
+    const refused = this.emailRefusal(e.to);
+    if (refused) {
+      Object.assign(e, { status: 'failed', error: refused, decidedAt: Date.now() });
+      this.emitEmail(e);
+      this.postMessage('office', `📧 The email to ${e.toName} wasn't sent: ${refused}`);
+      throw new HttpError(409, refused);
+    }
+    this.sendingEmails.add(id);
+    await this.deliverEmail(e).finally(() => this.sendingEmails.delete(id));
+    this.postMessage('office', e.status === 'sent' ? `✅ You approved the email to ${e.toName}: ${e.subject}` : `📧 The email to ${e.toName} didn't go out: ${e.error}`);
+    if (e.status === 'failed') throw new HttpError(502, `It didn't go out: ${e.error}`);
+    return e;
+  }
+
+  declineEmail(id: string, note = ''): EmailView {
+    const e = this.pendingEmail(id);
+    const n = note.trim().slice(0, 400);
+    Object.assign(e, { status: 'declined', decidedAt: Date.now(), ...(n ? { note: n } : {}) });
+    this.emitEmail(e);
+    this.postMessage('office', `✋ You declined the email to ${e.toName}${n ? `: "${n}"` : '.'}`);
+    return e;
+  }
+
+  /** POST /api/email/test: one short email to the copy-to address, whatever the CEO's daily count says. */
+  async testEmail(): Promise<{ ok: true; to: string }> {
+    const s = this.state.settings.email;
+    if (!s.copyTo) throw new HttpError(400, 'Pick a copy-to address on the list first: the test email goes there.');
+    if (!s.from) throw new HttpError(400, 'Set the From address first.');
+    if (!this.mailer.ready) throw new HttpError(400, 'No sender is set up yet: save the app registration with PUT /api/email/sender (docs/email.md).');
+    try {
+      await this.mailer.send({ from: s.from, to: s.copyTo, toName: '', subject: 'Test from cubefarm', text: emailText('Email from the office works.', this.state.settings.companyName, s.from) });
+    } catch (err) {
+      throw new HttpError(502, `The test email didn't go out: ${oneLine(err)}`);
+    }
+    return { ok: true, to: s.copyTo };
   }
 
   // ---------- team changes ----------
@@ -4902,6 +5049,13 @@ export class Swarm {
         floors,
         pendingChanges: pending.map(req),
         recentDecisions: this.state.requests.filter((r) => r.status !== 'pending').slice(-10).map(req),
+        ...(s.email.enabled && {
+          email: {
+            canEmail: s.email.recipients.map((r) => ({ email: r.email, name: r.name, needsManagerOk: r.approve })),
+            usedToday: `${emailsToday(this.state.emails, Date.now())} of ${EMAILS_PER_DAY}`,
+            recent: this.state.emails.slice(-5).map((e) => ({ to: e.to, subject: e.subject, status: e.status, ...(e.note ? { managerNote: e.note } : {}) })),
+          },
+        }),
       },
       null,
       1,

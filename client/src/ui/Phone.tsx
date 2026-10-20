@@ -1,8 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
-import { floorPrCounts, isBusy, pendingRequests, unreadMessages, useStore, type PhoneTab } from '../store';
+import { floorPrCounts, isBusy, pendingEmails, pendingRequests, unreadMessages, useStore, type PhoneTab } from '../store';
 import { CEO_ID, type AgentCli, type CliView, type EffortLevel, type HireRequestView, type PhoneMessage, type SwarmSettings } from '../../../shared/types';
 import { Markdown } from './Markdown';
+import { EmailCard } from './EmailCard';
 import { MessageBox } from './MessageBox';
 import { MicButton } from './MicButton';
 import { handsFreeProblem, setHandsFree } from './mic';
@@ -240,15 +241,21 @@ function LobbyNudge() {
 
 function TeamChanges({ focusId }: { focusId?: string }) {
   const requests = useStore((s) => s.requests);
+  const emails = useStore((s) => s.emails);
   const demo = useStore((s) => s.demo);
   const pending = pendingRequests(requests);
+  const mail = pendingEmails(emails);
   const decided = requests.filter((r) => r.status !== 'pending').slice(-8).reverse();
   return (
     <div className="phone-scroll">
-      <h3 className="phone-h">👥 Waiting on you {pending.length > 0 && <span className="badge">{pending.length}</span>}</h3>
-      {pending.length === 0 && <p className="muted small phone-empty">Nothing waiting. When the CEO wants a floor's team to grow or shrink, the change shows up here for your OK.</p>}
+      <h3 className="phone-h">👥 Waiting on you {pending.length + mail.length > 0 && <span className="badge">{pending.length + mail.length}</span>}</h3>
+      {pending.length + mail.length === 0 && <p className="muted small phone-empty">Nothing waiting. When the CEO wants a floor's team to grow or shrink, the change shows up here for your OK.</p>}
       {pending.map((r) => (
         <Resume key={r.id} req={r} highlight={r.id === focusId} />
+      ))}
+      {mail.length > 0 && <h3 className="phone-h">📧 Emails</h3>}
+      {mail.map((e) => (
+        <EmailCard key={e.id} email={e} highlight={e.id === focusId} />
       ))}
       {demo && (
         <div className="row wrap">
@@ -320,6 +327,7 @@ function HandsFreeToggle({ ceoName }: { ceoName: string }) {
 
 function Bubble({ m, ceoName }: { m: PhoneMessage; ceoName: string }) {
   const req = useStore((s) => (m.requestId ? s.requests.find((r) => r.id === m.requestId) : undefined));
+  const email = useStore((s) => (m.emailId ? s.emails.find((e) => e.id === m.emailId) : undefined));
   if (m.from === 'office') return <div className="bubble-office">{m.text}</div>;
   const mine = m.from === 'manager';
   return (
@@ -328,6 +336,7 @@ function Bubble({ m, ceoName }: { m: PhoneMessage; ceoName: string }) {
         {!mine && <div className="bubble-from">{ceoName}</div>}
         {mine ? <div className="bubble-text">{m.text}</div> : <Markdown className="bubble-md" text={m.text} />}
         {req && req.status === 'pending' && m.from === 'ceo' && <Resume req={req} />}
+        {email && email.status === 'pending' && m.from === 'ceo' && <EmailCard email={email} />}
         <div className="bubble-time">
           {!mine && <ReplayButton m={m} />}
           {clock(m.at)}
@@ -606,7 +615,7 @@ let resumeGames: { game: GameId | null; waiting: number } | null = null;
 
 const waitingNow = () => {
   const s = useStore.getState();
-  return pendingRequests(s.requests).length + unreadMessages(s.messages, s.phoneReadAt);
+  return pendingRequests(s.requests).length + pendingEmails(s.emails).length + unreadMessages(s.messages, s.phoneReadAt);
 };
 
 export function Phone({ tab: initialTab, requestId }: { tab?: PhoneTab; requestId?: string }) {
@@ -628,6 +637,7 @@ export function Phone({ tab: initialTab, requestId }: { tab?: PhoneTab; requestI
   const box = useRef<HTMLDivElement>(null);
   useDialogFocus(box);
   const requests = useStore((s) => s.requests);
+  const mailWaiting = useStore((s) => pendingEmails(s.emails).length);
   const messages = useStore((s) => s.messages);
   const readAt = useStore((s) => s.phoneReadAt);
   const ceoName = useStore((s) => s.agents[CEO_ID]?.name ?? 'CEO');
@@ -656,7 +666,7 @@ export function Phone({ tab: initialTab, requestId }: { tab?: PhoneTab; requestI
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const pending = pendingRequests(requests).length;
+  const pending = pendingRequests(requests).length + mailWaiting;
   const unread = unreadMessages(messages, readAt);
   const tabs: [PhoneTab, string, string, number][] = [
     ['chat', '💬', ceoName, tab === 'chat' ? 0 : unread],

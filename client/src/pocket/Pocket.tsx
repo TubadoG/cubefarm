@@ -7,6 +7,7 @@ import { CEO_ID } from '../../../shared/types';
 import { officeUpdateChip } from '../officeUpdate';
 import { KanbanView } from '../ui/KanbanView';
 import { NotifySettings } from '../ui/NotifySettings';
+import { EmailSettings } from '../ui/EmailSettings';
 import { AccessibilitySettings } from '../ui/AccessibilitySettings';
 import { Panel } from '../ui/Panel';
 import { Chat } from '../ui/Phone';
@@ -78,7 +79,8 @@ function Company({ go }: { go: (tab: PocketTab, repoId?: string) => void }) {
       }),
     [repos, agents, qa],
   );
-  const waiting = approvalsBadge(waitingOnYou(repos, qa, requests));
+  const emails = useStore((s) => s.emails);
+  const waiting = approvalsBadge(waitingOnYou(repos, qa, requests, emails));
   return (
     <div className="pk-page">
       <Banners />
@@ -200,6 +202,7 @@ function Settings({ onClose }: { onClose: () => void }) {
   return (
     <Panel title="⚙️ This device and notifications" onClose={onClose} className="pk-settings">
       <NotifySettings />
+      <EmailSettings />
       <AccessibilitySettings pocket />
       <div className="card">
         <h3>📱 Pocket mode</h3>
@@ -223,7 +226,7 @@ export default function Pocket() {
   const loaded = useStore((s) => s.loaded);
   const setupDone = useStore((s) => s.settings.setupDone);
   const unread = useStore((s) => unreadMessages(s.messages, s.phoneReadAt));
-  const waiting = useStore((s) => approvalsBadge(waitingOnYou(s.repos, s.qa, s.requests)));
+  const waiting = useStore((s) => approvalsBadge(waitingOnYou(s.repos, s.qa, s.requests, s.emails)));
   const ceoName = useStore((s) => s.agents[CEO_ID]?.name ?? 'CEO');
   const usage = useStore((s) => s.usage.state);
   const connected = useStore((s) => s.connected);

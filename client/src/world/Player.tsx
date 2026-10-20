@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { loadView, pendingRequests, saveView, unreadMessages, useStore, type Focus } from '../store';
+import { loadView, pendingEmails, pendingRequests, saveView, unreadMessages, useStore, type Focus } from '../store';
 import { api } from '../api';
 import { EYE_HEIGHT, ROOF, SPAWN, collide, surfaceAt, type Rect } from './layout';
 import { interactables } from './interact';
@@ -170,7 +170,7 @@ function interact() {
 
 function openPhone() {
   const s = useStore.getState();
-  s.openOverlay({ kind: 'phone', tab: pendingRequests(s.requests).length && !unreadMessages(s.messages, s.phoneReadAt) ? 'hires' : 'chat' });
+  s.openOverlay({ kind: 'phone', tab: pendingRequests(s.requests).length + pendingEmails(s.emails).length && !unreadMessages(s.messages, s.phoneReadAt) ? 'hires' : 'chat' });
 }
 
 /** Which keys are live: on foot everything, the overview its own (Q and E turn it), other views only the basics. */

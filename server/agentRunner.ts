@@ -256,6 +256,8 @@ export function describeOfficeTool(action: string, input: Record<string, unknown
       return `🔄 rerun_checks PR #${String(input.pr ?? '?')}${floor}`;
     case 'close_pull':
       return `🗂️ close_pull PR #${String(input.pr ?? '?')}${floor}`;
+    case 'send_email':
+      return `📧 send_email to ${String(input.to ?? '?')}${input.subject ? `: ${clip(String(input.subject), 90)}` : ''}`;
     case 'escalate':
       return `📣 escalate PR #${String(input.pr ?? '?')}${floor}${input.reason ? `: ${clip(String(input.reason), 90)}` : ''}`;
   }
