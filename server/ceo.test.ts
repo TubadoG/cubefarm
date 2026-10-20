@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { EAST_DESKS, MAX_DESKS } from '../client/src/world/layout.ts';
 import { FLOOR_SEATS, type QaStatus } from '../shared/types.ts';
 import type { HttpError } from './httpError.ts';
-import { ceoJobPrompt, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, planDependencies, plannedSize, scalePlan, type CeoJob, type DependsRequest, type TeamNow } from './ceo.ts';
+import { ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, planDependencies, plannedSize, scalePlan, type CeoJob, type DependsRequest, type TeamNow } from './ceo.ts';
 
 describe('seats', () => {
   it('match the desks the client draws', () => {
@@ -314,7 +314,7 @@ describe('triage', () => {
   });
 
   it('has nothing to do once the PR is no longer stuck', () => {
-    expect(ceoJobPrompt(job, floor, null)).toBe('Pull request #108 no longer needs triage. Reply "Nothing to do."');
+    expect(ceoJobPrompt(job, floor, null)).toBe('Pull request #108 no longer needs triage. Reply NO_MESSAGE.');
   });
 
   it('adds a triage section to the system prompt and keeps its safety rules', () => {
@@ -380,5 +380,19 @@ describe('IssueCap', () => {
     cap.record('a/b');
     expect(cap.total).toBe(3);
     expect([...cap.repos]).toEqual(['a/b', 'c/d']);
+  });
+});
+
+describe('ceoReply', () => {
+  it('sends nothing when the CEO has nothing for the manager to decide', () => {
+    expect(ceoReply('NO_MESSAGE')).toBeNull();
+    expect(ceoReply('  `NO_MESSAGE`.\n')).toBeNull();
+    expect(ceoReply('Checked all three floors.\nNO_MESSAGE')).toBeNull();
+    expect(ceoReply('')).toBeNull();
+  });
+
+  it('sends a real message as it is', () => {
+    expect(ceoReply(' Floor 1 has 3 idle agents. Start #17, or cut to 1? ')).toBe('Floor 1 has 3 idle agents. Start #17, or cut to 1?');
+    expect(ceoReply('NO_MESSAGE is what I send when nothing changed, but PR #4 needs you.')).toBe('NO_MESSAGE is what I send when nothing changed, but PR #4 needs you.');
   });
 });

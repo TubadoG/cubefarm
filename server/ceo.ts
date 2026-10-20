@@ -12,6 +12,16 @@ import { MAX_TRIAGES, type TriagePr } from './triage.ts';
 // it changes goes through the office tools below, so the swarm stays the single source of truth.
 
 /** Refused file_issue: the CEO never decides on new work itself (askedFor). */
+/** The CEO's reply when the manager has nothing to decide: the office posts no message. */
+export const NO_MESSAGE = 'NO_MESSAGE';
+
+/** The CEO's text for the phone, or null when it says there is nothing to send (NO_MESSAGE as its whole reply or its last line). */
+export function ceoReply(text: string): string | null {
+  const t = text.trim();
+  const last = t.split('\n').filter((l) => l.trim()).pop() ?? '';
+  return !t || /^\W*NO_MESSAGE\W*$/.test(last) ? null : t;
+}
+
 export const NOT_ASKED = "Only the manager decides on new work, and they haven't asked for any in this job. Suggest it in your final message instead; they can ask you to file it.";
 
 export interface CeoJob {
@@ -281,14 +291,14 @@ export function ceoSystemPrompt(o: {
     '- Close an issue that is superseded or no longer wanted with close_issue, not by making it wait for another issue.',
     '- Triage jobs: a pull request got stuck (needs-human). Look before the manager does, and bring them only real decisions. Read the facts in the job and the code, then call exactly one of retry_qa (a flaky QA session, or it has been fixed since), send_back (a developer can fix it; your note says how), rerun_checks (a red check that looks flaky or like an outage), close_pull (the approach is wrong: its issue stays open to be built again) or escalate (only the manager can decide: a product call, credentials, a broken setup).',
     "- When company.usage in company_status says pacing or paused, Claude's usage is running low and the office is finishing open work first: file only what is needed next, not a whole milestone.",
-    '- Your final message goes straight to the manager\'s phone. Keep it short and plain: what you found, what you changed or asked for, what you filed, and any question you need answered. No headings, no tables.',
+    `- Your final message is a text to the manager's phone, like a chat between friends: 1 to 3 short sentences, at most one question they can answer in a few words. No headings, lists, tables or recaps. Write only when they must decide something or asked you something; otherwise reply exactly ${NO_MESSAGE} and the office sends nothing. Do not ask again about a decision you already asked about (keep them in your notes) unless something changed.`,
   ].join('\n');
 }
 
 export function ceoJobPrompt(job: CeoJob, floor: { floor: number; fullName: string; clone: string; mission: string; backlog: number } | null, pr?: TriagePr | null): string {
   switch (job.kind) {
     case 'triage':
-      if (!floor || !pr) return `Pull request #${job.prNumber ?? '?'} no longer needs triage. Reply "Nothing to do."`;
+      if (!floor || !pr) return `Pull request #${job.prNumber ?? '?'} no longer needs triage. Reply ${NO_MESSAGE}.`;
       return [
         `Triage: pull request #${pr.number} on floor ${floor.floor} (${floor.fullName}) is stuck and needs a decision before it reaches the manager.`,
         `"${pr.title}" · ${pr.url} · read-only clone of the default branch at ${floor.clone}`,
@@ -299,12 +309,12 @@ export function ceoJobPrompt(job: CeoJob, floor: { floor: number; fullName: stri
         `GitHub checks: ${pr.checks}${pr.failedChecks.length ? ` (failed: ${pr.failedChecks.join(', ')})` : ''}${pr.pendingChecks.length ? ` (running: ${pr.pendingChecks.join(', ')})` : ''} · mergeable: ${pr.mergeable} (${pr.mergeState})`,
         `This is triage ${pr.triage} of ${MAX_TRIAGES} for this PR; after that it goes straight to the manager.`,
         '',
-        `Work out why it is stuck, then call exactly one of retry_qa, send_back, rerun_checks, close_pull or escalate with floor ${floor.floor} and pr ${pr.number}. If you end without one, the manager is alerted. Your final message: one or two sentences on what you found and did.`,
+        `Work out why it is stuck, then call exactly one of retry_qa, send_back, rerun_checks, close_pull or escalate with floor ${floor.floor} and pr ${pr.number}. If you end without one, the manager is alerted. Your final message: ${NO_MESSAGE}, unless you escalated; then one sentence on what the manager must decide.`,
       ]
         .filter((l) => l !== '')
         .join('\n');
     case 'onboard':
-      if (!floor) return 'A floor was added but has since been removed. Reply "Nothing to do."';
+      if (!floor) return `A floor was added but has since been removed. Reply ${NO_MESSAGE}.`;
       return [
         `Floor ${floor.floor} (${floor.fullName}) just joined the company. Its read-only clone is at ${floor.clone}.`,
         'Study it: README, package manifest, source layout, tests, and how far along it is. Then:',
@@ -318,7 +328,7 @@ export function ceoJobPrompt(job: CeoJob, floor: { floor: number; fullName: stri
             : `4. There are ${floor.backlog} open issues. Leave them as they are and file no new ones; just make sure the team size fits them.`,
       ].join('\n');
     case 'plan':
-      if (!floor) return 'A floor you were asked to plan has been removed. Reply "Nothing to do."';
+      if (!floor) return `A floor you were asked to plan has been removed. Reply ${NO_MESSAGE}.`;
       return [
         `The manager has a brief for floor ${floor.floor} (${floor.fullName}, clone at ${floor.clone}):`,
         `"""${floor.mission}"""`,
@@ -337,8 +347,8 @@ export function ceoJobPrompt(job: CeoJob, floor: { floor: number; fullName: stri
         '- team size against throughput: work that keeps waiting for free agents (grow), or agents idle with nothing ready to start or test (shrink). Idle agents are not a reason to slice features.',
         '- backlog against the team (capacity): long dependency chains (fix them with set_dependencies), or PRs piling up in QA (then plan fewer, bigger issues)',
         '- pull requests stuck in QA or marked as needing a human',
-        '- floors with a brief and an empty backlog: say so, and suggest what the manager might ask for next (file no issues: only they decide on new work)',
-        'Change team sizes only when clearly justified. If nothing needs doing, reply with one short sentence saying so.',
+        '- floors with a brief and an empty backlog: suggest what the manager might ask for next, once (file no issues: only they decide on new work)',
+        `Change team sizes only when clearly justified. If the manager has no new decision to make, reply ${NO_MESSAGE}.`,
       ].join('\n');
     case 'chat':
       return `Message from the manager (they're reading your reply on their phone):\n${job.text ?? ''}`;
