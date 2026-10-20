@@ -50,6 +50,7 @@ export interface OfficeHandlers {
   rerunChecks(a: { floor: number; pr: number }): Promise<string>;
   closePull(a: { floor: number; pr: number; comment: string }): Promise<string>;
   escalate(a: { floor: number; pr: number; reason: string }): Promise<string>;
+  sendEmail(a: { to: string; subject: string; body: string }): Promise<string>;
 }
 
 export interface OfficeTools {
@@ -191,6 +192,16 @@ export function createOfficeTools(h: OfficeHandlers): OfficeTools {
       { floor: z.number().int(), pr: z.number().int().positive(), reason: z.string().min(1).max(300).describe('One line: what is wrong and what the manager has to decide') },
       (a) => run(() => h.escalate(a)),
     ),
+    tool(
+      'send_email',
+      "Email someone on the manager's approved list (company_status → email.canEmail), from the company's mailbox. Some recipients need the manager's OK first: then it waits for them. Plain text; the office adds a footer.",
+      {
+        to: z.string().min(3).max(254).describe('An address from email.canEmail'),
+        subject: z.string().min(1).max(150),
+        body: z.string().min(1).max(20000).describe('Plain text, signed with your name'),
+      },
+      (a) => run(() => h.sendEmail(a)),
+    ),
   ];
   const server = createSdkMcpServer({ name: 'office', version: '1.0.0', tools: defs });
   return {
@@ -262,6 +273,7 @@ export function ceoSystemPrompt(o: {
   sessionLimit: number;
   maxAgents: number;
   scaling: 'approve' | 'auto';
+  email?: boolean; // Settings → Email is on: send_email's rule goes in
 }) {
   const manager = o.manager ? `the manager, ${o.manager}` : 'the human manager';
   return [
@@ -290,6 +302,7 @@ export function ceoSystemPrompt(o: {
     '- Issues: the same agents build and test, so PRs queued for QA (capacity.prsAwaitingQa) mean fewer, bigger issues, not more. Most briefs need 1 to 4 issues. Write "Depends on #N" only when an issue truly cannot start until #N\'s code is merged, because it waits until #N is closed. Keep dependency chains to two steps at most. The office starts the issues that hold up others first. Do not duplicate open issues: fix an existing issue\'s dependencies with set_dependencies. File at most 12 issues per job, or per message from the manager.',
     '- Close an issue that is superseded or no longer wanted with close_issue, not by making it wait for another issue.',
     '- Triage jobs: a pull request got stuck (needs-human). Look before the manager does, and bring them only real decisions. Read the facts in the job and the code, then call exactly one of retry_qa (a flaky QA session, or it has been fixed since), send_back (a developer can fix it; your note says how), rerun_checks (a red check that looks flaky or like an outage), close_pull (the approach is wrong: its issue stays open to be built again) or escalate (only the manager can decide: a product call, credentials, a broken setup).',
+    ...(o.email ? ['- send_email only to people in email.canEmail. A long report goes by email; your phone text stays one line.'] : []),
     "- When company.usage in company_status says pacing or paused, Claude's usage is running low and the office is finishing open work first: file only what is needed next, not a whole milestone.",
     `- Your final message is a text to the manager's phone, like a chat between friends: 1 to 3 short sentences, at most one question they can answer in a few words. No headings, lists, tables or recaps. Write only when they must decide something or asked you something; otherwise reply exactly ${NO_MESSAGE} and the office sends nothing. Do not ask again about a decision you already asked about (keep them in your notes) unless something changed.`,
   ].join('\n');

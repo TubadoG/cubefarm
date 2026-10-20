@@ -303,6 +303,7 @@ function compactRequest(r: HireRequestView, secrets: readonly string[]): HireReq
 export function compactMessage(m: PhoneMessage, secrets: readonly string[] = []): PhoneMessage {
   const out: PhoneMessage = { id: m.id, from: m.from, text: text(m.text, 600, secrets), at: m.at };
   if (m.requestId) out.requestId = m.requestId;
+  if (m.emailId) out.emailId = m.emailId;
   return out;
 }
 

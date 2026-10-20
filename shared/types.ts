@@ -326,10 +326,11 @@ export interface SwarmSettings {
   worldEvents: WorldEventSettings; // Settings → World events: how often something happens outside
   listen: ListenSettings;
   notify: NotifySettings;
+  email: EmailSettings; // Settings → Email: whom the CEO may email (docs/email.md)
 }
 
 /** What the office tells the manager about when they're away (docs/pocket.md). */
-export type NotifyEvent = 'needsHuman' | 'ceoMessage' | 'hire' | 'agentError' | 'usage' | 'merge';
+export type NotifyEvent = 'needsHuman' | 'ceoMessage' | 'hire' | 'email' | 'agentError' | 'usage' | 'merge';
 
 /** Where it tells them: this browser, Web Push to their devices, or a chat app's webhook. */
 export type NotifyChannel = 'desktop' | 'push' | 'ntfy';
@@ -347,6 +348,42 @@ export interface NotifySettings {
 export interface NotifyChannelsView {
   webhooks: Record<NotifyWebhook, { set: boolean; hint: string }>;
   pushDevices: number;
+}
+
+/** Someone the CEO may email; `approve`: each email to them waits for the manager's OK. */
+export interface EmailRecipient {
+  email: string; // lowercased
+  name: string;
+  approve: boolean;
+}
+
+/** Outbound email (docs/email.md): only to the allowlist, from one mailbox, enforced by the office (shared/email.ts). */
+export interface EmailSettings {
+  enabled: boolean;
+  from: string; // the mailbox it's sent from ('' = not set)
+  copyTo: string; // a recipient on the list who gets a blind copy of every email ('' = none); test emails go here
+  recipients: EmailRecipient[];
+}
+
+/** Whether the sender's credentials are saved: only their kind and a hint, never the values. */
+export interface EmailSenderView {
+  set: boolean;
+  mode: 'secret' | 'keyvault' | null;
+  hint: string;
+}
+
+/** One email the CEO wrote: sent, or waiting for (or declined by) the manager. */
+export interface EmailView {
+  id: string;
+  to: string;
+  toName: string;
+  subject: string;
+  body: string; // the CEO's text, without the office's footer
+  status: 'pending' | 'sent' | 'declined' | 'failed';
+  error?: string; // failed: why
+  note?: string; // declined: the manager's note
+  createdAt: number;
+  decidedAt: number | null;
 }
 
 /** A notification the office sent: a browser with the office open but hidden shows it as a desktop notification. */
@@ -531,6 +568,7 @@ export interface PhoneMessage {
   text: string;
   at: number;
   requestId?: string; // a hire / let-go proposal this message is about
+  emailId?: string; // an email waiting for the manager's OK
   voice?: Exclude<VoiceProvider, 'off'>; // who read it aloud when it arrived (absent: nobody), for the phone's ▶ replay
 }
 
@@ -582,6 +620,8 @@ export interface WorldSnapshot {
   weather: WeatherView; // the real local weather's place and latest reading (Settings → Weather)
   ticker?: TickerItem[]; // the floors' recent ticker lines, oldest first
   notifyChannels: NotifyChannelsView;
+  emails: EmailView[]; // every pending email and the latest decided ones, oldest first
+  emailSender: EmailSenderView;
   progress: ProgressView; // coins, decorations and achievements (#210)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
 }
@@ -612,6 +652,8 @@ export type ServerEvent =
   | { type: 'prPreviewRemoved'; repoId: string; pr: number }
   | { type: 'settings'; settings: SwarmSettings }
   | { type: 'request'; request: HireRequestView }
+  | { type: 'email'; email: EmailView }
+  | { type: 'emailSender'; emailSender: EmailSenderView }
   | { type: 'ceo'; ceo: CeoInfo }
   | { type: 'message'; message: PhoneMessage }
   | { type: 'phoneRead'; at: number }

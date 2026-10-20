@@ -109,6 +109,9 @@ Server (`server/`, Node + Express 5 + ws, run by tsx in development; esbuild bun
   apps' webhooks (secrets in `secrets.json`, push keys and devices in `push.json`), behind `Backend.notify`; `notify.ts`
   is its pure part (formatting, the per-event rate limit, webhook checks), `webPush.ts` VAPID and RFC 8291 encryption,
   `shared/notify.ts` the settings. `pwa.ts`: the installable app's service worker, served at `/sw.js`.
+- `email.ts`: the CEO's outbound email (docs/email.md): `Mailer` keeps the sender's credentials in `secrets.json`;
+  `graphMail.ts` sends through Microsoft Graph (client secret, or a Key Vault-signed assertion via `az`), behind
+  `Backend.email`. The allowlist, approvals and daily cap are the swarm's, by `shared/email.ts`'s rules.
 - `journal.ts`: the time-lapse journal (`<SWARM_HOME>/journal/<day>/`): records what `Swarm.broadcast` sends, a file
   per 10-minute keyframe, pruning, and the reads behind `/api/journal/*`. The rules (what's kept, secrets, seeking,
   marks) are in `shared/journal.ts`; `journalSample.ts` is the demo's made-up day.
@@ -127,6 +130,7 @@ Shared (`shared/`, imported by both sides):
 - `journal.ts`: the time-lapse journal's format and pure rules, for the server and the replay.
 - `watch.ts`: which terminal lines a tab gets: its floor, open panels, the workers list's latest lines.
 - `looks.ts`: the look editor's options and `cleanStyle` (an agent's `style`, checked on the server).
+- `email.ts`: Settings → Email's validation, the allowlist lookup, the daily cap and the footer.
 
 Client (`client/`, Vite root; React 19, R3F, drei, zustand):
 - `src/world/`: the 3D building: floors, desks, characters (`appearance.ts`, `characterParts.ts`, `Figure.tsx`, `face.ts`), elevator,

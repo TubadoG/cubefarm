@@ -77,6 +77,8 @@ function frameSnapshot(f: JournalFrame): WorldSnapshot {
     voiceKeyHint: s.voiceKeyHint,
     voiceCache: s.voiceCache,
     notifyChannels: s.notifyChannels,
+    emails: s.emails, // the outbox is live, not replayed
+    emailSender: s.emailSender,
     ticker: f.ticker ?? [],
     prPreviews: [], // the PR theatre is live-only: off while replaying
     progress: s.progress, // coins and decorations are the office's own, now

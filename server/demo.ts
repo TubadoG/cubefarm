@@ -15,6 +15,7 @@ import type { UsageWarning } from './pacing.ts';
 import { VoiceApiError, type VoiceApi } from './voice.ts';
 import type { WeatherApi } from './weather.ts';
 import type { NotifyTransport } from './notifier.ts';
+import type { EmailTransport } from './graphMail.ts';
 
 // `npm run demo`: a fake GitHub and fake Claude Code sessions, so the office (including the
 // build → QA → fix loop) can be explored without spending any usage or touching real repos.
@@ -825,6 +826,7 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
     voice: demoVoice,
     weather: demoWeather,
     notify: demoNotify,
+    email: demoEmail,
     seedOps: (ids, at) => demoPastWeek(ids, at),
     demoTeam: (floor) => demoTeam(scale, floor),
     simulateUsage: demoUsage,
@@ -1072,6 +1074,7 @@ interface DemoStatus {
   company: { scaling: string }; // how team changes go, in words ("team changes apply straight away")
   floors: DemoFloor[];
   pendingChanges: unknown[];
+  email?: { canEmail: { email: string; name: string; needsManagerOk: boolean }[] }; // when Settings → Email is on
 }
 
 /** The team a floor will have once the changes waiting for the manager are decided. */
@@ -1241,6 +1244,21 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
         const reason = close[2].trim() || 'No longer wanted.';
         const out = await use('close_issue', { floor: closeFloor.floor, number: Number(close[1]), reason });
         return out.startsWith('Refused') ? `I couldn't close #${close[1]}: ${refused(out)}` : `Done: ${out} I left "${short(reason, 80)}" on it as a comment.`;
+      }
+      // "email Ada the weekly report": through the real send_email, to whoever on the list the message names.
+      if (/\be-?mail\b/i.test(text)) {
+        const list = s.email?.canEmail ?? [];
+        if (!list.length) return 'Email is off, or nobody is on the list: turn it on and add people in Settings → Email.';
+        const words = new Set(text.toLowerCase().match(/[a-z0-9.@_-]+/g) ?? []);
+        const named = (r: { email: string; name: string }) => words.has(r.email) || r.name.toLowerCase().split(/\s+/).some((w) => w.length > 2 && w !== 'the' && words.has(w));
+        const who = list.find(named) ?? list.find((r) => r.needsManagerOk) ?? list[0];
+        const issues = s.floors.reduce((n, f) => n + f.backlog.length, 0);
+        const out = await use('send_email', {
+          to: who.email,
+          subject: `Weekly update from ${s.floors.length} floor${s.floors.length === 1 ? '' : 's'}`,
+          body: `Hi ${who.name},\n\nA quick update from the office: ${plural(s.floors.length, 'floor')} at work, ${plural(issues, 'open issue')} on the boards, and the team is keeping pace.\n\nFloor by floor:\n${s.floors.map((f) => `- Floor ${f.floor} (${f.repo}): ${plural(f.team.size, 'agent')}, ${plural(f.backlog.length, 'issue')} open`).join('\n')}\n\nBest,\nThe CEO`,
+        });
+        return out.startsWith('Refused') ? `I couldn't email ${who.name}: ${refused(out)}` : out;
       }
       // Asked for a bigger team: one more agent where the most work waits, through the real tool.
       if (/\b(hire|hiring|grow|team|bigger)\b/i.test(text)) {
@@ -1412,6 +1430,32 @@ const demoNotify: NotifyTransport = {
     const ok = !/bad/i.test(url);
     console.log(`🔔 demo ${channel}${ok ? '' : ' (fails: "bad" address)'} would get: ${text.replace(/\n/g, ' ⏎ ')}`);
     return ok ? 200 : 404;
+  },
+};
+
+// ---------- email ----------
+
+/**
+ * Nothing is sent: each email is logged. A demo office starts with a made-up sender and a short allowlist (one person
+ * whose emails wait for the manager's OK); an address containing "bad" fails, like the chat apps.
+ */
+const demoEmail: EmailTransport = {
+  demoSender: { tenantId: 'demo-co.example.com', clientId: '00000000-0000-4000-8000-00000000d3e0', clientSecret: 'demo-not-a-secret' },
+  demoSettings: {
+    enabled: true,
+    from: 'ceo@demo-co.example.com',
+    copyTo: 'manager@demo-co.example.com',
+    recipients: [
+      { email: 'manager@demo-co.example.com', name: 'The manager', approve: false },
+      { email: 'client@acme.example.com', name: 'Ada at Acme', approve: true },
+      { email: 'bad-address@acme.example.com', name: 'Broken mailbox', approve: false },
+    ],
+  },
+  send: async (_sender, m) => {
+    await new Promise((r) => setTimeout(r, 300));
+    const ok = !/bad/i.test(m.to);
+    console.log(`📧 demo email${ok ? '' : ' (fails: "bad" address)'} to ${m.to}${m.bcc && m.bcc !== m.to ? ` (bcc ${m.bcc})` : ''}: ${m.subject}`);
+    if (!ok) throw new Error(`The demo mail server doesn't know ${m.to}.`);
   },
 };
 

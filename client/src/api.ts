@@ -1,7 +1,7 @@
 import { useStore } from './store';
 import type { PongResult } from '../../shared/pong';
 import type { AgentStyle } from '../../shared/looks';
-import type { AgentCli, AgentPromptView, AgentView, DoctorFinding, DoctorFix, EffortLevel, GhRepoSummary, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
+import type { AgentCli, AgentPromptView, AgentView, DoctorFinding, DoctorFix, EffortLevel, EmailView, GhRepoSummary, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
 import type { JournalChunk, JournalDayView } from '../../shared/journal';
 import type { DecorItem, ProgressView } from '../../shared/progress';
 
@@ -130,6 +130,11 @@ export const api = {
   /** Decides a team change: a hire with the manager's changes to the new agent, if any. */
   approveRequest: (id: string, overrides: AgentSetupPatch & { name?: string; note?: string } = {}) => call('POST', `/api/requests/${id}/approve`, overrides),
   rejectRequest: (id: string, note?: string) => call('POST', `/api/requests/${id}/reject`, { note }),
+  /** An email waiting for the manager's OK: send it now, or decline it with a note for the CEO. */
+  sendEmail: (id: string) => call<EmailView>('POST', `/api/emails/${id}/send`),
+  declineEmail: (id: string, note?: string) => call<EmailView>('POST', `/api/emails/${id}/decline`, { note }),
+  /** A test email to Settings → Email's copy-to address. No toast: the settings show why it failed. */
+  testEmail: () => call<{ ok: true; to: string }>('POST', '/api/email/test', undefined, false),
   /** Demo office only: the CEO asks for a new agent (or for one to leave) on demand. */
   demoPropose: (kind: 'hire' | 'let-go', floor?: number) => call<{ text: string }>('POST', '/api/demo/proposals', { kind, floor }),
   /** Saves (or with '' removes) the ElevenLabs key. No toast: the settings show why a key was rejected. */

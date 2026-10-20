@@ -84,6 +84,12 @@ The ntfy topic and token are kept in `<SWARM_HOME>/secrets.json`
 `state.json`, never logged, never sent to a browser (the settings show the last 4 characters) and never given to
 agents. **Remove** deletes them. A demo office keeps its own `demo-secrets.json` and `demo-push.json`.
 
+### Email from the CEO
+
+The CEO can also email people you list in **Settings → Email**, with your OK first for anyone you mark **Ask me**;
+those emails wait in **Approvals** and notify you as "An email waits for my OK". Setup (a Microsoft 365 mailbox and
+an app registration) is in [email.md](email.md).
+
 ## Reach the office from your phone
 
 The office listens on `127.0.0.1` only, on purpose: it can start agents that run commands on your PC, so it must

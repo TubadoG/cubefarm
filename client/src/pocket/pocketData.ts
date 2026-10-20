@@ -1,6 +1,6 @@
 // Pocket mode's reading of the office state: each floor's pipeline, what the manager can do with an agent (the same
 // as in their terminal panel), and what's waiting on the manager. Pure, so it's tested without a browser.
-import type { HireRequestView, QaView, RepoView } from '../../../shared/types';
+import type { EmailView, HireRequestView, QaView, RepoView } from '../../../shared/types';
 import { needsManager } from '../qaCard';
 import type { Agent, KanbanColumns } from '../store';
 
@@ -64,6 +64,8 @@ export function doing(a: Pick<Agent, 'status' | 'task' | 'issueNumber' | 'issueT
 
 export interface Waiting {
   requests: HireRequestView[];
+  /** The CEO's emails waiting for the manager's OK, oldest first. */
+  emails: EmailView[];
   /** Open PRs stuck on the manager, oldest first. ceoLooking ones are listed too, as the CEO may still hand them on. */
   stuck: { repo: RepoView; qa: QaView }[];
   /** Passed PRs on floors that don't merge on their own. */
@@ -71,9 +73,9 @@ export interface Waiting {
 }
 
 /** Everything waiting on the manager's decision, for the Approvals tab. */
-export function waitingOnYou(repos: RepoView[], qa: Record<string, QaView>, requests: HireRequestView[]): Waiting {
+export function waitingOnYou(repos: RepoView[], qa: Record<string, QaView>, requests: HireRequestView[], emails: EmailView[] = []): Waiting {
   const open = (r: RepoView, q: QaView) => r.pulls.some((p) => p.number === q.prNumber && p.state === 'OPEN');
-  const out: Waiting = { requests: requests.filter((r) => r.status === 'pending'), stuck: [], ready: [] };
+  const out: Waiting = { requests: requests.filter((r) => r.status === 'pending'), emails: emails.filter((e) => e.status === 'pending'), stuck: [], ready: [] };
   for (const q of Object.values(qa).sort((a, b) => a.updatedAt - b.updatedAt)) {
     const repo = repos.find((r) => r.id === q.repoId);
     if (!repo || !open(repo, q)) continue;
@@ -84,4 +86,4 @@ export function waitingOnYou(repos: RepoView[], qa: Record<string, QaView>, requ
 }
 
 /** The Approvals tab's badge: decisions only the manager can make right now. */
-export const approvalsBadge = (w: Waiting) => w.requests.length + w.stuck.filter((s) => needsManager(s.qa)).length;
+export const approvalsBadge = (w: Waiting) => w.requests.length + w.emails.length + w.stuck.filter((s) => needsManager(s.qa)).length;
