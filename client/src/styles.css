@@ -4595,6 +4595,17 @@ input.inline:focus {
   flex-wrap: wrap;
   overflow: visible;
 }
+/* iOS Safari zooms in on a text box under 16px when it is tapped, which pushes Send off screen */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+.chat-input > .btn {
+  flex: none;
+}
 .pocket .md pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
