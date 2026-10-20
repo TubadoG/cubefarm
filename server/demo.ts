@@ -1291,7 +1291,7 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
   const run = triage
     ? () => scripts.triage(Number(triage[2]), Number(triage[1]), prompt)
     : /no longer needs triage/.test(prompt)
-      ? async () => 'Nothing to do.'
+      ? async () => 'NO_MESSAGE'
       : /just joined the company/.test(prompt)
         ? () => scripts.onboard(Number(where?.[1]), where?.[2] ?? '')
         : /has a brief for floor/.test(prompt)
