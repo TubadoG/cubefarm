@@ -2638,6 +2638,11 @@ input.inline:focus {
 .floor-card {
   border-left: 4px solid var(--accent);
 }
+.hold-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .floor-badge {
   display: grid;
   place-items: center;

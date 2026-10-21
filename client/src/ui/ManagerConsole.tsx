@@ -154,6 +154,19 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
           Disconnect
         </button>
       </div>
+      <label className="small hold-paths" title="PRs that change a matching file, or carry the swarm:hold label, wait for you even with auto-merge on. ** any folders, * any name.">
+        ✋ Hold for my review (one path pattern per line)
+        <textarea
+          key={(repo.holdPaths ?? []).join('\n')}
+          rows={3}
+          defaultValue={(repo.holdPaths ?? []).join('\n')}
+          placeholder={'migrations/\n.github/**\npackage.json'}
+          onBlur={(e) => {
+            const holdPaths = e.target.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+            if (holdPaths.join('\n') !== (repo.holdPaths ?? []).join('\n')) patch({ holdPaths });
+          }}
+        />
+      </label>
       {others.length > 0 && (
         <div className="row wrap links">
           <span className="muted small">🔗 Agents here may read:</span>

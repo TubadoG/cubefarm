@@ -82,6 +82,7 @@ interface RawPull {
   deletions: number;
   headRefOid: string;
   mergeStateStatus: string;
+  labels?: { name: string }[];
   // check runs (GitHub Actions…) carry name/status/conclusion/detailsUrl and startedAt/completedAt; commit statuses (Vercel…) carry context/state/targetUrl
   statusCheckRollup:
     | { name?: string; context?: string; status?: string; conclusion?: string; state?: string; detailsUrl?: string; targetUrl?: string; startedAt?: string; completedAt?: string }[]
@@ -89,7 +90,7 @@ interface RawPull {
 }
 
 const PR_FIELDS =
-  'number,title,url,headRefName,headRefOid,state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,createdAt,mergedAt,additions,deletions,statusCheckRollup';
+  'number,title,url,headRefName,headRefOid,state,isDraft,mergeable,mergeStateStatus,reviewDecision,closingIssuesReferences,createdAt,mergedAt,additions,deletions,statusCheckRollup,labels';
 
 type Check = NonNullable<RawPull['statusCheckRollup']>[number];
 const BAD = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
@@ -138,6 +139,7 @@ function toPull(p: RawPull): PullInfo {
     failedChecks: (p.statusCheckRollup ?? []).filter(failed).map((c) => ({ name: checkName(c), url: c.detailsUrl || c.targetUrl || null })),
     pendingChecks: (p.statusCheckRollup ?? []).filter(pending).map(checkName),
     checkRun: checkRunOf(p.statusCheckRollup),
+    labels: (p.labels ?? []).map((l) => l.name),
   };
 }
 
@@ -291,6 +293,12 @@ export async function prDetails(fullName: string, number: number): Promise<PrDet
     failedChecks: uniqueNames(rollup.filter(failed)),
     pendingChecks: uniqueNames(rollup.filter(pending)),
   };
+}
+
+/** The paths a PR changes (renames: the new path), for merge holds. */
+export async function prFiles(fullName: string, number: number): Promise<string[]> {
+  const out = await gh(['api', '--paginate', `repos/${fullName}/pulls/${number}/files?per_page=100`, '--jq', '.[].filename']);
+  return out.split(/\r?\n/).filter(Boolean);
 }
 
 export async function issueDetails(fullName: string, number: number): Promise<{ title: string; body: string; createdAt: string }> {
