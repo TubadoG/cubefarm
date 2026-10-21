@@ -47,8 +47,9 @@ import { DEFAULT_LISTEN, DEFAULT_VOICE, listenSettings, speaks, Voice, voiceSett
 import { Notifier } from './notifier.ts';
 import { clip, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
-import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
+import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
 import { Mailer } from './email.ts';
+import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DigestFloor } from './digest.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
 import { blockers, holdUps, waitsMessage } from '../shared/issues.ts';
@@ -215,6 +216,7 @@ interface Persisted {
   held: HeldIssue[];
   progress: LedgerState; // coins, decorations, achievements and careers (ledger.ts)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard, by repo id
+  digestSentDay: string | null; // the local day (YYYY-MM-DD) the daily digest last went out (or had nothing to say)
 }
 
 interface Shot {
@@ -335,6 +337,7 @@ const FULL_HOUSE = 4;
 // Mission control's numbers are recomputed after these events (debounced), and every half minute for the clock's sake.
 const OPS_EVENTS = new Set<ServerEvent['type']>(['repo', 'repoRemoved', 'agent', 'agentRemoved', 'qa', 'qaRemoved', 'ceo']);
 const OPS_TICK_MS = 30_000;
+const DIGEST_TICK_MS = 60_000; // the daily digest checks whether it is due (server/digest.ts digestDue)
 // How often the watchdog looks for stuck work (watchdog.ts).
 const WATCHDOG_MS = 60_000;
 const oneLine = (err: unknown) => (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0].slice(0, 200);
@@ -496,6 +499,7 @@ export class Swarm {
     held: [],
     progress: emptyLedger(),
     pong: {},
+    digestSentDay: null,
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -686,6 +690,7 @@ export class Swarm {
         held: loaded.held ?? [],
         progress: loadLedger(loaded.progress),
         pong: loaded.pong && typeof loaded.pong === 'object' ? loaded.pong : {},
+        digestSentDay: typeof loaded.digestSentDay === 'string' ? loaded.digestSentDay : null,
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -825,6 +830,7 @@ export class Swarm {
     setInterval(() => this.emitOps(), OPS_TICK_MS); // the clock moves the numbers too: the last hour, today, errors turning into alarms
     setInterval(() => this.notifyStuck(), 60_000);
     setInterval(() => this.watchdogTick(), WATCHDOG_MS);
+    setInterval(() => void this.digestTick(), DIGEST_TICK_MS);
     void this.backend
       .detectClis()
       .then((clis) => {
@@ -3252,7 +3258,7 @@ export class Swarm {
       s.notify = notifySettings(s.notify, patch.notify);
     }
     if (patch.email !== undefined) {
-      const problem = emailProblem(patch.email);
+      const problem = emailProblem(patch.email, s.email);
       if (problem) throw new HttpError(400, problem);
       s.email = emailSettings(s.email, patch.email);
     }
@@ -4624,13 +4630,22 @@ export class Swarm {
     return null;
   }
 
-  /** Sends it now (the allowlist checked again), and records sent or failed with why. */
-  private async deliverEmail(e: EmailView): Promise<EmailView> {
+  /** Sends it now (the allowlist checked again), and records sent or failed with why. `html`: an HTML body to send instead. */
+  private async deliverEmail(e: EmailView, html?: string): Promise<EmailView> {
     const s = this.state.settings.email;
+    const company = this.state.settings.companyName;
     const refused = this.emailRefusal(e.to);
     try {
       if (refused) throw new Error(refused);
-      await this.mailer.send({ from: s.from, to: e.to, toName: e.toName, subject: e.subject, text: emailText(e.body, this.state.settings.companyName, s.from), bcc: s.copyTo || undefined });
+      await this.mailer.send({
+        from: s.from,
+        to: e.to,
+        toName: e.toName,
+        subject: e.subject,
+        text: emailText(e.body, company, s.from),
+        ...(html ? { html: emailHtml(html, company, s.from) } : {}),
+        bcc: s.copyTo || undefined,
+      });
       Object.assign(e, { status: 'sent', decidedAt: Date.now() });
       delete e.error;
     } catch (err) {
@@ -4711,6 +4726,95 @@ export class Swarm {
       throw new HttpError(502, `The test email didn't go out: ${oneLine(err)}`);
     }
     return { ok: true, to: s.copyTo };
+  }
+
+  // ---------- the daily digest ----------
+
+  /** Once a day at the manager's hour: the digest, unless it went out (or had nothing to say) today already. */
+  private async digestTick(now = new Date()) {
+    const d = this.state.settings.email.digest;
+    if (!d.enabled || this.digesting || now.getTime() < this.digestRetryAt || !digestDue(now, d.hour, this.state.digestSentDay)) return;
+    try {
+      await this.sendDigest(false, now);
+    } catch (err) {
+      console.warn('daily digest:', oneLine(err));
+    }
+  }
+
+  private digesting = false;
+  private digestRetryAt = 0; // GitHub couldn't be read: try again after this
+
+  /**
+   * Builds the digest from the floors and sends it through the CEO's email path: the allowlist and the daily cap apply.
+   * `manual`: POST /api/email/digest, which says why it didn't go out instead of waiting for tomorrow.
+   */
+  async sendDigest(manual = true, now = new Date()): Promise<{ sent: boolean; to?: string; subject?: string; reason?: string }> {
+    const refuse = (reason: string, status = 400) => {
+      if (manual) throw new HttpError(status, reason);
+      this.state.digestSentDay = digestDay(now);
+      this.save();
+      this.postMessage('office', `📧 The daily digest didn't go out: ${reason}`);
+      return { sent: false, reason };
+    };
+    if (this.digesting) throw new HttpError(409, 'The digest is being sent');
+    const s = this.state.settings.email;
+    const who = findRecipient(s, s.digest.to);
+    if (!who) return refuse('Pick who gets the digest in Settings → Email first.');
+    if (who.approve) return refuse(`The digest only goes to someone without “Ask me”; ${who.email} needs your OK for each email.`);
+    const refused = this.emailRefusal(who.email);
+    if (refused) return refuse(refused);
+    if (emailsToday(this.state.emails, now.getTime()) >= EMAILS_PER_DAY) return refuse(`The office sends at most ${EMAILS_PER_DAY} emails a day, and today's are used up.`, 429);
+    this.digesting = true;
+    try {
+      let floors: DigestFloor[];
+      try {
+        floors = await this.digestFloors(now.getTime());
+      } catch (err) {
+        this.digestRetryAt = now.getTime() + 10 * 60_000;
+        if (manual) throw new HttpError(502, `GitHub couldn't be read for the digest: ${oneLine(err)}`);
+        throw err;
+      }
+      const digest = buildDigest(floors, { officeUrl: this.state.settings.notify.officeUrl || undefined });
+      if (!manual) {
+        this.state.digestSentDay = digestDay(now);
+        this.save();
+      }
+      if (!digest) return { sent: false, reason: 'Nothing to report: no decisions wait for you and nothing merged in the last 24 hours.' };
+      const at = now.getTime();
+      const e: EmailView = { id: `mail-${at.toString(36)}-${(this.emailSeq++).toString(36)}`, to: who.email, toName: who.name, subject: digest.subject, body: digest.text, status: 'pending', createdAt: at, decidedAt: null };
+      this.addEmail(e);
+      await this.deliverEmail(e, digest.html);
+      if (e.status !== 'sent') {
+        this.postMessage('office', `📧 The daily digest to ${who.name} didn't go out: ${e.error}`);
+        if (manual) throw new HttpError(502, `It didn't go out: ${e.error}`);
+        return { sent: false, reason: e.error };
+      }
+      this.postMessage('office', `📧 Sent the daily digest to ${who.name}: ${e.subject}`);
+      return { sent: true, to: who.email, subject: e.subject };
+    } finally {
+      this.digesting = false;
+    }
+  }
+
+  /** What each floor has for the digest: PRs waiting for the manager, needs-input issues, the last 24 hours' merges. */
+  private async digestFloors(now: number): Promise<DigestFloor[]> {
+    const since = new Date(now - MERGED_WINDOW_MS).toISOString();
+    return Promise.all(
+      this.state.repos.map(async (repo): Promise<DigestFloor> => {
+        const rt = this.repoRt.get(repo.id);
+        const asks = needsInputIssues(rt?.issues ?? []);
+        const [merged, comments] = await Promise.all([
+          this.backend.mergedPullsSince(repo.fullName, since),
+          Promise.all(asks.map((i) => this.backend.latestIssueComment(repo.fullName, i.number))),
+        ]);
+        return {
+          name: repo.fullName,
+          waiting: waitingPulls(rt?.pulls ?? [], this.state.qa.filter((q) => q.repoId === repo.id), repo.autoMerge),
+          needsInput: asks.map((i, k) => ({ number: i.number, title: i.title, url: i.url, excerpt: excerpt(comments[k] ?? i.body) })),
+          merged: mergedSince(merged, now).map((p) => ({ number: p.number, title: p.title, url: p.url })),
+        };
+      }),
+    );
   }
 
   // ---------- team changes ----------

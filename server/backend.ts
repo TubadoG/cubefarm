@@ -43,6 +43,10 @@ export interface Backend {
   prDetails(fullName: string, number: number): Promise<github.PrDetails>;
   /** createdAt: when it was filed (absent when the demo no longer knows). */
   issueDetails(fullName: string, number: number): Promise<{ title: string; body: string; createdAt?: string }>;
+  /** The newest comment's text on an issue, or null when nobody commented (the daily digest). */
+  latestIssueComment(fullName: string, number: number): Promise<string | null>;
+  /** PRs merged at or after `since` (ISO time), for the daily digest. */
+  mergedPullsSince(fullName: string, since: string): Promise<{ number: number; title: string; url: string; mergedAt: string | null }[]>;
   commentPull(fullName: string, number: number, body: string): Promise<string>;
   uploadEvidence(fullName: string, filePath: string, data: Buffer): Promise<string>;
   ensureClone(fullName: string): Promise<void>;
@@ -138,6 +142,8 @@ export const realBackend: Backend = {
   prForBranch: github.prForBranch,
   prDetails: github.prDetails,
   issueDetails: github.issueDetails,
+  latestIssueComment: github.latestIssueComment,
+  mergedPullsSince: github.mergedPullsSince,
   commentPull: github.commentPull,
   uploadEvidence: github.uploadEvidence,
   ensureClone: workspace.ensureClone,

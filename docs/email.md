@@ -20,6 +20,22 @@ past it.
 The CEO sends at most 10 emails a day (sent plus waiting). The list is checked again when you press **Send**: remove
 someone and their waiting emails can't go out.
 
+## The daily digest
+
+Also in **Settings → Email**: one email a day so you can answer everything at once. Pick who gets it (someone on the
+list without **Ask me**: it goes out on its own) and the hour (the office's local time), and switch it on. On the
+first check at or after that hour the office builds it from what it already knows, with no CEO session and no model
+tokens (`server/digest.ts`), and lists per floor:
+
+- open PRs waiting for you: QA passed but auto-merge is off;
+- open issues labelled `needs-input`, with the first 300 characters of the latest comment (or the body);
+- PRs merged in the last 24 hours.
+
+The subject is "Office: N decisions waiting", or "Office: daily summary" when only merges happened; with neither, it
+isn't sent. It goes through the same path as the CEO's email (the switch, the sender, the list and the daily cap) and
+the day it went out is saved, so a restart doesn't send it twice. **Send digest now** (`POST /api/email/digest`)
+sends one straight away for testing. In the demo, pixel-todo has a `needs-input` issue, so it always has something.
+
 ## The sender
 
 Register an app in Microsoft Entra ID (**App registrations → New registration**), give it the **Microsoft Graph →

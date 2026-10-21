@@ -17,7 +17,7 @@ async function office() {
   const swarm = new Swarm(createDemoBackend());
   (swarm as unknown as Internals).ensureCeo([]);
   await swarm.mailer.init(); // the demo's fake sender
-  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD] } });
+  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD], digest: { enabled: false, hour: 8, to: '' } } });
   const tools = (swarm as unknown as Internals).officeTools();
   const send = (to: string, subject = 'Weekly report') => tools.call('send_email', { to, subject, body: 'All floors are green.' });
   return { swarm, send, emails: () => swarm.snapshot().emails, messages: () => swarm.snapshot().messages };
@@ -105,5 +105,55 @@ describe('Settings → Email', () => {
     expect(await swarm.testEmail()).toEqual({ ok: true, to: AUTO.email });
     swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, copyTo: '' } });
     await expect(swarm.testEmail()).rejects.toThrow(/copy-to address/);
+  });
+});
+
+describe('the daily digest', () => {
+  type DigestInternals = { syncRepo(id: string): Promise<void>; digestTick(now?: Date): Promise<void>; state: { digestSentDay: string | null } };
+
+  async function withFloor() {
+    const o = await office();
+    const repo = await o.swarm.connectRepo('demo-co/pixel-todo');
+    const internals = o.swarm as unknown as DigestInternals;
+    await internals.syncRepo(repo.id);
+    const digest = (d: object) => o.swarm.updateSettings({ email: { ...o.swarm.snapshot().settings.email, digest: { ...o.swarm.snapshot().settings.email.digest, ...d } } });
+    return { ...o, internals, digest };
+  }
+
+  it('goes only to someone on the list without “Ask me”', async () => {
+    const { swarm, digest } = await withFloor();
+    await expect(swarm.sendDigest()).rejects.toThrow('Pick who gets the digest');
+    expect(() => digest({ to: ASK.email })).toThrow(/without “Ask me”/);
+    expect(() => digest({ to: 'eve@evil.example.com' })).toThrow(/isn't on the list/);
+  });
+
+  it('sends now through the email path: needs-input issues with their latest comment', async () => {
+    const { swarm, digest, emails, messages } = await withFloor();
+    digest({ to: AUTO.email });
+    expect(await swarm.sendDigest()).toEqual({ sent: true, to: AUTO.email, subject: 'Office: 1 decision waiting' });
+    const [e] = emails();
+    expect(e).toMatchObject({ to: AUTO.email, status: 'sent', subject: 'Office: 1 decision waiting' });
+    expect(e.body).toContain('Which colour palette for v2?');
+    expect(e.body).toContain('> Two options in the mockups');
+    expect(messages().at(-1)?.text).toBe('📧 Sent the daily digest to Sam: Office: 1 decision waiting');
+  });
+
+  it('counts toward the daily cap', async () => {
+    const { swarm, send, digest } = await withFloor();
+    digest({ to: AUTO.email });
+    for (let i = 0; i < EMAILS_PER_DAY; i++) await send(ASK.email, `Report ${i}`);
+    await expect(swarm.sendDigest()).rejects.toThrow(/at most 10 emails a day/);
+  });
+
+  it('goes out once a day at the hour, and remembers the day', async () => {
+    const { internals, digest, emails } = await withFloor();
+    digest({ to: AUTO.email, enabled: true, hour: 9 });
+    await internals.digestTick(new Date(2026, 9, 21, 8, 59));
+    expect(emails()).toHaveLength(0);
+    await internals.digestTick(new Date(2026, 9, 21, 9, 1));
+    expect(emails()).toHaveLength(1);
+    expect(internals.state.digestSentDay).toBe('2026-10-21');
+    await internals.digestTick(new Date(2026, 9, 21, 12, 0));
+    expect(emails()).toHaveLength(1);
   });
 });

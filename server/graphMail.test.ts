@@ -83,6 +83,10 @@ describe('sendMail', () => {
     });
   });
 
+  it('sends HTML instead when the email has some', () => {
+    expect(sendMailBody({ ...msg, html: '<p>Hello</p>' }).message.body).toEqual({ contentType: 'HTML', content: '<p>Hello</p>' });
+  });
+
   it('blind-copies the copy-to address unless it is the recipient', () => {
     expect(sendMailBody({ ...msg, bcc: 'me@co.example.com' }).message.bccRecipients).toEqual([{ emailAddress: { address: 'me@co.example.com' } }]);
     expect(sendMailBody({ ...msg, bcc: 'ada@acme.example.com' }).message).not.toHaveProperty('bccRecipients');

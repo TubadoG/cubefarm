@@ -109,6 +109,14 @@ seed('demo-co/pixel-todo', 'A cheerful todo app', [
   ['Keyboard shortcuts', 'N for new todo, / to search, ? for help.'],
   ['Fix: completed count off by one', 'The footer shows one more completed item than there is.'],
 ]);
+// An issue that asks the manager a question, for the daily digest (docs/email.md); swarm:skip keeps agents off it.
+const issueComments = new Map<string, string[]>(); // `${fullName}#${n}` -> its comments, oldest first
+{
+  const r = repos.get('demo-co/pixel-todo')!;
+  const n = r.nextNumber++;
+  r.issues.push(issue(n, 'Which colour palette for v2?', 'We need to pick the v2 palette before the theme work starts.', r.fullName, ['needs-input', 'swarm:skip']));
+  issueComments.set(`${r.fullName}#${n}`, ['Two options in the mockups: "Sunrise" (warm oranges) or "Harbour" (blues and greys). Harbour tests better for contrast; Sunrise matches the logo. Which one should we build?']);
+}
 seed('demo-co/weather-api', 'Tiny weather REST API', [
   ['Add /forecast endpoint', 'Return a 5-day forecast for a city.'],
   ['Rate limit anonymous callers', '60 requests per minute per IP.'],
@@ -758,6 +766,11 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
       const i = repos.get(fullName)?.issues.find((x) => x.number === number);
       return { title: i?.title ?? `Issue #${number}`, body: i?.body ?? '', createdAt: i?.createdAt };
     },
+    latestIssueComment: async (fullName, number) => issueComments.get(`${fullName}#${number}`)?.at(-1) ?? null,
+    mergedPullsSince: async (fullName, since) =>
+      (repos.get(fullName)?.pulls ?? [])
+        .filter((p) => p.state === 'MERGED' && p.mergedAt && Date.parse(p.mergedAt) >= Date.parse(since))
+        .map((p) => ({ number: p.number, title: p.title, url: p.url, mergedAt: p.mergedAt })),
     commentPull: async (fullName, number) => `https://github.com/${fullName}/pull/${number}#issuecomment-${Date.now()}`,
     uploadEvidence: async (fullName, filePath) => `https://github.com/${fullName}/raw/swarm-qa-evidence/${filePath}`,
     ensureClone: async () => new Promise((r) => setTimeout(r, 400)),
@@ -1450,6 +1463,7 @@ const demoEmail: EmailTransport = {
       { email: 'client@acme.example.com', name: 'Ada at Acme', approve: true },
       { email: 'bad-address@acme.example.com', name: 'Broken mailbox', approve: false },
     ],
+    digest: { enabled: false, hour: 8, to: 'manager@demo-co.example.com' },
   },
   send: async (_sender, m) => {
     await new Promise((r) => setTimeout(r, 300));

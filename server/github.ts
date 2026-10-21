@@ -298,6 +298,24 @@ export async function issueDetails(fullName: string, number: number): Promise<{ 
   return { title: raw.title, body: raw.body ?? '', createdAt: raw.createdAt };
 }
 
+/** The newest comment on an issue, or null when it has none. */
+export async function latestIssueComment(fullName: string, number: number): Promise<string | null> {
+  const raw = await ghJson<{ comments: { body: string }[] | null }>(['issue', 'view', String(number), '-R', fullName, '--json', 'comments'], SYNC_READ);
+  return raw.comments?.at(-1)?.body ?? null;
+}
+
+/** PRs merged at or after `since` (ISO time), newest first as GitHub lists them. */
+export async function mergedPullsSince(fullName: string, since: string): Promise<{ number: number; title: string; url: string; mergedAt: string | null }[]> {
+  const day = since.slice(0, 10); // the search's date; the exact time is checked below
+  const raw = await readTwice(() =>
+    ghJson<{ number: number; title: string; url: string; mergedAt: string | null }[]>(
+      ['pr', 'list', '-R', fullName, '--state', 'merged', '--search', `merged:>=${day}`, '--limit', '100', '--json', 'number,title,url,mergedAt'],
+      SYNC_READ,
+    ),
+  );
+  return raw.filter((p) => p.mergedAt && Date.parse(p.mergedAt) >= Date.parse(since));
+}
+
 export async function commentPull(fullName: string, number: number, body: string): Promise<string> {
   const out = await gh(['pr', 'comment', String(number), '-R', fullName, '--body-file', '-'], { input: body });
   return out.match(/https:\/\/github\.com\/\S+/)?.[0] ?? '';

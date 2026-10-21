@@ -1,6 +1,7 @@
 // Settings → Email (docs/email.md): whether the CEO may email at all, the mailbox it sends from, who gets a blind
 // copy, and the list of people it may write to (each sent at once, or after the manager's OK). The sender's
-// credentials are set over REST and never reach the browser: only whether they're set.
+// credentials are set over REST and never reach the browser: only whether they're set. The daily digest (server/digest.ts)
+// goes to one of them, once a day.
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
@@ -17,7 +18,10 @@ export function EmailSettings() {
   const [add, setAdd] = useState({ email: '', name: '', approve: true });
   const [error, setError] = useState('');
   const [test, setTest] = useState<{ busy: boolean; result: string | null; ok: boolean }>({ busy: false, result: null, ok: false });
+  const [digestRun, setDigestRun] = useState<{ busy: boolean; result: string | null; tone: string }>({ busy: false, result: null, tone: '' });
   useEffect(() => setFrom(email.from), [email.from]);
+  const digest = email.digest;
+  const direct = email.recipients.filter((r) => !r.approve);
   const save = async (patch: Partial<Email>) => {
     setError('');
     try {
@@ -35,6 +39,15 @@ export function EmailSettings() {
       setTest({ busy: false, result: `✓ Sent to ${r.to}`, ok: true });
     } catch (err) {
       setTest({ busy: false, result: err instanceof Error ? err.message : String(err), ok: false });
+    }
+  };
+  const runDigest = async () => {
+    setDigestRun({ busy: true, result: null, tone: '' });
+    try {
+      const r = await api.sendDigest();
+      setDigestRun({ busy: false, result: r.sent ? `✓ Sent “${r.subject}” to ${r.to}` : (r.reason ?? 'Not sent'), tone: r.sent ? 'notify-ok' : 'muted' });
+    } catch (err) {
+      setDigestRun({ busy: false, result: err instanceof Error ? err.message : String(err), tone: 'term-error' });
     }
   };
   return (
@@ -138,6 +151,48 @@ export function EmailSettings() {
           </button>
         </div>
       </form>
+      <h4 className="notify-h">Daily digest</h4>
+      <p className="muted small">
+        Once a day, one email with every PR and issue waiting for you on each floor, and what merged in the last 24 hours. Built by the office, not the CEO; sent only
+        when there's something to say, and it counts toward the {EMAILS_PER_DAY} a day.
+      </p>
+      <div className="notify-hook">
+        <label className="field">
+          <span>Send it to (someone without “Ask me”)</span>
+          <select value={digest.to} onChange={(e) => void save({ digest: { ...digest, to: e.target.value, enabled: digest.enabled && !!e.target.value } })}>
+            <option value="">Nobody</option>
+            {direct.map((r) => (
+              <option key={r.email} value={r.email}>
+                {r.name} &lt;{r.email}&gt;
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>At (office time)</span>
+          <select value={digest.hour} onChange={(e) => void save({ digest: { ...digest, hour: Number(e.target.value) } })}>
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {String(h).padStart(2, '0')}:00
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="toggle block">
+          <input type="checkbox" checked={digest.enabled} disabled={!digest.to} onChange={(e) => void save({ digest: { ...digest, enabled: e.target.checked } })} />
+          <span>Send the digest every day</span>
+        </label>
+        <div className="row wrap">
+          <button className="btn btn-small" disabled={digestRun.busy || !digest.to || !sender.set || !email.enabled} onClick={() => void runDigest()}>
+            {digestRun.busy ? 'Sending…' : 'Send digest now'}
+          </button>
+          {digestRun.result && (
+            <span className={`small ${digestRun.tone}`} role="status">
+              {digestRun.result}
+            </span>
+          )}
+        </div>
+      </div>
       {error && (
         <div className="term-error small" role="alert">
           {error}
