@@ -367,6 +367,14 @@ export interface EmailSettings {
   from: string; // the mailbox it's sent from ('' = not set)
   copyTo: string; // a recipient on the list who gets a blind copy of every email ('' = none); test emails go here
   recipients: EmailRecipient[];
+  digest: DigestSettings;
+}
+
+/** The daily decision digest: one email a day listing what waits for the manager (server/digest.ts). */
+export interface DigestSettings {
+  enabled: boolean;
+  hour: number; // 0-23, the office's local time: it goes out on the first check at or after it
+  to: string; // someone on the list without "Ask me" ('' = nobody yet)
 }
 
 /** Whether the sender's credentials are saved: only their kind and a hint, never the values. */

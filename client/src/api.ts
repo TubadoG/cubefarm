@@ -136,6 +136,8 @@ export const api = {
   declineEmail: (id: string, note?: string) => call<EmailView>('POST', `/api/emails/${id}/decline`, { note }),
   /** A test email to Settings → Email's copy-to address. No toast: the settings show why it failed. */
   testEmail: () => call<{ ok: true; to: string }>('POST', '/api/email/test', undefined, false),
+  /** The daily digest, now (Settings → Email). No toast: the settings show the outcome. */
+  sendDigest: () => call<{ sent: boolean; to?: string; subject?: string; reason?: string }>('POST', '/api/email/digest', undefined, false),
   /** Demo office only: the CEO asks for a new agent (or for one to leave) on demand. */
   demoPropose: (kind: 'hire' | 'let-go', floor?: number) => call<{ text: string }>('POST', '/api/demo/proposals', { kind, floor }),
   /** Saves (or with '' removes) the ElevenLabs key. No toast: the settings show why a key was rejected. */

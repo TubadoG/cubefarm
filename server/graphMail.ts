@@ -16,6 +16,8 @@ export interface OutgoingEmail {
   toName: string;
   subject: string;
   text: string;
+  /** Sent instead of `text` when given (Graph takes one body); the text stays for logs and the office's record. */
+  html?: string;
   bcc?: string;
 }
 
@@ -87,13 +89,13 @@ export const digestOf = (signingInput: string) => createHash('sha256').update(si
 
 export const assembleJwt = (signingInput: string, signature: string) => `${signingInput}.${toBase64Url(signature)}`;
 
-/** POST /users/{from}/sendMail's body: plain text, saved to Sent Items, the copy as a blind copy. */
+/** POST /users/{from}/sendMail's body: plain text (or HTML when it has some), saved to Sent Items, the copy as a blind copy. */
 export function sendMailBody(m: OutgoingEmail) {
   const bcc = m.bcc && m.bcc !== m.to ? [{ emailAddress: { address: m.bcc } }] : [];
   return {
     message: {
       subject: m.subject,
-      body: { contentType: 'Text', content: m.text },
+      body: m.html ? { contentType: 'HTML', content: m.html } : { contentType: 'Text', content: m.text },
       toRecipients: [{ emailAddress: { address: m.to, ...(m.toName ? { name: m.toName } : {}) } }],
       ...(bcc.length ? { bccRecipients: bcc } : {}),
     },

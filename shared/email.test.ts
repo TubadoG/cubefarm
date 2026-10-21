@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DAY_MS, DEFAULT_EMAIL, emailAddress, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_NAME, MAX_RECIPIENTS } from './email.ts';
+import { DAY_MS, DEFAULT_DIGEST, DEFAULT_EMAIL, emailAddress, emailHtml, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_NAME, MAX_RECIPIENTS } from './email.ts';
 
 const ada = { email: 'ada@acme.example.com', name: 'Ada', approve: true };
-const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada] };
+const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada], digest: DEFAULT_DIGEST };
 
 describe('email addresses', () => {
   it('trims and lowercases good ones', () => {
@@ -16,7 +16,7 @@ describe('email addresses', () => {
 
 describe('email settings', () => {
   it('starts off and empty', () => {
-    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [] });
+    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [], digest: { enabled: false, hour: 8, to: '' } });
   });
 
   it('cleans the list: lowercased, deduped, names trimmed and capped, asking by default', () => {
@@ -81,5 +81,47 @@ describe('the footer', () => {
     expect(emailFooter('Acme', 'ceo@acme.example.com').split('\n')).toHaveLength(2);
     const text = emailText('Hello.\n\n', 'Acme', 'ceo@acme.example.com');
     expect(text).toBe("Hello.\n\n-- \nSent by the CEO of Acme's office, an AI agent running in cubefarm.\nReplies go to ceo@acme.example.com.");
+  });
+});
+
+describe('the daily digest settings', () => {
+  const sam = { email: 'sam@co.example.com', name: 'Sam', approve: false };
+  const both = { ...base, recipients: [ada, sam] };
+
+  it('takes someone on the list without “Ask me”, an hour and the switch', () => {
+    const d = { enabled: true, hour: 7, to: 'SAM@co.example.com' };
+    expect(emailProblem({ ...both, digest: d }, both)).toBeNull();
+    expect(emailSettings(both, { digest: d }).digest).toEqual({ enabled: true, hour: 7, to: sam.email });
+  });
+
+  it('refuses someone off the list, or who needs an OK, with why', () => {
+    expect(emailProblem({ digest: { to: 'eve@evil.example.com' } }, both)).toMatch(/isn't on the list/);
+    expect(emailProblem({ digest: { to: ada.email } }, both)).toMatch(/without “Ask me”/);
+    expect(emailProblem({ digest: { to: 'nope' } }, both)).toMatch(/isn't a valid email address/);
+    // Someone added in the same patch counts.
+    expect(emailProblem({ recipients: [sam], digest: { to: sam.email } }, base)).toBeNull();
+  });
+
+  it('refuses an hour outside 0-23, and turning it on with nobody to send to', () => {
+    for (const hour of [-1, 24, 7.5, '8']) expect(emailProblem({ digest: { hour } }, both)).toMatch(/whole hour/);
+    expect(emailProblem({ digest: { enabled: true, to: '' } }, both)).toBe('Pick who gets the digest first.');
+    expect(emailSettings(both, { digest: { hour: 30 } }).digest.hour).toBe(8);
+  });
+
+  it('stops when its recipient leaves the list or starts needing an OK', () => {
+    const on = emailSettings(both, { digest: { enabled: true, hour: 8, to: sam.email } });
+    expect(emailSettings(on, { recipients: [ada] }).digest).toEqual({ enabled: false, hour: 8, to: '' });
+    expect(emailSettings(on, { recipients: [ada, { ...sam, approve: true }] }).digest.to).toBe('');
+    // A full patch from Settings → Email that keeps the old digest isn't refused for it.
+    expect(emailProblem({ ...on, recipients: [ada] }, on)).toBeNull();
+  });
+});
+
+describe('emailHtml', () => {
+  it('puts the footer under the body, escaped', () => {
+    const html = emailHtml('<p>Hi</p>', 'A<B', 'ceo@co.example.com');
+    expect(html).toContain('<p>Hi</p>');
+    expect(html).toContain("Sent by the CEO of A&lt;B's office".replace("'", '&#39;'));
+    expect(html).toContain('Replies go to ceo@co.example.com.');
   });
 });
