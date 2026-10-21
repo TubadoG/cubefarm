@@ -34,6 +34,7 @@ import { drainDecision, lastUpdateMessage, POSTPONE_MS, type DrainInput, type La
 import { clampPacingSessions, DEFAULT_PACING_SESSIONS, mayStart, PACING_MS, pacingMessage, resumeRefusal, usageLabel, usageView, waived, warningView, type UsageWarning, type Waiver, type WorkKind } from './pacing.ts';
 import { emptyHistory, loadHistory, opsView, recordChecks, recordCost, recordMerges, recordQa, type OpsFloorState, type OpsHistory } from './metrics.ts';
 import { clampTrimIdleMin, DEFAULT_TRIM_IDLE_MIN, desksToTrim, formatBytes, freedMessage, idleSince, TRIM_SWEEP_MS } from './deskTrim.ts';
+import { clampStuckMinutes, DEFAULT_STUCK_MIN, isMcpDialog, lastScreenLine, MAX_STUCK_MIN, SCREEN_TICK_MS, screenHash, stuckDecision, stuckMessage, type StuckAction } from './stuckScreen.ts';
 import { cliLabel, isCli } from './clis.ts';
 import { machineName } from './machines.ts';
 import { MACHINES_DIR, type DeskTrim } from './workspace.ts';
@@ -53,6 +54,7 @@ import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSin
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
 import { blockers, holdUps, waitsMessage } from '../shared/issues.ts';
+import { holdReason, parseHoldPaths } from '../shared/holds.ts';
 import { dayKey, journalFrame, legacyAgent, legacyRequest } from '../shared/journal.ts';
 import { cleanStyle, HAIR_COLORS, SKIN_TONES, type AgentStyle } from '../shared/looks.ts';
 import { achievementDef, type ProgressView } from '../shared/progress.ts';
@@ -111,6 +113,7 @@ interface PersistedRepo {
   color: string;
   autoAssign: boolean;
   autoMerge: boolean; // PRs merge themselves once QA passes and GitHub's checks are green
+  holdPaths: string[]; // PRs changing these (shared/holds.ts), or labelled swarm:hold, wait for the manager anyway
   browserTesting: boolean;
   links: string[]; // other connected repos this floor's agents may read
   localPath: string | null; // the manager's own project folder (null: a clone under WORKSPACE_ROOT)
@@ -478,6 +481,7 @@ export class Swarm {
       autoUpdate: true,
       pacingSessions: DEFAULT_PACING_SESSIONS,
       trimIdleDesksMin: DEFAULT_TRIM_IDLE_MIN,
+      stuckMinutes: DEFAULT_STUCK_MIN,
       voice: { ...DEFAULT_VOICE },
       themes: DEFAULT_THEME_SETTINGS,
       weather: { ...DEFAULT_WEATHER },
@@ -642,6 +646,7 @@ export class Swarm {
         repos: (loaded.repos ?? []).map((r) => ({
           ...r,
           autoMerge: r.autoMerge ?? true,
+          holdPaths: r.holdPaths ?? [],
           links: r.links ?? [],
           mission: r.mission ?? '',
           summary: r.summary ?? '',
@@ -697,6 +702,7 @@ export class Swarm {
       if (this.state.settings.runtime !== 'sdk') this.state.settings.runtime = 'terminal';
       if (!isCli(this.state.settings.defaultCli)) this.state.settings.defaultCli = 'claude';
       this.state.settings.trimIdleDesksMin = clampTrimIdleMin(this.state.settings.trimIdleDesksMin);
+      this.state.settings.stuckMinutes = clampStuckMinutes(this.state.settings.stuckMinutes ?? DEFAULT_STUCK_MIN);
       if (!this.state.settings.defaultModel && this.state.settings.defaultCli === 'claude') this.state.settings.defaultModel = DEFAULT_MODEL;
       // "Max concurrent sessions" (default 4) became an optional session limit. The old default goes; a limit the manager chose stays.
       const old = this.state.settings as SwarmSettings & { maxConcurrent?: number; permissionMode?: string };
@@ -830,6 +836,7 @@ export class Swarm {
     setInterval(() => this.emitOps(), OPS_TICK_MS); // the clock moves the numbers too: the last hour, today, errors turning into alarms
     setInterval(() => this.notifyStuck(), 60_000);
     setInterval(() => this.watchdogTick(), WATCHDOG_MS);
+    setInterval(() => this.screenTick(), SCREEN_TICK_MS);
     setInterval(() => void this.digestTick(), DIGEST_TICK_MS);
     void this.backend
       .detectClis()
@@ -968,6 +975,7 @@ export class Swarm {
       color: r.color,
       autoAssign: r.autoAssign,
       autoMerge: r.autoMerge,
+      holdPaths: r.holdPaths,
       folderSync: rt.folderSync,
       browserTesting: r.browserTesting,
       links: r.links,
@@ -1047,6 +1055,7 @@ export class Swarm {
       checks: q.checks,
       commentUrl: q.commentUrl,
       mergeNote: q.mergeNote,
+      heldFor: q.heldFor ?? null,
       ceoLooking: q.status === 'needs-human' && !q.escalated && this.triageJob(q) != null,
       updatedAt: q.updatedAt,
       shots: q.shots ?? [],
@@ -1177,6 +1186,7 @@ export class Swarm {
   private setQa(rec: QaRecord, patch: Partial<QaRecord>) {
     const told = rec.status === 'needs-human' && rec.escalated;
     Object.assign(rec, patch, { updatedAt: Date.now() });
+    if (rec.status !== 'passed') rec.heldFor = null; // a new pass weighs the hold again
     if (!this.state.qa.includes(rec)) return; // it left QA (its PR closed) while a session on it was still wrapping up
     if (rec.status !== 'needs-human') rec.escalated = false;
     else this.ledger({ kind: 'needs-human', repoId: rec.repoId, pr: rec.prNumber });
@@ -1341,6 +1351,7 @@ export class Swarm {
       color: FLOOR_COLORS[(floor - 1) % FLOOR_COLORS.length],
       autoAssign: !!opts.autoAssign,
       autoMerge: true,
+      holdPaths: [],
       browserTesting: true,
       links: [],
       localPath: folder,
@@ -1448,9 +1459,15 @@ export class Swarm {
 
   updateRepo(
     id: string,
-    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & { previewCommand?: unknown; previewEnv?: unknown },
+    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & { previewCommand?: unknown; previewEnv?: unknown; holdPaths?: unknown },
   ) {
     const repo = this.repo(id);
+    let holdPaths: string[] | undefined;
+    try {
+      if (patch.holdPaths !== undefined) holdPaths = parseHoldPaths(patch.holdPaths);
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
     const preview = parsePreviewPatch(patch.previewCommand, patch.previewEnv);
     repo.preview = { ...repo.preview, ...preview };
     if (preview.command === null) void this.previews.refreshDefault(repo);
@@ -1458,6 +1475,10 @@ export class Swarm {
     if (patch.autoMerge !== undefined) {
       repo.autoMerge = !!patch.autoMerge;
       if (repo.autoMerge) void this.syncRepo(repo.id);
+    }
+    if (holdPaths) {
+      repo.holdPaths = holdPaths;
+      if (repo.autoMerge) void this.syncRepo(repo.id); // passed PRs are weighed against the new list
     }
     if (patch.browserTesting !== undefined) repo.browserTesting = !!patch.browserTesting;
     if (patch.color && /^#[0-9a-f]{6}$/i.test(patch.color)) repo.color = patch.color;
@@ -1490,6 +1511,9 @@ export class Swarm {
         // Only act on PR data fetched after the record last changed (a fix may have just pushed).
         if ((rt.fetchedAt ?? 0) < rec.updatedAt) continue;
         try {
+          const held = await this.holdFor(repo, pr);
+          if (held !== (rec.heldFor ?? null)) this.setHeld(repo, rec, pr, held);
+          if (held) continue;
           if (await this.advanceMerge(repo, rec, pr)) merged = true;
         } catch (err) {
           console.warn(`auto-merge of ${repo.fullName}#${pr.number} failed`, err);
@@ -1503,6 +1527,28 @@ export class Swarm {
       await this.syncRepo(repo.id);
       setTimeout(() => this.schedule(), 200);
     }
+  }
+
+  /** Why a passed PR waits for the manager (shared/holds.ts), or null. Its changed files are read once per head commit. */
+  private async holdFor(repo: PersistedRepo, pr: PullInfo): Promise<string | null> {
+    if (!repo.holdPaths.length) return holdReason(pr.labels, null, []);
+    const key = `${repo.id}#${pr.number}`;
+    let seen = this.prFilesSeen.get(key);
+    if (seen?.sha !== pr.headSha) {
+      seen = { sha: pr.headSha, files: await this.backend.prFiles(repo.fullName, pr.number) };
+      this.prFilesSeen.set(key, seen);
+    }
+    return holdReason(pr.labels, seen.files, repo.holdPaths);
+  }
+
+  /** Mark a passed PR held (or no longer held); the manager hears once when it first waits for them. */
+  private setHeld(repo: PersistedRepo, rec: QaRecord, pr: PullInfo, held: string | null) {
+    const first = !!held && !rec.heldFor;
+    this.setQa(rec, { heldFor: held, mergeNote: null });
+    if (!first) return;
+    const name = repo.fullName.split('/')[1] ?? repo.fullName;
+    this.postMessage('office', `✋ PR #${pr.number} on ${repo.fullName} passed QA and is held for you: ${pr.title} (${held}).`);
+    this.notifier.notify('needsHuman', `PR #${pr.number} is held for you`, `${name}: ${pr.title} (${held})`, `${name} #${pr.number} ${pr.title}`);
   }
 
   /** One step toward merging a QA-passed PR. Returns true when it merged. */
@@ -1983,6 +2029,7 @@ export class Swarm {
     void removeQaShots(qaShotsDir(QA_SHOTS_DIR, repo.id, prNumber)).catch(() => undefined);
     this.clearPrepStrikes(repo.id, prNumber);
     this.fixNudged.delete(`${repo.id}#${prNumber}`);
+    this.prFilesSeen.delete(`${repo.id}#${prNumber}`);
     this.save();
   }
 
@@ -2513,6 +2560,7 @@ export class Swarm {
     }
     a.status = 'working';
     this.activity.set(a.id, Date.now());
+    this.toolSeen.delete(a.id);
     const how = this.sessionRuntime(a, resumeSessionId);
     this.emitAgent(a);
     const active = (entries: LogEntry[]) => {
@@ -2546,6 +2594,7 @@ export class Swarm {
         },
         tool: (name) => {
           this.activity.set(a.id, Date.now());
+          if (name) this.toolSeen.add(a.id);
           if (rt.currentTool === name) return;
           rt.currentTool = name;
           this.emitAgent(a);
@@ -3237,6 +3286,11 @@ export class Swarm {
       s.trimIdleDesksMin = clampTrimIdleMin(patch.trimIdleDesksMin);
       setTimeout(() => void this.trimIdleDesks(), 1000);
     }
+    if (patch.stuckMinutes !== undefined) {
+      const n = Number(patch.stuckMinutes);
+      if (!Number.isFinite(n) || n < 0 || n > MAX_STUCK_MIN) throw new HttpError(400, `The frozen-terminal restart must be 0 (never) to ${MAX_STUCK_MIN} minutes.`);
+      s.stuckMinutes = clampStuckMinutes(n);
+    }
     if (patch.voice !== undefined) {
       const keepDays = s.voice.keepDays;
       s.voice = voiceSettings(s.voice, patch.voice);
@@ -3300,6 +3354,7 @@ export class Swarm {
   private scheduleOffset = 0;
   private issueFailures = new Map<string, number>(); // `${repoId}#${issue}` → failed sessions on it
   private nudged = new Set<string>(); // `${repoId}#${issue}`: its agent was asked once to finish the missing PR
+  private prFilesSeen = new Map<string, { sha: string; files: string[] }>(); // `${repoId}#${pr}`: its changed files at that head, for merge holds
   private fixNudged = new Set<string>(); // `${repoId}#${pr}`: its fix session was asked once to push or say why not
   private pausedUntil = 0; // Claude's usage limit was hit: nothing new starts before this
   private pacingUntil = 0; // Claude warned about usage: new issues are paced until this
@@ -4317,6 +4372,72 @@ export class Swarm {
       this.stopForClosure(a, why);
     } else this.dropTask(a, `↺ ${why[0].toUpperCase()}${why.slice(1)}. Cleared desk.`);
     this.save();
+  }
+
+  // ---------- the stuck-screen watchdog (stuckScreen.ts) ----------
+
+  private screens = new Map<string, { startedAt: number | null; hash: string; changedAt: number }>(); // agent id -> their screen
+  private stuckStrikes = new Map<string, number>(); // task key -> restarts it had for a stuck screen
+  private toolSeen = new Set<string>(); // agents whose current session has used a tool
+  private mcpAnswered = new WeakSet<SessionHandle>(); // sessions whose project-MCP dialog the office answered
+  private mcpNoted = new Set<string>(); // floors whose project-MCP dialog the phone heard about
+
+  /** Every few seconds: busy agents' terminals. The project-MCP dialog is answered at once; a screen frozen for stuckMinutes is stuck. */
+  private screenTick() {
+    if (this.state.settings.runtime !== 'terminal' || !this.backend.terminals) return this.screens.clear();
+    const now = Date.now();
+    for (const a of this.state.agents) {
+      const rt = this.agentRt.get(a.id);
+      if (!rt || !BUSY.includes(a.status)) {
+        this.screens.delete(a.id);
+        continue;
+      }
+      const screen = rt.terminal?.screen() ?? '';
+      // Before the session's first tool call only: later, the same words could be a file the agent is reading.
+      if (rt.session && rt.terminal && !this.toolSeen.has(a.id) && !this.mcpAnswered.has(rt.session) && isMcpDialog(screen)) {
+        this.mcpAnswered.add(rt.session);
+        rt.terminal.press('\x1b'); // Esc: reject them all (not a viewer's key, so it doesn't count as interrupting the turn)
+        this.appendLog(a, [{ kind: 'system', text: '🔌 Rejected the repo\'s project MCP servers (.mcp.json) so the session could start.' }]);
+        if (!this.mcpNoted.has(a.repoId)) {
+          this.mcpNoted.add(a.repoId); // once per floor: every session there would ask the same
+          this.postMessage('office', `🔌 ${a.name}'s Claude Code asked about ${a.repoId}'s .mcp.json servers; the office rejected them so ${a.name} could start.`);
+        }
+      }
+      const hash = screenHash(screen);
+      let seen = this.screens.get(a.id);
+      if (!seen || seen.startedAt !== a.startedAt) this.screens.set(a.id, (seen = { startedAt: a.startedAt, hash, changedAt: now }));
+      else if (seen.hash !== hash) Object.assign(seen, { hash, changedAt: now });
+      if (a.role === 'ceo' || !a.task) continue;
+      const key = this.stuckKey(a);
+      const action = stuckDecision({ status: a.status, lastChange: seen.changedAt, now, strikes: this.stuckStrikes.get(key) ?? 0, stuckMinutes: this.state.settings.stuckMinutes });
+      if (action !== 'none') this.onStuck(a, action, key, now - seen.changedAt, screen);
+    }
+  }
+
+  /** The task, whoever holds it: an issue, or a PR's QA run or fix. */
+  private stuckKey(a: PersistedAgent) {
+    return a.task === 'issue' ? `${a.repoId}#i${a.issueNumber}` : `${a.repoId}#${a.task}${a.prNumber}`;
+  }
+
+  /** A stuck agent: restarted the first time (their work back in line, no strike), and the task left to the manager the second. */
+  private onStuck(a: PersistedAgent, action: Exclude<StuckAction, 'none'>, key: string, frozenMs: number, screen: string) {
+    const mins = Math.max(1, Math.round(frozenMs / 60_000));
+    const what = a.task === 'issue' ? `#${a.issueNumber}` : `PR #${a.prNumber}${a.task === 'qa' ? "'s QA" : "'s fix"}`;
+    const repo = this.state.repos.find((r) => r.id === a.repoId);
+    const rec = a.prNumber != null ? this.state.qa.find((q) => q.repoId === a.repoId && q.prNumber === a.prNumber) : undefined;
+    this.screens.delete(a.id);
+    if (action === 'restart') {
+      this.stuckStrikes.set(key, 1);
+      this.requeue(a, `the screen hadn't changed for ${mins} minutes, so the office restarted ${what}`);
+    } else {
+      this.stuckStrikes.delete(key); // given up: a hand assignment starts with a clean slate
+      // Auto-assign skips an issue that failed this often; a PR's QA or fix goes to "needs you" the way stuck PRs do.
+      if (a.task === 'issue' && a.issueNumber != null) this.issueFailures.set(`${a.repoId}#${a.issueNumber}`, MAX_ISSUE_FAILURES);
+      this.requeue(a, `the screen hadn't changed for ${mins} minutes a second time, so ${what} waits for the manager`);
+      if (rec) this.stuck(rec, {}, `${a.name}'s session got stuck on it twice`);
+    }
+    this.postMessage('office', stuckMessage(a.name, mins, `${what}${repo && this.state.repos.length > 1 ? ` on ${repo.fullName}` : ''}`, action, lastScreenLine(screen)));
+    setTimeout(() => this.schedule(), 200);
   }
 
   private doctorView(): DoctorFinding[] {

@@ -68,6 +68,7 @@ export const api = {
     patch: {
       autoAssign?: boolean;
       autoMerge?: boolean;
+      holdPaths?: string[];
       browserTesting?: boolean;
       color?: string;
       links?: string[];

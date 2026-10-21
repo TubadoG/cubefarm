@@ -104,6 +104,11 @@ export class AgentTerminal {
     this.sink?.resize(c, r);
   }
 
+  /** Keys from the office itself (answering a dialog): straight to the CLI, unlike a viewer's, which onInput watches. */
+  press(data: string) {
+    this.sink?.write(data);
+  }
+
   /** Everything a fresh terminal needs to show the same screen: scrollback, colours, cursor and modes. */
   snapshot(): string {
     return this.ser.serialize({ scrollback: SCROLLBACK }) + (this.mouseEncoding ? `\x1b[?${this.mouseEncoding}h` : '');

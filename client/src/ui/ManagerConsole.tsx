@@ -154,6 +154,19 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
           Disconnect
         </button>
       </div>
+      <label className="small hold-paths" title="PRs that change a matching file, or carry the swarm:hold label, wait for you even with auto-merge on. ** any folders, * any name.">
+        ✋ Hold for my review (one path pattern per line)
+        <textarea
+          key={(repo.holdPaths ?? []).join('\n')}
+          rows={3}
+          defaultValue={(repo.holdPaths ?? []).join('\n')}
+          placeholder={'migrations/\n.github/**\npackage.json'}
+          onBlur={(e) => {
+            const holdPaths = e.target.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+            if (holdPaths.join('\n') !== (repo.holdPaths ?? []).join('\n')) patch({ holdPaths });
+          }}
+        />
+      </label>
       {others.length > 0 && (
         <div className="row wrap links">
           <span className="muted small">🔗 Agents here may read:</span>
@@ -761,6 +774,18 @@ function SettingsTab() {
           />
         </label>
         <p className="muted small">A desk left idle this long loses its node_modules and build output to save disk space. Its next task installs them again.</p>
+        <label className="field">
+          <span>Restart an agent whose terminal is frozen for (minutes, 0 = never)</span>
+          <input
+            key={settings.stuckMinutes}
+            type="number"
+            min={0}
+            max={1440}
+            defaultValue={settings.stuckMinutes}
+            onBlur={(e) => e.target.value !== '' && Number(e.target.value) !== settings.stuckMinutes && set({ stuckMinutes: Number(e.target.value) })}
+          />
+        </label>
+        <p className="muted small">A working agent's terminal keeps moving. One frozen this long is stuck: the office restarts it once, and the second time leaves the task for you.</p>
         <div className="row">
           <button className="btn btn-small" onClick={() => set({ tutorialStep: 0 })}>
             🧭 Replay the tour

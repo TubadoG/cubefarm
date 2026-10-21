@@ -55,6 +55,7 @@ export interface PullInfo {
   issueCreatedAt?: string | null; // when the issue it closes was filed, as far as the office knows (the whiteboard's issue → merge time)
   /** GitHub's check runs on the head commit once all have finished: how long they took (first start to last finish) and when they finished. */
   checkRun?: { ms: number; doneAt: number } | null;
+  labels?: string[]; // its GitHub labels (swarm:hold keeps it from merging itself)
 }
 
 export interface RepoView {
@@ -67,6 +68,7 @@ export interface RepoView {
   color: string; // accent color for the floor
   autoAssign: boolean;
   autoMerge: boolean; // PRs merge themselves once QA passes and GitHub's checks are green
+  holdPaths?: string[]; // path patterns (shared/holds.ts): PRs touching them wait for the manager even with auto-merge on (absent in old journals)
   folderSync: string | null; // how the floor's main checkout stands against GitHub: "in sync", "updated to abc1234", "2 behind: local changes" …
   browserTesting: boolean;
   links: string[]; // ids of related repos this floor's agents can read for context
@@ -290,6 +292,7 @@ export interface QaView {
   checks: QaCheck[];
   commentUrl: string | null; // the PR comment with the latest QA report
   mergeNote: string | null; // where auto-merge stands once QA passed, e.g. "waiting for checks: Vercel"
+  heldFor?: string | null; // passed, but held for the manager: the first matching changed file, or "label swarm:hold"
   ceoLooking: boolean; // needs-human, and the CEO has a triage job for it (queued or running) before the manager hears
   updatedAt: number;
   shots?: QaShotView[]; // QA's screenshots from the latest round (absent: none)
@@ -320,6 +323,7 @@ export interface SwarmSettings {
   autoUpdate?: boolean; // update the office itself once it's quiet (absent on servers without self-update)
   pacingSessions: number; // after Claude warns about usage, new issues start only while fewer sessions than this run
   trimIdleDesksMin: number; // a desk idle this many minutes loses its node_modules and build output; 0 = never
+  stuckMinutes: number; // a busy agent whose terminal hasn't changed this long is stuck: restarted, then left to the manager; 0 = off
   voice: VoiceSettings;
   themes: ThemeSettings; // holiday themes: Settings → Themes (shared/themes.ts)
   weather: WeatherSettings; // Settings → Weather: the calm cycle, off, or the manager's real local weather
