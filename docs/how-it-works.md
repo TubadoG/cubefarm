@@ -25,6 +25,7 @@ The details behind the office: how an issue becomes a merged pull request, who d
    - It squash-merges (falling back to a merge commit if the repo doesn't allow squash), deletes the remote branch, and updates the branch first if the repo only merges up-to-date branches.
    - If GitHub refuses the merge (say, branch protection wants an approving review), your phone gets a message and the office retries every 10 minutes. Checks still running after 30 minutes also get a message.
    - Only `swarm/` branches merge themselves. PRs people opened are left for you.
+   - **Hold for my review** (in the floor's settings in the manager's console): one path pattern per line (`migrations/`, `.github/**`, `*.sql`; `**` crosses folders, `*` doesn't, a name without a slash matches at any depth). A PR that changes a matching file, or carries the `swarm:hold` label, still goes through QA and fixes as usual, but never merges itself: once it passes, its card says **held for you** and your phone gets one message naming the file or the label.
 
    A stuck PR (3 failed QA rounds, 3 merge fixes, or fix sessions that keep failing) goes to the CEO first: its card says **🧭 CEO is looking** while the CEO reads the QA report and the checks, then retries QA, sends it back for a fix with a note, re-runs a flaky check, or closes it (its issue stays open, to be built again). It only shows **needs you**, with a phone message, when the CEO escalates it with a one-line diagnosis, ends without acting, or the PR gets stuck a third time.
 

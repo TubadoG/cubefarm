@@ -34,6 +34,10 @@ describe('qaCardNote', () => {
     expect(statuses.filter((s) => qaCardNote(rec(s, 'x'), pr, true).tone === 'bad')).toEqual(['needs-human']);
   });
 
+  it('a passed PR held for the manager says so, over any merge note', () => {
+    expect(qaCardNote({ ...rec('passed', 'waiting for checks'), heldFor: 'db/migrations/1.sql' }, pr, true)).toEqual({ note: 'QA ✓ · ✋ held for you · db/migrations/1.sql', tone: 'warn' });
+  });
+
   it('a needs-human PR the CEO is triaging is amber and says so, until it is escalated', () => {
     expect(qaCardNote(rec('needs-human', STALE, 3, true), pr, true)).toEqual({ note: '🧭 CEO is looking', tone: 'warn' });
     expect(qaCardNote(rec('needs-human', STALE, 3, false), pr, true)).toEqual({ note: `⚠️ needs you · ${STALE}`, tone: 'bad' });

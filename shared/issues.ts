@@ -1,5 +1,8 @@
 // Issue conventions shared by the server's scheduler and the client's whiteboard.
 
+/** PRs with this label never merge themselves, even with auto-merge on: they wait for the manager (shared/holds.ts). */
+export const HOLD_LABEL = 'swarm:hold';
+
 /** Open issues this issue waits for, from "Depends on #3" / "Blocked by #4, #5" in its body. */
 export function blockers(body: string, open: Set<number>) {
   const out = new Set<number>();

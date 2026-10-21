@@ -713,6 +713,14 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
       if (pr) pr.state = 'CLOSED';
     },
     prForBranch: async () => null,
+    // Made-up changed files: now and then a package.json, a migration or a workflow, so merge holds can be seen.
+    prFiles: async (_fullName, number) => [
+      'src/components/Toolbar.tsx',
+      'src/components/Toolbar.test.tsx',
+      ...(number % 3 === 0 ? ['package.json'] : []),
+      ...(number % 4 === 0 ? ['db/migrations/0007_add_index.sql'] : []),
+      ...(number % 5 === 0 ? ['.github/workflows/ci.yml'] : []),
+    ],
     prDetails: async (fullName, number) => {
       const pr = repos.get(fullName)?.pulls.find((p) => p.number === number);
       if (!pr && forgotten(fullName, number)) {

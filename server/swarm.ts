@@ -52,6 +52,7 @@ import { Mailer } from './email.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
 import { blockers, holdUps, waitsMessage } from '../shared/issues.ts';
+import { holdReason, parseHoldPaths } from '../shared/holds.ts';
 import { dayKey, journalFrame, legacyAgent, legacyRequest } from '../shared/journal.ts';
 import { cleanStyle, HAIR_COLORS, SKIN_TONES, type AgentStyle } from '../shared/looks.ts';
 import { achievementDef, type ProgressView } from '../shared/progress.ts';
@@ -110,6 +111,7 @@ interface PersistedRepo {
   color: string;
   autoAssign: boolean;
   autoMerge: boolean; // PRs merge themselves once QA passes and GitHub's checks are green
+  holdPaths: string[]; // PRs changing these (shared/holds.ts), or labelled swarm:hold, wait for the manager anyway
   browserTesting: boolean;
   links: string[]; // other connected repos this floor's agents may read
   localPath: string | null; // the manager's own project folder (null: a clone under WORKSPACE_ROOT)
@@ -638,6 +640,7 @@ export class Swarm {
         repos: (loaded.repos ?? []).map((r) => ({
           ...r,
           autoMerge: r.autoMerge ?? true,
+          holdPaths: r.holdPaths ?? [],
           links: r.links ?? [],
           mission: r.mission ?? '',
           summary: r.summary ?? '',
@@ -962,6 +965,7 @@ export class Swarm {
       color: r.color,
       autoAssign: r.autoAssign,
       autoMerge: r.autoMerge,
+      holdPaths: r.holdPaths,
       folderSync: rt.folderSync,
       browserTesting: r.browserTesting,
       links: r.links,
@@ -1041,6 +1045,7 @@ export class Swarm {
       checks: q.checks,
       commentUrl: q.commentUrl,
       mergeNote: q.mergeNote,
+      heldFor: q.heldFor ?? null,
       ceoLooking: q.status === 'needs-human' && !q.escalated && this.triageJob(q) != null,
       updatedAt: q.updatedAt,
       shots: q.shots ?? [],
@@ -1171,6 +1176,7 @@ export class Swarm {
   private setQa(rec: QaRecord, patch: Partial<QaRecord>) {
     const told = rec.status === 'needs-human' && rec.escalated;
     Object.assign(rec, patch, { updatedAt: Date.now() });
+    if (rec.status !== 'passed') rec.heldFor = null; // a new pass weighs the hold again
     if (!this.state.qa.includes(rec)) return; // it left QA (its PR closed) while a session on it was still wrapping up
     if (rec.status !== 'needs-human') rec.escalated = false;
     else this.ledger({ kind: 'needs-human', repoId: rec.repoId, pr: rec.prNumber });
@@ -1335,6 +1341,7 @@ export class Swarm {
       color: FLOOR_COLORS[(floor - 1) % FLOOR_COLORS.length],
       autoAssign: !!opts.autoAssign,
       autoMerge: true,
+      holdPaths: [],
       browserTesting: true,
       links: [],
       localPath: folder,
@@ -1442,9 +1449,15 @@ export class Swarm {
 
   updateRepo(
     id: string,
-    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & { previewCommand?: unknown; previewEnv?: unknown },
+    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & { previewCommand?: unknown; previewEnv?: unknown; holdPaths?: unknown },
   ) {
     const repo = this.repo(id);
+    let holdPaths: string[] | undefined;
+    try {
+      if (patch.holdPaths !== undefined) holdPaths = parseHoldPaths(patch.holdPaths);
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
     const preview = parsePreviewPatch(patch.previewCommand, patch.previewEnv);
     repo.preview = { ...repo.preview, ...preview };
     if (preview.command === null) void this.previews.refreshDefault(repo);
@@ -1452,6 +1465,10 @@ export class Swarm {
     if (patch.autoMerge !== undefined) {
       repo.autoMerge = !!patch.autoMerge;
       if (repo.autoMerge) void this.syncRepo(repo.id);
+    }
+    if (holdPaths) {
+      repo.holdPaths = holdPaths;
+      if (repo.autoMerge) void this.syncRepo(repo.id); // passed PRs are weighed against the new list
     }
     if (patch.browserTesting !== undefined) repo.browserTesting = !!patch.browserTesting;
     if (patch.color && /^#[0-9a-f]{6}$/i.test(patch.color)) repo.color = patch.color;
@@ -1484,6 +1501,9 @@ export class Swarm {
         // Only act on PR data fetched after the record last changed (a fix may have just pushed).
         if ((rt.fetchedAt ?? 0) < rec.updatedAt) continue;
         try {
+          const held = await this.holdFor(repo, pr);
+          if (held !== (rec.heldFor ?? null)) this.setHeld(repo, rec, pr, held);
+          if (held) continue;
           if (await this.advanceMerge(repo, rec, pr)) merged = true;
         } catch (err) {
           console.warn(`auto-merge of ${repo.fullName}#${pr.number} failed`, err);
@@ -1497,6 +1517,28 @@ export class Swarm {
       await this.syncRepo(repo.id);
       setTimeout(() => this.schedule(), 200);
     }
+  }
+
+  /** Why a passed PR waits for the manager (shared/holds.ts), or null. Its changed files are read once per head commit. */
+  private async holdFor(repo: PersistedRepo, pr: PullInfo): Promise<string | null> {
+    if (!repo.holdPaths.length) return holdReason(pr.labels, null, []);
+    const key = `${repo.id}#${pr.number}`;
+    let seen = this.prFilesSeen.get(key);
+    if (seen?.sha !== pr.headSha) {
+      seen = { sha: pr.headSha, files: await this.backend.prFiles(repo.fullName, pr.number) };
+      this.prFilesSeen.set(key, seen);
+    }
+    return holdReason(pr.labels, seen.files, repo.holdPaths);
+  }
+
+  /** Mark a passed PR held (or no longer held); the manager hears once when it first waits for them. */
+  private setHeld(repo: PersistedRepo, rec: QaRecord, pr: PullInfo, held: string | null) {
+    const first = !!held && !rec.heldFor;
+    this.setQa(rec, { heldFor: held, mergeNote: null });
+    if (!first) return;
+    const name = repo.fullName.split('/')[1] ?? repo.fullName;
+    this.postMessage('office', `✋ PR #${pr.number} on ${repo.fullName} passed QA and is held for you: ${pr.title} (${held}).`);
+    this.notifier.notify('needsHuman', `PR #${pr.number} is held for you`, `${name}: ${pr.title} (${held})`, `${name} #${pr.number} ${pr.title}`);
   }
 
   /** One step toward merging a QA-passed PR. Returns true when it merged. */
@@ -1977,6 +2019,7 @@ export class Swarm {
     void removeQaShots(qaShotsDir(QA_SHOTS_DIR, repo.id, prNumber)).catch(() => undefined);
     this.clearPrepStrikes(repo.id, prNumber);
     this.fixNudged.delete(`${repo.id}#${prNumber}`);
+    this.prFilesSeen.delete(`${repo.id}#${prNumber}`);
     this.save();
   }
 
@@ -3294,6 +3337,7 @@ export class Swarm {
   private scheduleOffset = 0;
   private issueFailures = new Map<string, number>(); // `${repoId}#${issue}` → failed sessions on it
   private nudged = new Set<string>(); // `${repoId}#${issue}`: its agent was asked once to finish the missing PR
+  private prFilesSeen = new Map<string, { sha: string; files: string[] }>(); // `${repoId}#${pr}`: its changed files at that head, for merge holds
   private fixNudged = new Set<string>(); // `${repoId}#${pr}`: its fix session was asked once to push or say why not
   private pausedUntil = 0; // Claude's usage limit was hit: nothing new starts before this
   private pacingUntil = 0; // Claude warned about usage: new issues are paced until this

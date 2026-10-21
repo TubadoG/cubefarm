@@ -271,6 +271,7 @@ export function compactQa(q: QaView, secrets: readonly string[] = []): QaView {
     checks: q.checks.slice(0, 12).map((c) => ({ name: text(c.name, 60, secrets), result: c.result, details: '' })),
     commentUrl: q.commentUrl,
     mergeNote: textOrNull(q.mergeNote, 120, secrets),
+    ...(q.heldFor ? { heldFor: textOrNull(q.heldFor, 120, secrets) } : {}),
     ceoLooking: q.ceoLooking,
     updatedAt: q.updatedAt,
   };

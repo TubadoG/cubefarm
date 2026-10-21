@@ -41,6 +41,8 @@ export interface Backend {
   closePull(fullName: string, number: number): Promise<void>;
   prForBranch(fullName: string, branch: string): Promise<{ number: number; url: string } | null>;
   prDetails(fullName: string, number: number): Promise<github.PrDetails>;
+  /** The files a PR changes, for merge holds. */
+  prFiles(fullName: string, number: number): Promise<string[]>;
   /** createdAt: when it was filed (absent when the demo no longer knows). */
   issueDetails(fullName: string, number: number): Promise<{ title: string; body: string; createdAt?: string }>;
   commentPull(fullName: string, number: number, body: string): Promise<string>;
@@ -137,6 +139,7 @@ export const realBackend: Backend = {
   closePull: github.closePull,
   prForBranch: github.prForBranch,
   prDetails: github.prDetails,
+  prFiles: github.prFiles,
   issueDetails: github.issueDetails,
   commentPull: github.commentPull,
   uploadEvidence: github.uploadEvidence,

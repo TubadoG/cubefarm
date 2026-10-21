@@ -68,7 +68,7 @@ export interface Waiting {
   emails: EmailView[];
   /** Open PRs stuck on the manager, oldest first. ceoLooking ones are listed too, as the CEO may still hand them on. */
   stuck: { repo: RepoView; qa: QaView }[];
-  /** Passed PRs on floors that don't merge on their own. */
+  /** Passed PRs on floors that don't merge on their own, or held for the manager. */
   ready: { repo: RepoView; qa: QaView }[];
 }
 
@@ -80,7 +80,7 @@ export function waitingOnYou(repos: RepoView[], qa: Record<string, QaView>, requ
     const repo = repos.find((r) => r.id === q.repoId);
     if (!repo || !open(repo, q)) continue;
     if (q.status === 'needs-human') out.stuck.push({ repo, qa: q });
-    else if (q.status === 'passed' && !repo.autoMerge) out.ready.push({ repo, qa: q });
+    else if (q.status === 'passed' && (!repo.autoMerge || q.heldFor)) out.ready.push({ repo, qa: q });
   }
   return out;
 }
