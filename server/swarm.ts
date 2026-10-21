@@ -1513,8 +1513,7 @@ export class Swarm {
         try {
           const held = await this.holdFor(repo, pr);
           if (held !== (rec.heldFor ?? null)) this.setHeld(repo, rec, pr, held);
-          if (held) continue;
-          if (await this.advanceMerge(repo, rec, pr)) merged = true;
+          if (await this.advanceMerge(repo, rec, pr, !!held)) merged = true;
         } catch (err) {
           console.warn(`auto-merge of ${repo.fullName}#${pr.number} failed`, err);
           this.mergeNote(rec, `auto-merge hit a problem: ${oneLine(err)}`);
@@ -1552,7 +1551,11 @@ export class Swarm {
   }
 
   /** One step toward merging a QA-passed PR. Returns true when it merged. */
-  private async advanceMerge(repo: PersistedRepo, rec: QaRecord, pr: PullInfo): Promise<boolean> {
+  /**
+   * One step towards merging a passed PR. A held one takes every step but the merge itself: its conflicts go back to a
+   * developer and its branch is kept up to date, so it can be merged the moment the manager approves it.
+   */
+  private async advanceMerge(repo: PersistedRepo, rec: QaRecord, pr: PullInfo, held = false): Promise<boolean> {
     let step = mergeStep(pr, rec, Date.now(), { base: repo.defaultBranch });
     if (step.do === 'details') {
       // GitHub works mergeability out lazily and lists often say UNKNOWN; asking about the PR itself gets an answer.
@@ -1593,7 +1596,7 @@ export class Swarm {
       this.setQa(rec, { passedSha: details.headSha });
       return false;
     }
-    if (step.do !== 'merge') return false;
+    if (step.do !== 'merge' || held) return false;
     this.mergeNote(rec, 'merging…');
     let error = '';
     for (const method of ['squash', 'merge', 'rebase'] as const) {
