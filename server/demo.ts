@@ -40,6 +40,11 @@ const bareRepos = new Set<string>();
 const mergedSinceSync = new Map<string, number>(); // merges the fake project folder hasn't pulled yet
 const closedIssues = new Set<string>(); // `${fullName}#${n}`: issues closed by a merge
 const stalls = new Map<string, () => void>(); // agent id -> silences their running fake session (the office doctor's demo)
+/**
+ * SWARM_DEMO_HANG (demo only), to see the stuck-screen watchdog (stuckScreen.ts) at work: "stall" freezes every fake
+ * session after a few steps; "mcp" opens each one at Claude Code's project-MCP dialog, which waits for Esc.
+ */
+const DEMO_HANG = process.env.SWARM_DEMO_HANG === 'stall' || process.env.SWARM_DEMO_HANG === 'mcp' ? process.env.SWARM_DEMO_HANG : null;
 
 const fakeSha = () => crypto.randomBytes(20).toString('hex');
 
@@ -416,6 +421,10 @@ function fakeSession(opts: SessionOptions, cb: SessionCallbacks, fullName: strin
   let i = 0;
   const step = () => {
     if (stopped || stalled) return;
+    if (DEMO_HANG === 'stall' && i === 3) {
+      stalled = true; // frozen mid-task: no more output, and the screen stays as it is
+      return;
+    }
     if (i >= script.length) {
       if (opts.agentId) stalls.delete(opts.agentId);
       return finish();
@@ -484,8 +493,16 @@ function inTerminal(opts: SessionOptions, cb: SessionCallbacks, start: (cb: Sess
   );
   let handle: SessionHandle | null = null;
   let line = '';
+  let dialog = DEMO_HANG === 'mcp' && (opts.cli ?? 'claude') === 'claude'; // waiting at the project-MCP dialog
   term.bind({
     write: (data) => {
+      if (dialog) {
+        if (data !== '\x1b') return;
+        dialog = false;
+        term.write('\x1b[2J\x1b[H\x1b[2m3 project MCP servers rejected (see disabledMcpjsonServers in settings)\x1b[0m\r\n');
+        begin();
+        return;
+      }
       for (const ch of data.replace(/\x1b\[[0-9;?]*[A-Za-z~]|\x1b./g, '')) {
         if (ch === '\r') {
           const text = line.trim();
@@ -506,19 +523,50 @@ function inTerminal(opts: SessionOptions, cb: SessionCallbacks, start: (cb: Sess
     },
     resize: () => undefined,
   });
-  handle = start({
-    ...cb,
-    log: (entries) => {
-      cb.log(entries);
-      for (const e of entries) term.write(`${e.kind === 'tool' || (e.kind === 'text' && e.text.startsWith('●')) ? '\r\n' : ''}${ANSI[e.kind](e.text)}\r\n`);
-    },
-    finished: (r) => {
+  const begin = () => {
+    handle = start({
+      ...cb,
+      log: (entries) => {
+        cb.log(entries);
+        for (const e of entries) term.write(`${e.kind === 'tool' || (e.kind === 'text' && e.text.startsWith('●')) ? '\r\n' : ''}${ANSI[e.kind](e.text)}\r\n`);
+      },
+      finished: (r) => {
+        term.bind(null);
+        term.note(`── ${name} session ended ──`);
+        cb.finished(r);
+      },
+    });
+  };
+  if (!dialog) {
+    begin();
+    return handle!;
+  }
+  term.write(
+    [
+      '\x1b[33m╭──────────────────────────────────────────────────────╮\x1b[0m',
+      '\x1b[33m│\x1b[0m \x1b[1;33m3 new MCP servers found in this project\x1b[0m',
+      '\x1b[33m│\x1b[0m Select any you wish to enable.',
+      '\x1b[33m│\x1b[0m',
+      '\x1b[33m│\x1b[0m ❯ ◉ figma',
+      '\x1b[33m│\x1b[0m   ◉ linear',
+      '\x1b[33m│\x1b[0m   ◉ sentry',
+      '\x1b[33m│\x1b[0m',
+      '\x1b[33m│\x1b[0m   Enable selected',
+      '\x1b[33m╰──────────────────────────────────────────────────────╯\x1b[0m',
+      '\x1b[2m  Space to select · Enter to confirm · Esc to reject all\x1b[0m',
+      '',
+    ].join('\r\n'),
+  );
+  return {
+    send: (text) => handle?.send(text),
+    stop: () => {
+      if (handle) return handle.stop();
+      dialog = false;
       term.bind(null);
       term.note(`── ${name} session ended ──`);
-      cb.finished(r);
+      cb.finished({ ok: false, text: '', costUsd: 0, turns: 0, errors: ['Stopped by manager'] });
     },
-  });
-  return handle;
+  };
 }
 
 /**

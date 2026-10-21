@@ -34,6 +34,7 @@ import { drainDecision, lastUpdateMessage, POSTPONE_MS, type DrainInput, type La
 import { clampPacingSessions, DEFAULT_PACING_SESSIONS, mayStart, PACING_MS, pacingMessage, resumeRefusal, usageLabel, usageView, waived, warningView, type UsageWarning, type Waiver, type WorkKind } from './pacing.ts';
 import { emptyHistory, loadHistory, opsView, recordChecks, recordCost, recordMerges, recordQa, type OpsFloorState, type OpsHistory } from './metrics.ts';
 import { clampTrimIdleMin, DEFAULT_TRIM_IDLE_MIN, desksToTrim, formatBytes, freedMessage, idleSince, TRIM_SWEEP_MS } from './deskTrim.ts';
+import { clampStuckMinutes, DEFAULT_STUCK_MIN, isMcpDialog, lastScreenLine, MAX_STUCK_MIN, SCREEN_TICK_MS, screenHash, stuckDecision, stuckMessage, type StuckAction } from './stuckScreen.ts';
 import { cliLabel, isCli } from './clis.ts';
 import { machineName } from './machines.ts';
 import { MACHINES_DIR, type DeskTrim } from './workspace.ts';
@@ -477,6 +478,7 @@ export class Swarm {
       autoUpdate: true,
       pacingSessions: DEFAULT_PACING_SESSIONS,
       trimIdleDesksMin: DEFAULT_TRIM_IDLE_MIN,
+      stuckMinutes: DEFAULT_STUCK_MIN,
       voice: { ...DEFAULT_VOICE },
       themes: DEFAULT_THEME_SETTINGS,
       weather: { ...DEFAULT_WEATHER },
@@ -695,6 +697,7 @@ export class Swarm {
       if (this.state.settings.runtime !== 'sdk') this.state.settings.runtime = 'terminal';
       if (!isCli(this.state.settings.defaultCli)) this.state.settings.defaultCli = 'claude';
       this.state.settings.trimIdleDesksMin = clampTrimIdleMin(this.state.settings.trimIdleDesksMin);
+      this.state.settings.stuckMinutes = clampStuckMinutes(this.state.settings.stuckMinutes ?? DEFAULT_STUCK_MIN);
       if (!this.state.settings.defaultModel && this.state.settings.defaultCli === 'claude') this.state.settings.defaultModel = DEFAULT_MODEL;
       // "Max concurrent sessions" (default 4) became an optional session limit. The old default goes; a limit the manager chose stays.
       const old = this.state.settings as SwarmSettings & { maxConcurrent?: number; permissionMode?: string };
@@ -828,6 +831,7 @@ export class Swarm {
     setInterval(() => this.emitOps(), OPS_TICK_MS); // the clock moves the numbers too: the last hour, today, errors turning into alarms
     setInterval(() => this.notifyStuck(), 60_000);
     setInterval(() => this.watchdogTick(), WATCHDOG_MS);
+    setInterval(() => this.screenTick(), SCREEN_TICK_MS);
     void this.backend
       .detectClis()
       .then((clis) => {
@@ -2550,6 +2554,7 @@ export class Swarm {
     }
     a.status = 'working';
     this.activity.set(a.id, Date.now());
+    this.toolSeen.delete(a.id);
     const how = this.sessionRuntime(a, resumeSessionId);
     this.emitAgent(a);
     const active = (entries: LogEntry[]) => {
@@ -2583,6 +2588,7 @@ export class Swarm {
         },
         tool: (name) => {
           this.activity.set(a.id, Date.now());
+          if (name) this.toolSeen.add(a.id);
           if (rt.currentTool === name) return;
           rt.currentTool = name;
           this.emitAgent(a);
@@ -3273,6 +3279,11 @@ export class Swarm {
     if (patch.trimIdleDesksMin !== undefined) {
       s.trimIdleDesksMin = clampTrimIdleMin(patch.trimIdleDesksMin);
       setTimeout(() => void this.trimIdleDesks(), 1000);
+    }
+    if (patch.stuckMinutes !== undefined) {
+      const n = Number(patch.stuckMinutes);
+      if (!Number.isFinite(n) || n < 0 || n > MAX_STUCK_MIN) throw new HttpError(400, `The frozen-terminal restart must be 0 (never) to ${MAX_STUCK_MIN} minutes.`);
+      s.stuckMinutes = clampStuckMinutes(n);
     }
     if (patch.voice !== undefined) {
       const keepDays = s.voice.keepDays;
@@ -4355,6 +4366,72 @@ export class Swarm {
       this.stopForClosure(a, why);
     } else this.dropTask(a, `↺ ${why[0].toUpperCase()}${why.slice(1)}. Cleared desk.`);
     this.save();
+  }
+
+  // ---------- the stuck-screen watchdog (stuckScreen.ts) ----------
+
+  private screens = new Map<string, { startedAt: number | null; hash: string; changedAt: number }>(); // agent id -> their screen
+  private stuckStrikes = new Map<string, number>(); // task key -> restarts it had for a stuck screen
+  private toolSeen = new Set<string>(); // agents whose current session has used a tool
+  private mcpAnswered = new WeakSet<SessionHandle>(); // sessions whose project-MCP dialog the office answered
+  private mcpNoted = new Set<string>(); // floors whose project-MCP dialog the phone heard about
+
+  /** Every few seconds: busy agents' terminals. The project-MCP dialog is answered at once; a screen frozen for stuckMinutes is stuck. */
+  private screenTick() {
+    if (this.state.settings.runtime !== 'terminal' || !this.backend.terminals) return this.screens.clear();
+    const now = Date.now();
+    for (const a of this.state.agents) {
+      const rt = this.agentRt.get(a.id);
+      if (!rt || !BUSY.includes(a.status)) {
+        this.screens.delete(a.id);
+        continue;
+      }
+      const screen = rt.terminal?.screen() ?? '';
+      // Before the session's first tool call only: later, the same words could be a file the agent is reading.
+      if (rt.session && rt.terminal && !this.toolSeen.has(a.id) && !this.mcpAnswered.has(rt.session) && isMcpDialog(screen)) {
+        this.mcpAnswered.add(rt.session);
+        rt.terminal.press('\x1b'); // Esc: reject them all (not a viewer's key, so it doesn't count as interrupting the turn)
+        this.appendLog(a, [{ kind: 'system', text: '🔌 Rejected the repo\'s project MCP servers (.mcp.json) so the session could start.' }]);
+        if (!this.mcpNoted.has(a.repoId)) {
+          this.mcpNoted.add(a.repoId); // once per floor: every session there would ask the same
+          this.postMessage('office', `🔌 ${a.name}'s Claude Code asked about ${a.repoId}'s .mcp.json servers; the office rejected them so ${a.name} could start.`);
+        }
+      }
+      const hash = screenHash(screen);
+      let seen = this.screens.get(a.id);
+      if (!seen || seen.startedAt !== a.startedAt) this.screens.set(a.id, (seen = { startedAt: a.startedAt, hash, changedAt: now }));
+      else if (seen.hash !== hash) Object.assign(seen, { hash, changedAt: now });
+      if (a.role === 'ceo' || !a.task) continue;
+      const key = this.stuckKey(a);
+      const action = stuckDecision({ status: a.status, lastChange: seen.changedAt, now, strikes: this.stuckStrikes.get(key) ?? 0, stuckMinutes: this.state.settings.stuckMinutes });
+      if (action !== 'none') this.onStuck(a, action, key, now - seen.changedAt, screen);
+    }
+  }
+
+  /** The task, whoever holds it: an issue, or a PR's QA run or fix. */
+  private stuckKey(a: PersistedAgent) {
+    return a.task === 'issue' ? `${a.repoId}#i${a.issueNumber}` : `${a.repoId}#${a.task}${a.prNumber}`;
+  }
+
+  /** A stuck agent: restarted the first time (their work back in line, no strike), and the task left to the manager the second. */
+  private onStuck(a: PersistedAgent, action: Exclude<StuckAction, 'none'>, key: string, frozenMs: number, screen: string) {
+    const mins = Math.max(1, Math.round(frozenMs / 60_000));
+    const what = a.task === 'issue' ? `#${a.issueNumber}` : `PR #${a.prNumber}${a.task === 'qa' ? "'s QA" : "'s fix"}`;
+    const repo = this.state.repos.find((r) => r.id === a.repoId);
+    const rec = a.prNumber != null ? this.state.qa.find((q) => q.repoId === a.repoId && q.prNumber === a.prNumber) : undefined;
+    this.screens.delete(a.id);
+    if (action === 'restart') {
+      this.stuckStrikes.set(key, 1);
+      this.requeue(a, `the screen hadn't changed for ${mins} minutes, so the office restarted ${what}`);
+    } else {
+      this.stuckStrikes.delete(key); // given up: a hand assignment starts with a clean slate
+      // Auto-assign skips an issue that failed this often; a PR's QA or fix goes to "needs you" the way stuck PRs do.
+      if (a.task === 'issue' && a.issueNumber != null) this.issueFailures.set(`${a.repoId}#${a.issueNumber}`, MAX_ISSUE_FAILURES);
+      this.requeue(a, `the screen hadn't changed for ${mins} minutes a second time, so ${what} waits for the manager`);
+      if (rec) this.stuck(rec, {}, `${a.name}'s session got stuck on it twice`);
+    }
+    this.postMessage('office', stuckMessage(a.name, mins, `${what}${repo && this.state.repos.length > 1 ? ` on ${repo.fullName}` : ''}`, action, lastScreenLine(screen)));
+    setTimeout(() => this.schedule(), 200);
   }
 
   private doctorView(): DoctorFinding[] {
