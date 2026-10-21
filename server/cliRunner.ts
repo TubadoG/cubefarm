@@ -6,7 +6,7 @@ import type { Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { browserProblem, playwrightMcp } from './browser.ts';
 import { HOME_DIR } from './config.ts';
-import { cliLabel, CODEX_HOOK_SOURCE, codexThread, commandFor, hookReviewKey, interruptions, isCli, launchArgs, NOTIFY_SOURCE, OPENCODE_PLUGIN_SOURCE, STATUSLINE_SOURCE, trustKey } from './clis.ts';
+import { cliLabel, CODEX_HOOK_SOURCE, codexThread, commandFor, hookReviewKey, interruptions, isCli, launchArgs, NOTIFY_SOURCE, OPENCODE_PLUGIN_SOURCE, projectMcpServers, STATUSLINE_SOURCE, trustKey } from './clis.ts';
 import { adoptPty, discardPty, hooksReady, keeperHookUrl, keeperPid, leaveKeeper, spawnPty, startKeeper, terminalsAvailable, type Pty } from './ptyClient.ts';
 import {
   clip,
@@ -640,13 +640,22 @@ export function startCliSession(opts: SessionOptions, callbacks: SessionCallback
   try {
     writeHelpers();
     fs.mkdirSync(dir, { recursive: true });
-    const settings = {
-      hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [{ type: 'http', url: hookUrl, timeout: keeper ? 120 : 30 }] }]])),
-      statusLine: { type: 'command', command: `${shellArg(process.execPath)} ${shellArg(path.join(BIN_DIR, 'statusline.cjs'))} ${shellArg(hookUrl)}`, padding: 0 },
-    };
     const servers: Record<string, unknown> = {};
     if (browser) servers.playwright = browser;
     if (opts.office) servers.office = { type: 'http', url: `${officeUrl}/api/mcp/${token}` };
+    // A repo's own .mcp.json servers are rejected up front: nobody is there to answer Claude Code's dialog about them.
+    let mcpJson = '';
+    try {
+      mcpJson = fs.readFileSync(path.join(opts.cwd, '.mcp.json'), 'utf8');
+    } catch {
+      // no .mcp.json in this repo
+    }
+    const rejected = cli === 'claude' ? projectMcpServers(mcpJson, Object.keys(servers)) : [];
+    const settings = {
+      hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [{ type: 'http', url: hookUrl, timeout: keeper ? 120 : 30 }] }]])),
+      statusLine: { type: 'command', command: `${shellArg(process.execPath)} ${shellArg(path.join(BIN_DIR, 'statusline.cjs'))} ${shellArg(hookUrl)}`, padding: 0 },
+      ...(rejected.length ? { disabledMcpjsonServers: rejected } : {}),
+    };
     files = { settings: path.join(dir, 'settings.json'), mcp: Object.keys(servers).length ? path.join(dir, 'mcp.json') : null, system: path.join(dir, 'instructions.md') };
     fs.writeFileSync(files.settings, JSON.stringify(settings, null, 2));
     if (files.mcp) fs.writeFileSync(files.mcp, JSON.stringify({ mcpServers: servers }, null, 2));

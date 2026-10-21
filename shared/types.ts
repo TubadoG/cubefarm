@@ -320,6 +320,7 @@ export interface SwarmSettings {
   autoUpdate?: boolean; // update the office itself once it's quiet (absent on servers without self-update)
   pacingSessions: number; // after Claude warns about usage, new issues start only while fewer sessions than this run
   trimIdleDesksMin: number; // a desk idle this many minutes loses its node_modules and build output; 0 = never
+  stuckMinutes: number; // a busy agent whose terminal hasn't changed this long is stuck: restarted, then left to the manager; 0 = off
   voice: VoiceSettings;
   themes: ThemeSettings; // holiday themes: Settings → Themes (shared/themes.ts)
   weather: WeatherSettings; // Settings → Weather: the calm cycle, off, or the manager's real local weather

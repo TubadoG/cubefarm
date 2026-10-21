@@ -177,6 +177,22 @@ export function codexHookCommand(node: string, script: string, win = WIN): strin
  */
 export const CROSS_TURN_TOOLS = ['Monitor', 'ScheduleWakeup', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger'];
 
+/**
+ * The servers a repo's .mcp.json declares, for Claude Code's disabledMcpjsonServers (in the office's --settings): a
+ * rejected server is never "pending", so the CLI doesn't stop at its "new MCP servers found in this project" dialog
+ * (checked against Claude Code 2.1.283: `claude --settings '{"disabledMcpjsonServers":["x"]}' mcp get x` says
+ * Rejected). Names matching the office's own servers (ours) are left alone. Unreadable JSON: none.
+ */
+export function projectMcpServers(mcpJson: string, ours: readonly string[] = []): string[] {
+  try {
+    const servers = (JSON.parse(mcpJson) as { mcpServers?: unknown } | null)?.mcpServers;
+    if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return [];
+    return Object.keys(servers).filter((n) => !ours.includes(n));
+  } catch {
+    return [];
+  }
+}
+
 export function launchArgs(id: AgentCli, ctx: LaunchContext): Launch {
   switch (id) {
     case 'claude': {

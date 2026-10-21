@@ -225,6 +225,7 @@ export const useStore = create<State>((set, get) => ({
     tutorialStep: -1,
     pacingSessions: 3,
     trimIdleDesksMin: 120,
+    stuckMinutes: 15,
     voice: { provider: 'off', voiceId: '', voiceName: '', model: '', speakOffice: false, keepDays: 7 },
     themes: { mode: 'auto', disabled: [], birthday: null },
     weather: DEFAULT_WEATHER,
