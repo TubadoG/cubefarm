@@ -219,7 +219,7 @@ interface Persisted {
   held: HeldIssue[];
   progress: LedgerState; // coins, decorations, achievements and careers (ledger.ts)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard, by repo id
-  digestSentDay: string | null; // the local day (YYYY-MM-DD) the daily digest last went out (or had nothing to say)
+  digestSentDay: string | null; // the local day (YYYY-MM-DD) the daily digest last went out (or was refused)
 }
 
 interface Shot {
@@ -3371,7 +3371,7 @@ export class Swarm {
     return issues
       .filter(
         (i) =>
-          !i.labels.some((l) => /^(swarm:skip|wontfix|question)$/i.test(l)) &&
+          !i.labels.some((l) => /^(swarm:skip|wontfix|question|needs-input)$/i.test(l)) &&
           !this.issueTaken(repo, i.number) &&
           !this.isHeld(repo.id, i.number) &&
           blockers(i.body, open).length === 0 &&
@@ -4851,7 +4851,7 @@ export class Swarm {
 
   // ---------- the daily digest ----------
 
-  /** Once a day at the manager's hour: the digest, unless it went out (or had nothing to say) today already. */
+  /** Once a day at the manager's hour: the digest, unless it went out (or was refused) today already. */
   private async digestTick(now = new Date()) {
     const d = this.state.settings.email.digest;
     if (!d.enabled || this.digesting || now.getTime() < this.digestRetryAt || !digestDue(now, d.hour, this.state.digestSentDay)) return;
@@ -4900,7 +4900,6 @@ export class Swarm {
         this.state.digestSentDay = digestDay(now);
         this.save();
       }
-      if (!digest) return { sent: false, reason: 'Nothing to report: no decisions wait for you and nothing merged in the last 24 hours.' };
       const at = now.getTime();
       const e: EmailView = { id: `mail-${at.toString(36)}-${(this.emailSeq++).toString(36)}`, to: who.email, toName: who.name, subject: digest.subject, body: digest.text, status: 'pending', createdAt: at, decidedAt: null };
       this.addEmail(e);

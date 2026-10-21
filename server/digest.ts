@@ -36,14 +36,27 @@ export interface Digest {
 }
 
 /**
- * Open PRs that wait for the manager on one floor, with why. Today: QA passed and auto-merge is off. Another reason
- * (a PR the office holds for the manager, say) is one more check here.
+ * Open PRs that wait for the manager on one floor, with why: QA passed and the office holds them (shared/holds.ts),
+ * or QA passed and auto-merge is off.
  */
-export function waitingPulls(pulls: PullInfo[], qa: { prNumber: number; status: QaStatus }[], autoMerge: boolean): (DigestItem & { why: string })[] {
-  const passed = new Set(qa.filter((q) => q.status === 'passed').map((q) => q.prNumber));
+export function waitingPulls(
+  pulls: PullInfo[],
+  qa: { prNumber: number; status: QaStatus; heldFor?: string | null }[],
+  autoMerge: boolean,
+): (DigestItem & { why: string })[] {
+  const passed = new Map(qa.filter((q) => q.status === 'passed').map((q) => [q.prNumber, q.heldFor ?? null]));
+  const why = (n: number) => {
+    if (!passed.has(n)) return null;
+    const held = passed.get(n);
+    if (held) return `held for you: ${held}`;
+    return autoMerge ? null : 'QA passed; auto-merge is off';
+  };
   return pulls
     .filter((p) => p.state === 'OPEN')
-    .flatMap((p) => (!autoMerge && passed.has(p.number) ? [{ number: p.number, title: p.title, url: p.url, why: 'QA passed; auto-merge is off' }] : []))
+    .flatMap((p) => {
+      const w = why(p.number);
+      return w ? [{ number: p.number, title: p.title, url: p.url, why: w }] : [];
+    })
     .sort((a, b) => a.number - b.number);
 }
 
@@ -67,16 +80,18 @@ export function mergedSince<T extends { mergedAt: string | null }>(pulls: T[], n
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** The digest's subject, text and HTML (the footer is added when it's sent), or null when there's nothing to say. */
-export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string } = {}): Digest | null {
+/**
+ * The digest's subject, text and HTML (the footer is added when it's sent). A quiet day still sends one: the manager
+ * reads "nothing waits for you" as the all-clear, and its absence as a sign the office is down.
+ */
+export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string } = {}): Digest {
   const shown = floors.filter((f) => f.waiting.length || f.needsInput.length || f.merged.length).sort((a, b) => a.name.localeCompare(b.name));
   const decisions = shown.reduce((n, f) => n + f.waiting.length + f.needsInput.length, 0);
   const merges = shown.reduce((n, f) => n + f.merged.length, 0);
-  if (!decisions && !merges) return null;
-  const subject = decisions ? `Office: ${plural(decisions, 'decision')} waiting` : 'Office: daily summary';
+  const subject = decisions ? `Office: ${plural(decisions, 'decision')} waiting` : 'Office: nothing waits for you';
   const intro = decisions
     ? `${plural(decisions, 'decision')} ${decisions === 1 ? 'waits' : 'wait'} for you${shown.length > 1 ? ` across ${plural(shown.length, 'floor')}` : ''}.`
-    : `Nothing waits for you. ${plural(merges, 'PR')} merged in the last 24 hours.`;
+    : `Nothing waits for you. ${merges ? plural(merges, 'PR') : 'No PR'} merged in the last 24 hours.`;
 
   const text: string[] = [intro];
   const html: string[] = [`<p>${escapeHtml(intro)}</p>`];

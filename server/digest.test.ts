@@ -45,6 +45,13 @@ describe('waitingPulls', () => {
     expect(waitingPulls([pull(3), pull(5)], qa, true)).toEqual([]);
   });
 
+  it('lists a held PR even while auto-merge is on, with what held it', () => {
+    const held = [{ prNumber: 3, status: 'passed' as const, heldFor: 'db/migrations/0012.sql' }, { prNumber: 5, status: 'passed' as const, heldFor: null }];
+    const w = waitingPulls([pull(3), pull(5)], held, true);
+    expect(w.map((p) => p.number)).toEqual([3]);
+    expect(w[0].why).toBe('held for you: db/migrations/0012.sql');
+  });
+
   it('skips a passed PR that is no longer open', () => {
     expect(waitingPulls([pull(3, { state: 'CLOSED' })], qa, false)).toEqual([]);
   });
@@ -78,9 +85,11 @@ describe('mergedSince', () => {
 });
 
 describe('buildDigest', () => {
-  it('is null when nothing waits and nothing merged', () => {
-    expect(buildDigest([])).toBeNull();
-    expect(buildDigest([floor('o/a'), floor('o/b')])).toBeNull();
+  it('still goes out on a quiet day, as the all-clear', () => {
+    const d = buildDigest([floor('o/a'), floor('o/b')]);
+    expect(d.decisions).toBe(0);
+    expect(d.subject).toBe('Office: nothing waits for you');
+    expect(d.text).toContain('Nothing waits for you. No PR merged in the last 24 hours.');
   });
 
   it('counts decisions across floors and lists each floor that has something', () => {
@@ -110,15 +119,15 @@ describe('buildDigest', () => {
   });
 
   it('says one decision in the singular', () => {
-    const d = buildDigest([floor('o/web', { needsInput: [{ number: 7, title: 'Q', url: 'u', excerpt: 'e' }] })])!;
+    const d = buildDigest([floor('o/web', { needsInput: [{ number: 7, title: 'Q', url: 'u', excerpt: 'e' }] })]);
     expect(d.subject).toBe('Office: 1 decision waiting');
     expect(d.text.split('\n')[0]).toBe('1 decision waits for you.');
   });
 
-  it('is a daily summary when only merges happened', () => {
-    const d = buildDigest([floor('o/web', { merged: [{ number: 10, title: 'Fix count', url: 'u' }, { number: 11, title: 'More', url: 'u' }] })])!;
+  it('says nothing waits when only merges happened', () => {
+    const d = buildDigest([floor('o/web', { merged: [{ number: 10, title: 'Fix count', url: 'u' }, { number: 11, title: 'More', url: 'u' }] })]);
     expect(d.decisions).toBe(0);
-    expect(d.subject).toBe('Office: daily summary');
+    expect(d.subject).toBe('Office: nothing waits for you');
     expect(d.text.split('\n')[0]).toBe('Nothing waits for you. 2 PRs merged in the last 24 hours.');
   });
 });
