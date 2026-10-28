@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { holdReason, matchesHold, MAX_HOLD_PATHS, parseHoldPaths } from './holds.ts';
+import { holdReason, matchesHold, MAX_HOLD_PATHS, notRoutine, parseHoldPaths, ROUTINE_MAX_LINES } from './holds.ts';
 
 describe('matchesHold', () => {
   it('matches a name without a slash at any depth', () => {
@@ -65,5 +65,32 @@ describe('parseHoldPaths', () => {
     expect(() => parseHoldPaths(Array.from({ length: MAX_HOLD_PATHS + 1 }, (_, i) => `p${i}`))).toThrow(/At most/);
     expect(() => parseHoldPaths(['x'.repeat(201)])).toThrow(/too long/);
     expect(parseHoldPaths([])).toEqual([]);
+  });
+});
+
+describe('notRoutine', () => {
+  it('lets small everyday changes through', () => {
+    expect(notRoutine(['src/visits.ts', 'src/visits.test.ts', 'src/author.ts', 'docs/README.md'], 120)).toBeNull();
+    expect(notRoutine(['src/a.ts'], ROUTINE_MAX_LINES)).toBeNull();
+  });
+
+  it('holds the database, sign-in, secrets, deploys and dependencies, saying which file', () => {
+    expect(notRoutine(['src/a.ts', 'db/migrations/0007_add_index.sql'], 10)).toBe('not routine: it changes database migrations or schema (db/migrations/0007_add_index.sql)');
+    expect(notRoutine(['app/Schema.py'], 10)).toMatch(/database/);
+    expect(notRoutine(['server/auth/login.ts'], 10)).toMatch(/sign-in or permissions/);
+    expect(notRoutine(['src/OAuth.ts'], 10)).toMatch(/sign-in or permissions/);
+    expect(notRoutine(['.env.example'], 10)).toMatch(/secrets/);
+    expect(notRoutine(['.github/workflows/ci.yml'], 10)).toMatch(/deploys, CI or infrastructure/);
+    expect(notRoutine(['Dockerfile'], 10)).toMatch(/deploys/);
+    expect(notRoutine(['apps/web/package.json'], 10)).toBe('not routine: it changes dependencies (apps/web/package.json)');
+    expect(notRoutine(['requirements-dev.txt'], 10)).toMatch(/dependencies/);
+  });
+
+  it('holds a big change', () => {
+    expect(notRoutine(['src/a.ts'], ROUTINE_MAX_LINES + 1)).toBe(`not routine: it is a big change (${ROUTINE_MAX_LINES + 1} lines; routine is up to ${ROUTINE_MAX_LINES})`);
+  });
+
+  it('accepts Windows separators', () => {
+    expect(notRoutine(['db\\migrations\\1.sql'], 1)).toMatch(/database/);
   });
 });

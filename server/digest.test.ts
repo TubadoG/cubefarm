@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDigest, digestDay, digestDue, excerpt, mergedSince, needsInputIssues, waitingPulls, type DigestFloor } from './digest.ts';
+import { readyDecision } from './decision.ts';
 import type { IssueInfo, PullInfo } from '../shared/types.ts';
 
 const pull = (number: number, over: Partial<PullInfo> = {}): PullInfo => ({
@@ -50,6 +51,19 @@ describe('waitingPulls', () => {
     const w = waitingPulls([pull(3), pull(5)], held, true);
     expect(w.map((p) => p.number)).toEqual([3]);
     expect(w[0].why).toBe('held for you: db/migrations/0012.sql');
+    expect(w[0].decision.pick).toBe('merge it');
+  });
+
+  it('lists a stuck PR once the CEO hands it on, with the office’s pick', () => {
+    const stuck = [
+      { prNumber: 3, status: 'needs-human' as const, escalated: true, stuckWhy: 'it still fails its checks after 5 fixes' },
+      { prNumber: 5, status: 'needs-human' as const, escalated: false, stuckWhy: 'x' }, // the CEO is still on it
+    ];
+    const w = waitingPulls([pull(3), pull(5)], stuck, true, 'web');
+    expect(w.map((p) => p.number)).toEqual([3]);
+    expect(w[0].why).toBe('stuck: it still fails its checks after 5 fixes');
+    expect(w[0].decision.question).toBe('PR #3 on web is stuck: it still fails its checks after 5 fixes. What next?');
+    expect(w[0].decision.pick).toBe('send it back with a note');
   });
 
   it('skips a passed PR that is no longer open', () => {
@@ -93,10 +107,11 @@ describe('buildDigest', () => {
   });
 
   it('counts decisions across floors and lists each floor that has something', () => {
+    const dark = { number: 12, title: 'Dark mode', url: 'https://github.com/o/web/pull/12' };
     const d = buildDigest(
       [
         floor('o/web', {
-          waiting: [{ number: 12, title: 'Dark mode', url: 'https://github.com/o/web/pull/12', why: 'QA passed; auto-merge is off' }],
+          waiting: [{ ...dark, why: 'QA passed; auto-merge is off', decision: readyDecision('web', dark, null) }],
           needsInput: [{ number: 7, title: 'Which palette?', url: 'https://github.com/o/web/issues/7', excerpt: 'Sunrise or Harbour?' }],
           merged: [{ number: 10, title: 'Fix count', url: 'https://github.com/o/web/pull/10' }],
         }),
@@ -110,11 +125,21 @@ describe('buildDigest', () => {
     expect(d.text).toContain('3 decisions wait for you across 2 floors.');
     expect(d.text.indexOf('o/api')).toBeLessThan(d.text.indexOf('o/web')); // floors by name
     expect(d.text).not.toContain('o/quiet');
-    expect(d.text).toContain('- #12 Dark mode (QA passed; auto-merge is off)\n  https://github.com/o/web/pull/12');
+    expect(d.text).toContain(
+      [
+        '- Merge PR #12 on web?',
+        '  Dark mode.',
+        '  Options: merge it, send it back with a note or close it.',
+        '  Recommended: merge it. QA passed; auto-merge is off on this floor.',
+        '  To approve, open Approvals and tap Merge.',
+        '  https://github.com/o/web/pull/12',
+      ].join('\n'),
+    );
+    expect(d.text).toContain('Open Approvals: https://office.example.com/?tab=approvals');
     expect(d.text).toContain('- #7 Which palette?\n  https://github.com/o/web/issues/7\n  > Sunrise or Harbour?');
     expect(d.text).toContain('Merged in the last 24 hours:\n- #10 Fix count');
     expect(d.text).toContain('Open the office: https://office.example.com');
-    expect(d.html).toContain('<a href="https://github.com/o/web/pull/12">#12</a> Dark mode');
+    expect(d.html).toContain('<b>Merge PR #12 on web?</b><br><a href="https://github.com/o/web/pull/12">#12</a> Dark mode');
     expect(d.html).toContain('Rate limit &lt;60&gt;?');
   });
 

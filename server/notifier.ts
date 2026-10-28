@@ -133,10 +133,13 @@ export class Notifier {
     return { webhooks, pushDevices: this.push.devices.length };
   }
 
-  /** Something happened: tell the manager on every channel that's on, unless the event is off or had its minute. */
-  notify(event: NotifyEvent, title: string, body: string, line?: string) {
+  /**
+   * Something happened: tell the manager on every channel that's on, unless the event is off or had its minute.
+   * link: the PR a decision is about (server/decision.ts).
+   */
+  notify(event: NotifyEvent, title: string, body: string, line?: string, link?: string) {
     if (!this.deps.settings().events[event]) return;
-    const r = offer(this.gates, note(event, title, body, line), this.now());
+    const r = offer(this.gates, note(event, title, body, line ?? title, link), this.now());
     this.gates = r.gates;
     if (r.send) void this.deliver(r.send);
     this.arm();

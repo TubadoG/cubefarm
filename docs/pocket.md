@@ -35,12 +35,17 @@ worker a new version, which replaces the old one and its cache, so the app never
 Open **⚙️ Settings → 🔔 Notifications** in the manager's console (or **⚙️** in pocket mode) and pick what you hear
 about:
 
-- a pull request needs you (stuck, and the CEO has handed it to you)
+- a pull request needs you (stuck, and the CEO has handed it to you, or passed QA and held for you)
 - a message from the CEO
 - a team change waits for your decision
 - someone has been stuck in an error for over 10 minutes
 - Claude's usage limit pauses the office, or a usage warning paces it
 - every merge (off unless you turn it on)
+
+A pull request's notification reads as a decision: the title asks the question ("Merge PR #12 on web?"), and the
+text gives the PR's title, the options, the office's recommendation and why in one line, and the button in
+**Approvals** that approves it. Tapping it opens **Approvals**; in ntfy it also has **Open Approvals** and **Open PR**
+buttons.
 
 You get at most one notification of each kind a minute. Whatever else of that kind happens in the minute arrives
 together as one summary ("🔀 9 more merges"), so a burst of merges is two notifications, not ten.

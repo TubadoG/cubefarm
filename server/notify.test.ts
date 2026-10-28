@@ -124,6 +124,20 @@ describe('what a note says', () => {
     expect(ntfyPayload(note('merge', 'm', 'b'), 't')).toEqual({ topic: 't', title: '🔀 m', message: 'b', priority: 3 });
   });
 
+  it('gives a decision more room, its PR link and ntfy buttons for Approvals and the PR', () => {
+    const d = note('needsHuman', 'Merge PR #12 on web?', 'x'.repeat(1000), 'Merge PR #12 on web?', 'https://github.com/o/web/pull/12');
+    expect(d.body.length).toBe(600);
+    expect(noteText(d)).toContain('\nhttps://github.com/o/web/pull/12');
+    expect(ntfyPayload(d, 't', 'https://o.example/')).toMatchObject({
+      click: 'https://o.example/?tab=approvals',
+      actions: [
+        { action: 'view', label: 'Open Approvals', url: 'https://o.example/?tab=approvals' },
+        { action: 'view', label: 'Open PR', url: 'https://github.com/o/web/pull/12' },
+      ],
+    });
+    expect(ntfyPayload(d, 't').actions).toEqual([{ action: 'view', label: 'Open PR', url: 'https://github.com/o/web/pull/12' }]);
+  });
+
   it("turns a CEO's markdown into one plain line", () => {
     expect(plainText('## Update\n- **Ada** shipped [#12](https://github.com/x/y/pull/12)\n- `npm test` passes')).toBe('Update Ada shipped #12 npm test passes');
     expect(plainText('Both are *easy to get wrong* for _keyboard_ users; snake_case stays.')).toBe('Both are easy to get wrong for keyboard users; snake_case stays.');

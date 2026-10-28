@@ -50,11 +50,12 @@ import { clip, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
 import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
 import { Mailer } from './email.ts';
+import { decisionNote, readyDecision, stuckPrDecision } from './decision.ts';
 import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DigestFloor } from './digest.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
 import { blockers, holdUps, waitsMessage } from '../shared/issues.ts';
-import { holdReason, parseHoldPaths } from '../shared/holds.ts';
+import { holdReason, notRoutine, parseHoldPaths } from '../shared/holds.ts';
 import { dayKey, journalFrame, legacyAgent, legacyRequest } from '../shared/journal.ts';
 import { cleanStyle, HAIR_COLORS, SKIN_TONES, type AgentStyle } from '../shared/looks.ts';
 import { achievementDef, type ProgressView } from '../shared/progress.ts';
@@ -114,6 +115,7 @@ interface PersistedRepo {
   autoAssign: boolean;
   autoMerge: boolean; // PRs merge themselves once QA passes and GitHub's checks are green
   holdPaths: string[]; // PRs changing these (shared/holds.ts), or labelled swarm:hold, wait for the manager anyway
+  routineOnly: boolean; // only routine work merges itself (shared/holds.ts notRoutine); the rest waits for the manager
   browserTesting: boolean;
   links: string[]; // other connected repos this floor's agents may read
   localPath: string | null; // the manager's own project folder (null: a clone under WORKSPACE_ROOT)
@@ -647,6 +649,7 @@ export class Swarm {
           ...r,
           autoMerge: r.autoMerge ?? true,
           holdPaths: r.holdPaths ?? [],
+          routineOnly: r.routineOnly ?? true,
           links: r.links ?? [],
           mission: r.mission ?? '',
           summary: r.summary ?? '',
@@ -976,6 +979,7 @@ export class Swarm {
       autoAssign: r.autoAssign,
       autoMerge: r.autoMerge,
       holdPaths: r.holdPaths,
+      routineOnly: r.routineOnly,
       folderSync: rt.folderSync,
       browserTesting: r.browserTesting,
       links: r.links,
@@ -1352,6 +1356,7 @@ export class Swarm {
       autoAssign: !!opts.autoAssign,
       autoMerge: true,
       holdPaths: [],
+      routineOnly: true,
       browserTesting: true,
       links: [],
       localPath: folder,
@@ -1459,7 +1464,7 @@ export class Swarm {
 
   updateRepo(
     id: string,
-    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & { previewCommand?: unknown; previewEnv?: unknown; holdPaths?: unknown },
+    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'routineOnly' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & { previewCommand?: unknown; previewEnv?: unknown; holdPaths?: unknown },
   ) {
     const repo = this.repo(id);
     let holdPaths: string[] | undefined;
@@ -1479,6 +1484,10 @@ export class Swarm {
     if (holdPaths) {
       repo.holdPaths = holdPaths;
       if (repo.autoMerge) void this.syncRepo(repo.id); // passed PRs are weighed against the new list
+    }
+    if (patch.routineOnly !== undefined) {
+      repo.routineOnly = !!patch.routineOnly;
+      if (repo.autoMerge) void this.syncRepo(repo.id);
     }
     if (patch.browserTesting !== undefined) repo.browserTesting = !!patch.browserTesting;
     if (patch.color && /^#[0-9a-f]{6}$/i.test(patch.color)) repo.color = patch.color;
@@ -1528,16 +1537,19 @@ export class Swarm {
     }
   }
 
-  /** Why a passed PR waits for the manager (shared/holds.ts), or null. Its changed files are read once per head commit. */
+  /**
+   * Why a passed PR waits for the manager (shared/holds.ts): its label, the manager's hold paths, then, on a routine-only
+   * floor, work that isn't routine. null: it may merge itself. Its changed files are read once per head commit.
+   */
   private async holdFor(repo: PersistedRepo, pr: PullInfo): Promise<string | null> {
-    if (!repo.holdPaths.length) return holdReason(pr.labels, null, []);
+    if (!repo.holdPaths.length && !repo.routineOnly) return holdReason(pr.labels, null, []);
     const key = `${repo.id}#${pr.number}`;
     let seen = this.prFilesSeen.get(key);
     if (seen?.sha !== pr.headSha) {
       seen = { sha: pr.headSha, files: await this.backend.prFiles(repo.fullName, pr.number) };
       this.prFilesSeen.set(key, seen);
     }
-    return holdReason(pr.labels, seen.files, repo.holdPaths);
+    return holdReason(pr.labels, seen.files, repo.holdPaths) ?? (repo.routineOnly ? notRoutine(seen.files, pr.additions + pr.deletions) : null);
   }
 
   /** Mark a passed PR held (or no longer held); the manager hears once when it first waits for them. */
@@ -1547,7 +1559,8 @@ export class Swarm {
     if (!first) return;
     const name = repo.fullName.split('/')[1] ?? repo.fullName;
     this.postMessage('office', `✋ PR #${pr.number} on ${repo.fullName} passed QA and is held for you: ${pr.title} (${held}).`);
-    this.notifier.notify('needsHuman', `PR #${pr.number} is held for you`, `${name}: ${pr.title} (${held})`, `${name} #${pr.number} ${pr.title}`);
+    const d = decisionNote(readyDecision(name, pr, held));
+    this.notifier.notify('needsHuman', d.title, d.body, d.line, pr.url);
   }
 
   /** One step toward merging a QA-passed PR. Returns true when it merged. */
@@ -4675,9 +4688,11 @@ export class Swarm {
 
   private notifyNeedsHuman(rec: QaRecord) {
     const repo = this.state.repos.find((r) => r.id === rec.repoId);
-    const title = this.repoRt.get(rec.repoId)?.pulls.find((p) => p.number === rec.prNumber)?.title;
+    const pull = this.repoRt.get(rec.repoId)?.pulls.find((p) => p.number === rec.prNumber);
     const name = repo?.fullName.split('/')[1] ?? rec.repoId;
-    this.notifier.notify('needsHuman', `PR #${rec.prNumber} needs you`, `${name}${title ? `: ${title}` : ''}. ${rec.stuckWhy ? `Stuck because ${rec.stuckWhy}.` : rec.summary ?? ''}`, `${name} #${rec.prNumber}${title ? ` ${title}` : ''}`);
+    const url = pull?.url ?? (repo ? `${repo.url}/pull/${rec.prNumber}` : '');
+    const d = decisionNote(stuckPrDecision(name, { number: rec.prNumber, title: pull?.title ?? `PR #${rec.prNumber}`, url }, rec.stuckWhy));
+    this.notifier.notify('needsHuman', d.title, d.body, d.line, url || undefined);
   }
 
   private notifyMerge(repo: PersistedRepo, n: number, title: string) {
@@ -4932,7 +4947,7 @@ export class Swarm {
         ]);
         return {
           name: repo.fullName,
-          waiting: waitingPulls(rt?.pulls ?? [], this.state.qa.filter((q) => q.repoId === repo.id), repo.autoMerge),
+          waiting: waitingPulls(rt?.pulls ?? [], this.state.qa.filter((q) => q.repoId === repo.id), repo.autoMerge, repo.fullName.split('/')[1] ?? repo.fullName),
           needsInput: asks.map((i, k) => ({ number: i.number, title: i.title, url: i.url, excerpt: excerpt(comments[k] ?? i.body) })),
           merged: mergedSince(merged, now).map((p) => ({ number: p.number, title: p.title, url: p.url })),
         };

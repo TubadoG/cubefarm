@@ -69,6 +69,7 @@ export interface RepoView {
   autoAssign: boolean;
   autoMerge: boolean; // PRs merge themselves once QA passes and GitHub's checks are green
   holdPaths?: string[]; // path patterns (shared/holds.ts): PRs touching them wait for the manager even with auto-merge on (absent in old journals)
+  routineOnly?: boolean; // with auto-merge on, only routine work merges itself (shared/holds.ts notRoutine); absent in old journals
   folderSync: string | null; // how the floor's main checkout stands against GitHub: "in sync", "updated to abc1234", "2 behind: local changes" …
   browserTesting: boolean;
   links: string[]; // ids of related repos this floor's agents can read for context
