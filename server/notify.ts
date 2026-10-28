@@ -9,6 +9,8 @@ export const NOTE_WINDOW_MS = 60_000;
 /** An agent in an error this long is worth a notification (once per error). */
 export const STUCK_ERROR_MS = 10 * 60_000;
 const BODY_MAX = 300;
+/** A decision (server/decision.ts) says what's decided, the options and the pick: it gets more room. */
+export const DECISION_MAX = 600;
 const SUMMARY_LINES = 5;
 const HELD_MAX = 50;
 
@@ -18,6 +20,7 @@ export interface Note {
   title: string;
   body: string;
   line: string;
+  link?: string; // the PR a decision is about, for ntfy's Open PR button and the plain-text form
 }
 
 const PLURAL: Record<NotifyEvent, string> = {
@@ -49,9 +52,9 @@ export function plainText(md: string, max = BODY_MAX): string {
   return clip(s, max);
 }
 
-/** A note with its event's icon in front of the title. */
-export function note(event: NotifyEvent | 'test', title: string, body: string, line = title): Note {
-  return { event, title: `${ICON[event]} ${clip(title, 120)}`, body: clip(body), line: clip(line, 120) };
+/** A note with its event's icon in front of the title. A link marks it a decision, with DECISION_MAX room. */
+export function note(event: NotifyEvent | 'test', title: string, body: string, line = title, link?: string): Note {
+  return { event, title: `${ICON[event]} ${clip(title, 120)}`, body: clip(body, link ? DECISION_MAX : BODY_MAX), line: clip(line, 120), ...(link ? { link } : {}) };
 }
 
 /** Several held notes of one event as a single summary (one note stays itself). `dropped`: more that weren't kept. */
@@ -104,13 +107,18 @@ const link = (officeUrl: string) => (officeUrl ? `\n${officeUrl}` : '');
 
 /** The note as plain text, e.g. for the demo's log and the push body. */
 export function noteText(n: Note, officeUrl = ''): string {
-  return `${n.title}\n${n.body}${link(officeUrl)}`.trim();
+  return `${n.title}\n${n.body}${n.link ? `\n${n.link}` : ''}${link(officeUrl)}`.trim();
 }
 
-/** ntfy's JSON publishing: POSTed to the server's root with the topic in the body. */
+/**
+ * ntfy's JSON publishing: POSTed to the server's root with the topic in the body. A decision opens the office's
+ * Approvals when tapped, with buttons for Approvals and the PR itself.
+ */
 export function ntfyPayload(n: Note, topic: string, officeUrl = '') {
   const urgent = n.event === 'needsHuman' || n.event === 'agentError' || n.event === 'usage';
-  return { topic, title: n.title, message: n.body, priority: urgent ? 4 : 3, ...(officeUrl ? { click: officeUrl } : {}) };
+  const approvals = n.link && officeUrl ? new URL('?tab=approvals', officeUrl).toString() : '';
+  const actions = n.link ? [...(approvals ? [{ action: 'view', label: 'Open Approvals', url: approvals }] : []), { action: 'view', label: 'Open PR', url: n.link }] : null;
+  return { topic, title: n.title, message: n.body, priority: urgent ? 4 : 3, ...(officeUrl ? { click: approvals || officeUrl } : {}), ...(actions ? { actions } : {}) };
 }
 
 // ---------- the chat apps' settings ----------

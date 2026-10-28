@@ -3,6 +3,7 @@
 // CEO session and no model tokens. Pure: the swarm gathers the data (swarm.ts sendDigest) and sends it.
 import { escapeHtml } from '../shared/email.ts';
 import type { IssueInfo, PullInfo, QaStatus } from '../shared/types.ts';
+import { decisionLines, readyDecision, stuckPrDecision, type Decision } from './decision.ts';
 
 /** The label that asks the manager for an answer on an issue. */
 export const NEEDS_INPUT = 'needs-input';
@@ -23,9 +24,15 @@ export interface DigestIssue extends DigestItem {
 
 export interface DigestFloor {
   name: string; // owner/repo
-  waiting: (DigestItem & { why: string })[]; // open PRs that wait for the manager, and why
+  waiting: WaitingPull[]; // open PRs that wait for the manager, and why
   needsInput: DigestIssue[];
   merged: DigestItem[];
+}
+
+/** An open PR that waits for the manager: why in a few words, and the decision in plain words (server/decision.ts). */
+export interface WaitingPull extends DigestItem {
+  why: string;
+  decision: Decision;
 }
 
 export interface Digest {
@@ -37,26 +44,26 @@ export interface Digest {
 
 /**
  * Open PRs that wait for the manager on one floor, with why: QA passed and the office holds them (shared/holds.ts),
- * or QA passed and auto-merge is off.
+ * QA passed and auto-merge is off, or they're stuck and the CEO handed them on. floor: the repo's name, for the question.
  */
 export function waitingPulls(
   pulls: PullInfo[],
-  qa: { prNumber: number; status: QaStatus; heldFor?: string | null }[],
+  qa: { prNumber: number; status: QaStatus; heldFor?: string | null; stuckWhy?: string | null; escalated?: boolean }[],
   autoMerge: boolean,
-): (DigestItem & { why: string })[] {
-  const passed = new Map(qa.filter((q) => q.status === 'passed').map((q) => [q.prNumber, q.heldFor ?? null]));
-  const why = (n: number) => {
-    if (!passed.has(n)) return null;
-    const held = passed.get(n);
-    if (held) return `held for you: ${held}`;
-    return autoMerge ? null : 'QA passed; auto-merge is off';
+  floor = '',
+): WaitingPull[] {
+  const recs = new Map(qa.map((q) => [q.prNumber, q]));
+  const item = (p: PullInfo): WaitingPull | null => {
+    const q = recs.get(p.number);
+    const pr = { number: p.number, title: p.title, url: p.url };
+    if (q?.status === 'needs-human' && q.escalated) return { ...pr, why: `stuck: ${q.stuckWhy ?? 'it needs you'}`, decision: stuckPrDecision(floor, pr, q.stuckWhy ?? null) };
+    if (q?.status !== 'passed') return null;
+    if (q.heldFor) return { ...pr, why: `held for you: ${q.heldFor}`, decision: readyDecision(floor, pr, q.heldFor) };
+    return autoMerge ? null : { ...pr, why: 'QA passed; auto-merge is off', decision: readyDecision(floor, pr, null) };
   };
   return pulls
     .filter((p) => p.state === 'OPEN')
-    .flatMap((p) => {
-      const w = why(p.number);
-      return w ? [{ number: p.number, title: p.title, url: p.url, why: w }] : [];
-    })
+    .flatMap((p) => item(p) ?? [])
     .sort((a, b) => a.number - b.number);
 }
 
@@ -96,13 +103,21 @@ export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string } 
   const text: string[] = [intro];
   const html: string[] = [`<p>${escapeHtml(intro)}</p>`];
   const link = (i: DigestItem) => `<a href="${escapeHtml(i.url)}">#${i.number}</a> ${escapeHtml(i.title)}`;
+  const approvals = opts.officeUrl ? new URL('?tab=approvals', opts.officeUrl).toString() : '';
   for (const f of shown) {
     text.push('', f.name, '='.repeat(Math.min(f.name.length, 60)));
     html.push(`<h3 style="margin:18px 0 6px">${escapeHtml(f.name)}</h3>`);
     if (f.waiting.length) {
-      text.push('', 'PRs waiting for you:');
-      for (const p of f.waiting) text.push(`- #${p.number} ${p.title} (${p.why})`, `  ${p.url}`);
-      html.push('<p style="margin:8px 0 2px"><b>PRs waiting for you</b></p><ul>', ...f.waiting.map((p) => `<li>${link(p)} <span style="color:#666">(${escapeHtml(p.why)})</span></li>`), '</ul>');
+      text.push('', 'PRs waiting for your decision:');
+      for (const p of f.waiting) text.push('', `- ${p.decision.question}`, ...decisionLines(p.decision).map((l) => `  ${l}`), `  ${p.url}`);
+      html.push(
+        '<p style="margin:8px 0 2px"><b>PRs waiting for your decision</b></p><ul>',
+        ...f.waiting.map((p) => {
+          const [, options, pick, approve] = decisionLines(p.decision).map(escapeHtml);
+          return `<li style="margin-bottom:10px"><b>${escapeHtml(p.decision.question)}</b><br>${link(p)}<br>${options}<br>${pick}<br><span style="color:#555">${approve}</span></li>`;
+        }),
+        '</ul>',
+      );
     }
     if (f.needsInput.length) {
       text.push('', 'Issues that need your input:');
@@ -120,6 +135,10 @@ export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string } 
     }
   }
   if (opts.officeUrl) {
+    if (shown.some((f) => f.waiting.length)) {
+      text.push('', `Open Approvals: ${approvals}`);
+      html.push(`<p><a href="${escapeHtml(approvals)}">Open Approvals</a> to decide.</p>`);
+    }
     text.push('', `Open the office: ${opts.officeUrl}`);
     html.push(`<p><a href="${escapeHtml(opts.officeUrl)}">Open the office</a></p>`);
   }

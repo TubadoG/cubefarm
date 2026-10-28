@@ -60,3 +60,61 @@ export function parseHoldPaths(value: unknown): string[] {
   if (long) throw new Error(`Hold path too long (max ${MAX_HOLD_PATH_LENGTH} characters): ${long.slice(0, 40)}…`);
   return paths;
 }
+
+// ---------- routine work ----------
+// A floor with "routine only" on (the default) also holds work that isn't routine, so only small, everyday changes
+// merge themselves. Anything that touches the database, sign-in and permissions, secrets, deploys and CI, or
+// dependencies, and anything big, waits for the manager. Matched case-insensitively, by the same patterns as above.
+
+/** Changed lines (added plus deleted) above which a PR isn't routine. */
+export const ROUTINE_MAX_LINES = 400;
+/** How a routine hold's reason starts, so alerts can tell it from the manager's own hold paths. */
+export const NOT_ROUTINE = 'not routine: ';
+
+/** What isn't routine, each with the words an alert uses for it. */
+export const ROUTINE_RULES: { what: string; patterns: string[] }[] = [
+  { what: 'changes database migrations or schema', patterns: ['migrations', 'migration', 'alembic', '*.sql', 'schema.*', '*.prisma'] },
+  { what: 'changes sign-in or permissions', patterns: ['auth', '*auth.*', '*permission*', '*rbac*'] },
+  { what: 'touches secrets or keys', patterns: ['.env', '.env.*', '*secret*', '*credential*', '*.pem', '*.key'] },
+  {
+    what: 'changes deploys, CI or infrastructure',
+    patterns: ['.github/workflows/', '.gitlab-ci.yml', 'dockerfile', 'dockerfile.*', '*.dockerfile', 'docker-compose*', 'compose.y*ml', '*.tf', 'terraform', 'infra', 'deploy', 'deploy.*', 'k8s', 'helm', '*.service'],
+  },
+  {
+    what: 'changes dependencies',
+    patterns: [
+      'package.json',
+      'package-lock.json',
+      'yarn.lock',
+      'pnpm-lock.yaml',
+      'requirements*.txt',
+      'pyproject.toml',
+      'poetry.lock',
+      'uv.lock',
+      'pipfile',
+      'pipfile.lock',
+      'go.mod',
+      'go.sum',
+      'cargo.toml',
+      'cargo.lock',
+      'gemfile',
+      'gemfile.lock',
+      '*.csproj',
+    ],
+  },
+];
+
+const ROUTINE_RES = ROUTINE_RULES.map((r) => ({ what: r.what, res: r.patterns.map(holdPattern) }));
+
+/**
+ * Why a PR isn't routine work (starting with NOT_ROUTINE), or null when it is: the first rule a changed file breaks,
+ * else its size. changedLines: additions plus deletions.
+ */
+export function notRoutine(files: readonly string[], changedLines: number): string | null {
+  for (const rule of ROUTINE_RES) {
+    const file = files.find((f) => rule.res.some((re) => re.test(f.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase())));
+    if (file) return `${NOT_ROUTINE}it ${rule.what} (${file})`;
+  }
+  if (changedLines > ROUTINE_MAX_LINES) return `${NOT_ROUTINE}it is a big change (${changedLines} lines; routine is up to ${ROUTINE_MAX_LINES})`;
+  return null;
+}

@@ -27,8 +27,11 @@ list without **Ask me**: it goes out on its own) and the hour (the office's loca
 first check at or after that hour the office builds it from what it already knows, with no CEO session and no model
 tokens (`server/digest.ts`), and lists per floor:
 
-- open PRs waiting for you: QA passed and the office holds them for you (the floor's **Hold for my review** paths or
-  the `swarm:hold` label), or QA passed and auto-merge is off;
+- open PRs waiting for you: QA passed and the office holds them for you (the floor's **Hold for my review** paths,
+  the `swarm:hold` label, or work that isn't routine), QA passed and auto-merge is off, or they're stuck and the CEO
+  handed them to you. Each reads as a decision in plain words (`server/decision.ts`): what is being decided, the
+  options, the office's recommendation and why in one line, the button in **Approvals** that approves it, and the PR's
+  link;
 - open issues labelled `needs-input`, with the first 300 characters of the latest comment (or the body). Agents
   don't pick these up on their own while the label is on;
 - PRs merged in the last 24 hours.

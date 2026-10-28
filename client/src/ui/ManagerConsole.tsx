@@ -136,6 +136,12 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
         <label className="toggle" title="Merge a PR as soon as QA has signed off on its latest commit and GitHub's checks are green">
           <input type="checkbox" checked={repo.autoMerge} onChange={(e) => patch({ autoMerge: e.target.checked })} /> 🔀 Auto-merge
         </label>
+        <label
+          className="toggle"
+          title="With auto-merge on, only small everyday work merges itself. Database, sign-in, secrets, deploy/CI and dependency changes, and anything over 400 changed lines, wait for you."
+        >
+          <input type="checkbox" checked={repo.routineOnly ?? true} disabled={!repo.autoMerge} onChange={(e) => patch({ routineOnly: e.target.checked })} /> 🧹 Routine work only
+        </label>
         <label className="toggle">
           <input type="checkbox" checked={repo.browserTesting} onChange={(e) => patch({ browserTesting: e.target.checked })} /> 🌐 Browser testing (Playwright MCP)
         </label>

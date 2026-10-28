@@ -69,6 +69,7 @@ export const api = {
       autoAssign?: boolean;
       autoMerge?: boolean;
       holdPaths?: string[];
+      routineOnly?: boolean;
       browserTesting?: boolean;
       color?: string;
       links?: string[];
