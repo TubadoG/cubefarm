@@ -143,7 +143,7 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
         >
           <input type="checkbox" checked={repo.routineOnly ?? true} disabled={!repo.autoMerge} onChange={(e) => patch({ routineOnly: e.target.checked })} /> 🧹 Routine work only
         </label>
-        <label className="toggle" title="A standing floor lead, extra to the team, triages this floor's stuck pull requests so technical problems never wait for you. Off: the office rebuilds them itself.">
+        <label className="toggle" title="A standing floor lead, extra to the team, triages this floor's stuck pull requests and keeps its board in order, so technical problems never wait for you. Off: the office rebuilds them itself.">
           <input type="checkbox" checked={repo.floorLead ?? true} onChange={(e) => patch({ floorLead: e.target.checked })} /> 🧭 Floor lead
         </label>
         <label className="toggle" title="The CEO files issues for this floor in its reviews, from your brief and the roadmap docs in the repo, so the backlog never runs dry">
@@ -505,8 +505,8 @@ function TeamTab() {
               </span>
             </div>
             {lead && (
-              <div className="muted small" title="Extra to the team: triages stuck PRs (docs/floor-lead.md)">
-                🧭 {lead.name}, the floor lead: {lead.status === 'working' ? (lead.issueTitle ?? 'working') : 'waiting for the next stuck PR'}
+              <div className="muted small" title="Extra to the team: triages stuck PRs and looks after the board (docs/floor-lead.md)">
+                🧭 {lead.name}, the floor lead: {lead.status === 'working' ? (lead.issueTitle ?? 'working') : 'waiting for the next stuck PR or board job'}
               </div>
             )}
             <AddAgent repo={repo} size={team.length} />
@@ -778,7 +778,7 @@ function SettingsTab() {
       <div className="card">
         <h3>🧭 Floor leads</h3>
         <p className="muted small">
-          Each floor with “Floor lead” on has a standing lead, extra to its team, who triages its stuck pull requests. A strong model diagnoses a stuck PR (a lead's own model, set on their card, wins); a cheap one runs board clean-ups.
+          Each floor with “Floor lead” on has a standing lead, extra to its team, who triages its stuck pull requests and looks after its board. A strong model diagnoses a stuck PR (a lead's own model, set on their card, wins); a cheap one runs board clean-ups.
         </p>
         {(
           [

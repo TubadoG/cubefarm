@@ -7,29 +7,46 @@ import { ONE_TURN } from './prompts.ts';
 import { MAX_TRIAGES, type TriagePr } from './triage.ts';
 
 // The floor lead (docs/floor-lead.md): one standing employee per floor, extra to its team, who owns the floor's stuck
-// pull requests from start to finish. The office wakes it on events (a PR becomes needs-human) and it acts through
-// its own office tools, never a shell. The limits are the tools': it can't merge, can't message the manager (only a
-// decision brief through escalate reaches them), can't file new work and can't push. Pure: the rules, prompts and tool
+// pull requests from start to finish and keeps its board (Kanban) in order. The office wakes it on events (a PR
+// becomes needs-human, the ready backlog drops below minReady, an issue is held or keeps failing) and every 4 hours,
+// and it acts through its own office tools, never a shell. The limits are the tools': it can't merge, can't message
+// the manager (only a decision brief through escalate reaches them), can't file new work (only a split's parts) and
+// can't push. Every board change it makes is logged with its undo (boardLog.ts). Pure: the rules, prompts and tool
 // definitions; swarm.ts runs the sessions and the GitHub calls.
 
 // ---------- jobs ----------
 
-/** What wakes a floor lead: a stuck PR to triage. */
-export type LeadJobKind = 'triage';
+/** Why a board job runs: the 4-hourly clean-up, the ready backlog dropping below minReady, an issue held after its PR
+ * closed, or an issue skipped after failed sessions. */
+export type BoardReason = 'cleanup' | 'low-backlog' | 'held' | 'failing';
 
-export interface LeadJob {
-  kind: LeadJobKind;
-  prNumber: number; // triage: the stuck pull request
-  at: number;
-}
+/** What wakes a floor lead: a stuck PR to triage, or its board to look after. */
+export type LeadJob = { kind: 'triage'; prNumber: number; at: number } | { kind: 'board'; reasons: BoardReason[]; at: number };
+export type LeadJobKind = LeadJob['kind'];
 
-/** A floor lead's work: its queue, and the job it is on. */
+/** How often the lead cleans up its board when nothing else wakes it (skipped when the board hasn't changed). */
+export const LEAD_CLEANUP_MS = 4 * 60 * 60_000;
+
+/** A floor lead's work: its queue, the job it is on, and what its board looked like at the last clean-up. */
 export interface LeadState {
   queue: LeadJob[];
   job: LeadJob | null;
+  lastCleanupAt: number | null;
+  low: boolean; // the ready backlog was below minReady at the last look (a board job wakes when it drops, not while it stays low)
+  fingerprint: string | null; // the board at the last clean-up: unchanged means the next one is skipped
 }
 
-const isJob = (j: unknown): j is LeadJob => !!j && typeof j === 'object' && (j as LeadJob).kind === 'triage' && Number.isInteger((j as LeadJob).prNumber) && typeof (j as LeadJob).at === 'number';
+const REASONS: BoardReason[] = ['cleanup', 'low-backlog', 'held', 'failing'];
+
+const isJob = (j: unknown): j is LeadJob => {
+  const x = j as Partial<{ kind: string; prNumber: number; reasons: unknown; at: number }> | null;
+  if (!x || typeof x !== 'object' || typeof x.at !== 'number') return false;
+  if (x.kind === 'triage') return Number.isInteger(x.prNumber);
+  return x.kind === 'board' && Array.isArray(x.reasons) && x.reasons.every((r) => REASONS.includes(r as BoardReason));
+};
+
+/** A fresh lead's state. */
+export const newLeadState = (): LeadState => ({ queue: [], job: null, lastCleanupAt: null, low: false, fingerprint: null });
 
 /** The leads' saved state, with anything unreadable dropped. A job cut off by a restart goes back to the front of its queue. */
 export function loadLeads(raw: unknown): Record<string, LeadState> {
@@ -37,20 +54,71 @@ export function loadLeads(raw: unknown): Record<string, LeadState> {
   if (!raw || typeof raw !== 'object') return out;
   for (const [repoId, v] of Object.entries(raw as Record<string, Partial<LeadState>>)) {
     const queue = Array.isArray(v?.queue) ? v.queue.filter(isJob) : [];
-    out[repoId] = { queue: isJob(v?.job) ? [v.job, ...queue.filter((j) => j.prNumber !== v.job!.prNumber)] : queue, job: null };
+    out[repoId] = {
+      ...newLeadState(),
+      queue: isJob(v?.job) ? enqueueLead(queue, v.job, true) : queue,
+      lastCleanupAt: typeof v?.lastCleanupAt === 'number' ? v.lastCleanupAt : null,
+      low: v?.low === true,
+      fingerprint: typeof v?.fingerprint === 'string' ? v.fingerprint : null,
+    };
   }
   return out;
 }
 
-/** A queue with the job added: one triage per PR (a newer one replaces it). */
-export function enqueueLead(queue: readonly LeadJob[], job: LeadJob): LeadJob[] {
-  const same = queue.findIndex((j) => j.kind === job.kind && j.prNumber === job.prNumber);
-  return same >= 0 ? queue.map((j, i) => (i === same ? job : j)) : [...queue, job];
+/** A queue with the job added: one triage per PR (a newer one replaces it), one board job with every reason. front: first in line. */
+export function enqueueLead(queue: readonly LeadJob[], job: LeadJob, front = false): LeadJob[] {
+  const same = queue.findIndex((j) => j.kind === job.kind && (j.kind === 'board' || (job.kind === 'triage' && j.prNumber === job.prNumber)));
+  if (same < 0) return front ? [job, ...queue] : [...queue, job];
+  const old = queue[same];
+  const merged: LeadJob = old.kind === 'board' && job.kind === 'board' ? { kind: 'board', reasons: REASONS.filter((r) => old.reasons.includes(r) || job.reasons.includes(r)), at: Math.min(old.at, job.at) } : job;
+  return queue.map((j, i) => (i === same ? merged : j));
 }
 
-/** The job a free lead takes next: the oldest stuck PR first. */
+/** The job a free lead takes next: stuck PRs first, oldest first, then the board. */
 export function nextLeadJob(queue: readonly LeadJob[]): LeadJob | null {
-  return [...queue].sort((x, y) => x.at - y.at)[0] ?? null;
+  return [...queue].sort((x, y) => Number(x.kind === 'board') - Number(y.kind === 'board') || x.at - y.at)[0] ?? null;
+}
+
+/**
+ * The timer and backlog wake rules, checked on every scheduler pass: a board job when the ready backlog drops below
+ * minReady (once per drop, not on every pass while it stays low), and the clean-up every LEAD_CLEANUP_MS, skipped
+ * (only its clock reset) when the board hasn't changed since the last one. A fresh lead cleans up at once.
+ */
+export function boardWake(x: { now: number; state: Pick<LeadState, 'lastCleanupAt' | 'low' | 'fingerprint'>; ready: number; minReady: number; fingerprint: string }): {
+  reasons: BoardReason[];
+  low: boolean;
+  skipCleanup: boolean;
+} {
+  const low = x.ready < x.minReady;
+  const reasons: BoardReason[] = low && !x.state.low ? ['low-backlog'] : [];
+  const due = x.state.lastCleanupAt === null || x.now - x.state.lastCleanupAt >= LEAD_CLEANUP_MS;
+  const unchanged = x.state.lastCleanupAt !== null && x.fingerprint === x.state.fingerprint;
+  if (due && !unchanged) reasons.unshift('cleanup');
+  return { reasons, low, skipCleanup: due && unchanged };
+}
+
+// ---------- business holds on issues ----------
+
+/** Labels only the manager sets or clears: the lead's relabel never touches them. */
+export const PROTECTED_LABELS = ['swarm:hold', 'swarm:skip', 'needs-input', 'decided:default', 'decided:manager'];
+
+/**
+ * Why an issue is held for a business reason, or null: the swarm:hold label, needs-input (a decision for the manager),
+ * or a decision brief on it. The lead may not close, merge away or split such an issue.
+ */
+export function issueBusinessHold(i: { labels: readonly string[]; brief: boolean }): string | null {
+  const l = i.labels.map((x) => x.toLowerCase());
+  if (l.includes('swarm:hold')) return 'label swarm:hold';
+  if (l.includes('needs-input')) return 'it waits for the manager (needs-input)';
+  if (i.brief) return 'it has a decision brief';
+  return null;
+}
+
+/** Labels a relabel may add or remove. Throws a message the lead can act on for a protected one. */
+export function checkRelabel(add: readonly string[], remove: readonly string[]) {
+  const bad = [...add, ...remove].find((l) => PROTECTED_LABELS.includes(l.trim().toLowerCase()));
+  if (bad) throw new Error(`${bad} is the manager's label: only they set or clear it.`);
+  if (!add.length && !remove.length) throw new Error('Name a label to add or remove.');
 }
 
 /**
@@ -83,10 +151,10 @@ export function leadSettings(base: LeadSettings, raw: unknown): LeadSettings {
 
 /**
  * The model and effort for a lead's job, the way the CEO's are picked: the lead's own (its agent settings) when set, else
- * the office's for that kind of job. A board clean-up always runs on the cheap model.
+ * the office's for that kind of job. A board job always runs on the cheap model.
  */
-export function leadModel(kind: LeadJobKind | 'cleanup', agent: { model: string; effort: EffortLevel | '' }, s: LeadSettings): { model: string; effort: EffortLevel } {
-  if (kind === 'cleanup') return { model: s.cleanupModel || DEFAULT_LEAD_SETTINGS.cleanupModel, effort: s.cleanupEffort };
+export function leadModel(kind: LeadJobKind, agent: { model: string; effort: EffortLevel | '' }, s: LeadSettings): { model: string; effort: EffortLevel } {
+  if (kind === 'board') return { model: s.cleanupModel || DEFAULT_LEAD_SETTINGS.cleanupModel, effort: s.cleanupEffort };
   return { model: agent.model || s.triageModel || DEFAULT_LEAD_SETTINGS.triageModel, effort: agent.effort || s.triageEffort };
 }
 
@@ -122,12 +190,30 @@ export function leadSystemPrompt(o: { name: string; floor: number; fullName: str
     'Limits (the office enforces them):',
     '- You never merge, and never close or rebuild a PR held for a business reason (swarm:hold, a hold path, a decision brief).',
     '- You never message the manager. Only escalate reaches them, and only with a complete decision brief.',
-    '- You never decide new work. You never push code.',
+    "- You never decide new work: you split, merge, close and order the issues that exist, and file issues only as a split's parts. You never push code.",
+    "- You never close, merge away or split an issue held for a business reason (swarm:hold, needs-input, a decision brief), and never touch the manager's labels.",
+    '- Every board change is logged, and the manager can undo it: make the ones you would defend.',
     `- Your final message is for the office log, not the manager: one line on what you did.`,
   ].join('\n');
 }
 
-export function leadJobPrompt(job: LeadJob, floor: { floor: number; fullName: string; clone: string }, pr: TriagePr | null): string {
+/** What a board job's prompt says about the board. */
+export interface BoardFacts {
+  ready: number; // issues ready to start now
+  minReady: number;
+  held: { issue: number; title: string; pr: number }[]; // open issues whose PR a person closed
+  failing: { issue: number; title: string; failures: number }[]; // issues auto-assign skips after failed sessions
+}
+
+const BOARD_WHY: Record<BoardReason, string> = {
+  cleanup: 'the regular clean-up',
+  'low-backlog': 'fewer issues are ready to start than the floor keeps',
+  held: 'an issue waits after its pull request was closed',
+  failing: 'an issue keeps failing its sessions',
+};
+
+export function leadJobPrompt(job: LeadJob, floor: { floor: number; fullName: string; clone: string }, pr: TriagePr | null, board?: BoardFacts | null): string {
+  if (job.kind === 'board') return boardPrompt(job.reasons, floor, board ?? { ready: 0, minReady: 0, held: [], failing: [] });
   if (!pr) return `Pull request #${job.prNumber} no longer needs triage. Reply "Nothing to do."`;
   return [
     `Triage: pull request #${pr.number} on floor ${floor.floor} (${floor.fullName}) is stuck.`,
@@ -146,8 +232,24 @@ export function leadJobPrompt(job: LeadJob, floor: { floor: number; fullName: st
     .join('\n');
 }
 
+function boardPrompt(reasons: BoardReason[], floor: { floor: number; fullName: string; clone: string }, b: BoardFacts): string {
+  return [
+    `Board: look after floor ${floor.floor}'s board (${floor.fullName}, read-only clone at ${floor.clone}). Why now: ${reasons.map((r) => BOARD_WHY[r]).join('; ')}.`,
+    `${b.ready} issue${b.ready === 1 ? ' is' : 's are'} ready to start; the floor keeps ${b.minReady}.`,
+    ...(b.held.length ? ['Issues whose pull request a person closed (they wait until you decide):', ...b.held.map((h) => `- #${h.issue} "${h.title}" (PR #${h.pr} closed): read why it was closed, then release_issue it, or close_issue it if it is no longer wanted.`)] : []),
+    ...(b.failing.length ? ['Issues auto-assign skips after failed sessions:', ...b.failing.map((f) => `- #${f.issue} "${f.title}" (${f.failures} failed): split_issue it if it is too big for one PR, else release_issue it with a note for the next developer, or close_issue it if it is obsolete.`)] : []),
+    '',
+    'Then tidy the board, only where it clearly helps:',
+    '- merge_duplicates for two issues that ask for the same thing; close_issue for one that is stale or superseded, with a short note;',
+    '- split_issue for one too big for a single pull request (its parts cover exactly its scope, nothing new);',
+    '- set_dependencies where an issue truly waits for another; relabel for wrong labels;',
+    '- reorder_backlog so the work that unblocks the most, or that the brief needs first, starts next.',
+    'If the board is fine, change nothing.',
+  ].join('\n');
+}
+
 export function leadJobLabel(job: LeadJob) {
-  return `Triaging PR #${job.prNumber}`;
+  return job.kind === 'triage' ? `Triaging PR #${job.prNumber}` : job.reasons.includes('cleanup') ? 'Cleaning up the board' : 'Looking after the board';
 }
 
 // ---------- tools ----------
@@ -162,6 +264,13 @@ export interface LeadHandlers {
   closePull(a: { pr: number; comment: string }): Promise<string>;
   rebuild(a: { pr: number }): Promise<string>;
   escalate(a: { pr: number; brief: string }): Promise<string>;
+  closeIssue(a: { number: number; note: string }): Promise<string>;
+  mergeDuplicates(a: { keep: number; duplicate: number; note: string }): Promise<string>;
+  relabel(a: { number: number; add?: string[]; remove?: string[] }): Promise<string>;
+  reorderBacklog(a: { order: number[] }): Promise<string>;
+  splitIssue(a: { number: number; parts: { title: string; body: string }[]; note: string }): Promise<string>;
+  setDependencies(a: { number: number; depends_on: number[] }): Promise<string>;
+  releaseIssue(a: { number: number; note?: string }): Promise<string>;
 }
 
 /**
@@ -227,6 +336,56 @@ export function createLeadTools(floor: number, h: LeadHandlers): OfficeTools {
       { floor: FLOOR, pr: PR, brief: z.string().min(1).max(6000).describe(`The decision brief as markdown, starting with "## ${BRIEF_HEADING}"`) },
       mine((a) => h.escalate(a)),
     ),
+    tool(
+      'close_issue',
+      'Close a stale or superseded open issue as "not planned", with your note as a comment. Logged; the manager can reopen it. Refused for an issue held for a business reason, one in progress, or one an open PR closes.',
+      { floor: FLOOR, number: z.number().int().positive(), note: z.string().min(1).max(1000).describe('Why, e.g. "Superseded by #152."') },
+      mine((a) => h.closeIssue(a)),
+    ),
+    tool(
+      'merge_duplicates',
+      'Two open issues ask for the same thing: close the duplicate (with a comment pointing at the one kept) and add a note on the kept one with what the duplicate adds. Logged; the manager can undo it.',
+      { floor: FLOOR, keep: z.number().int().positive(), duplicate: z.number().int().positive(), note: z.string().min(1).max(600).describe('What the duplicate adds to the kept issue, if anything') },
+      mine((a) => h.mergeDuplicates(a)),
+    ),
+    tool(
+      'relabel',
+      "Add or remove labels on an open issue. Never the manager's labels (swarm:hold, swarm:skip, needs-input, decided:*). Logged.",
+      { floor: FLOOR, number: z.number().int().positive(), add: z.array(z.string().min(1).max(50)).max(5).optional(), remove: z.array(z.string().min(1).max(50)).max(5).optional() },
+      mine((a) => h.relabel(a)),
+    ),
+    tool(
+      'reorder_backlog',
+      'Put open issues first in the backlog, in this order: free agents take the first one ready to start. Issues not named keep their order after these. Logged; the manager can restore the old order.',
+      { floor: FLOOR, order: z.array(z.number().int().positive()).min(1).max(30).describe('Issue numbers, the next to start first') },
+      mine((a) => h.reorderBacklog(a)),
+    ),
+    tool(
+      'split_issue',
+      'Split an open issue too big for one pull request into 2 to 5 issues that together cover exactly its scope (nothing new), then close it as not planned pointing at them. Logged; the manager can undo it.',
+      {
+        floor: FLOOR,
+        number: z.number().int().positive(),
+        parts: z
+          .array(z.object({ title: z.string().min(1).max(120), body: z.string().min(1).max(4000).describe('Its part of the original scope, with acceptance criteria') }))
+          .min(2)
+          .max(5),
+        note: z.string().min(1).max(600).describe('Why it is split, posted on the original'),
+      },
+      mine((a) => h.splitIssue(a)),
+    ),
+    tool(
+      'set_dependencies',
+      'Rewrite the "Depends on #N" line of an open issue (not one in progress). The rest of the body stays. Logged.',
+      { floor: FLOOR, number: z.number().int().positive(), depends_on: z.array(z.number().int().positive()).max(10).describe('Issues it waits for; [] for none') },
+      mine((a) => h.setDependencies(a)),
+    ),
+    tool(
+      'release_issue',
+      'Put an issue that waits after its PR was closed, or that auto-assign skips after failed sessions, back in line for the next free agent, with an optional note for them. Logged.',
+      { floor: FLOOR, number: z.number().int().positive(), note: z.string().max(1000).optional().describe('Posted on the issue for the next developer') },
+      mine((a) => h.releaseIssue(a)),
+    ),
   ];
   const make = () => createSdkMcpServer({ name: 'office', version: '1.0.0', tools: defs });
   const server = make();
@@ -243,4 +402,20 @@ export function createLeadTools(floor: number, h: LeadHandlers): OfficeTools {
 }
 
 /** The lead's tool names, for the tests and the prompt preview. */
-export const LEAD_TOOLS = ['floor_status', 'write_brief', 'retry_qa', 'send_back', 'rerun_checks', 'close_pull', 'rebuild', 'escalate'] as const;
+export const LEAD_TOOLS = [
+  'floor_status',
+  'write_brief',
+  'retry_qa',
+  'send_back',
+  'rerun_checks',
+  'close_pull',
+  'rebuild',
+  'escalate',
+  'close_issue',
+  'merge_duplicates',
+  'relabel',
+  'reorder_backlog',
+  'split_issue',
+  'set_dependencies',
+  'release_issue',
+] as const;

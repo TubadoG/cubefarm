@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type CeoInfo, type CliView, type DoctorFinding, type EmailSenderView, type EmailView, type HireRequestView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
+import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type BoardChangeView, type CeoInfo, type CliView, type DoctorFinding, type EmailSenderView, type EmailView, type HireRequestView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
 import { blockers } from '../../shared/issues';
 import { latestListed } from '../../shared/watch';
 import { DEFAULT_WEATHER, DEFAULT_WORLD_EVENTS, EMPTY_WEATHER_VIEW, type WeatherView } from '../../shared/outside';
@@ -132,6 +132,7 @@ interface State {
   ticker: TickerItem[]; // the floors' recent activity lines, oldest first (world/ActivityTicker.tsx)
   emails: EmailView[]; // the CEO's emails: pending ones wait for the manager's OK (Approvals)
   decisions: DecisionView[]; // the Decision room's cards
+  boardLog: BoardChangeView[]; // the floor leads' board changes of the last week, with their undo (Decision room)
   emailSender: EmailSenderView; // whether email's sender is set up on the server (its kind and a hint only)
   notifyChannels: NotifyChannelsView; // which chat apps have a webhook saved (hints only) and how many devices get push
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
@@ -265,6 +266,7 @@ export const useStore = create<State>((set, get) => ({
   notifyChannels: { webhooks: { ntfy: { set: false, hint: '' } }, pushDevices: 0 },
   emails: [],
   decisions: [],
+  boardLog: [],
   emailSender: { set: false, mode: null, hint: '' },
   pong: {},
   restarting: false,
@@ -320,6 +322,7 @@ export const useStore = create<State>((set, get) => ({
           prPreviews,
           requests: d.requests,
           decisions: d.decisions ?? [],
+          boardLog: d.boardLog ?? [],
           ceo: d.ceo,
           messages: d.messages,
           phoneReadAt: d.phoneReadAt,
@@ -468,6 +471,9 @@ export const useStore = create<State>((set, get) => ({
         break;
       case 'decisions':
         set({ decisions: ev.decisions });
+        break;
+      case 'boardLog':
+        set({ boardLog: ev.boardLog });
         break;
       case 'emailSender':
         set({ emailSender: ev.emailSender });

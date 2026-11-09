@@ -1,7 +1,7 @@
 import { useStore } from './store';
 import type { PongResult } from '../../shared/pong';
 import type { AgentStyle } from '../../shared/looks';
-import type { AgentCli, AgentPromptView, AgentView, DoctorFinding, DoctorFix, EffortLevel, EmailView, GhRepoSummary, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
+import type { AgentCli, AgentPromptView, AgentView, BoardChangeView, DoctorFinding, DoctorFix, EffortLevel, EmailView, GhRepoSummary, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
 import type { JournalChunk, JournalDayView } from '../../shared/journal';
 import type { DecorItem, ProgressView } from '../../shared/progress';
 import type { DecisionChoice } from '../../shared/decisions';
@@ -106,6 +106,7 @@ export const api = {
   sendBack: (repoId: string, n: number, note?: string) => call('POST', `${r(repoId)}/pulls/${n}/fix`, { note }),
   answerDecision: (repoId: string, n: number, choice: DecisionChoice) => call<{ ok: boolean; answer: string }>('POST', `/api/decisions/${encodeURIComponent(repoId)}/${n}/answer`, choice),
   askDecision: (repoId: string, n: number, question: string) => call<{ ok: boolean }>('POST', `/api/decisions/${encodeURIComponent(repoId)}/${n}/ask`, { question }),
+  undoBoardChange: (id: string) => call<BoardChangeView>('POST', `/api/board/${encodeURIComponent(id)}/undo`),
   /** A new agent on the floor (refused past Settings → Most agents per floor). Empty settings use the office's defaults. */
   hireAgent: (repoId: string, opts: AgentSetupPatch & { name?: string } = {}) => call<AgentView>('POST', `${r(repoId)}/agents`, opts),
   updateAgent: (id: string, patch: AgentSetupPatch & { name?: string; look?: 'feminine' | 'masculine'; style?: AgentStyle | null }) => call('PATCH', `/api/agents/${id}`, patch),

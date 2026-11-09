@@ -663,6 +663,21 @@ export interface WorldSnapshot {
   progress: ProgressView; // coins, decorations and achievements (#210)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   decisions?: DecisionView[]; // the Decision room's cards: every open decision on every floor (absent in old journals)
+  boardLog?: BoardChangeView[]; // the floor leads' board changes of the last week, newest first (absent in old journals)
+}
+
+/** A board change a floor lead made (server/boardLog.ts), with its undo, as the Decision room lists it. */
+export interface BoardChangeView {
+  id: string;
+  repoId: string;
+  floor: number;
+  at: number;
+  by: string; // the lead's name
+  kind: 'close' | 'merge' | 'relabel' | 'reorder' | 'split' | 'depends' | 'release';
+  summary: string; // what it did, in a line
+  undo: string; // what its undo does
+  undoneAt: number | null;
+  undoError: string | null;
 }
 
 /** What changed about an agent since the office last sent it, with its id; every field for one it never sent. */
@@ -694,6 +709,8 @@ export type ServerEvent =
   | { type: 'email'; email: EmailView }
   /** The Decision room's cards, all of them, whenever one changes. */
   | { type: 'decisions'; decisions: DecisionView[] }
+  /** The floor leads' board changes of the last week, all of them, whenever one is made or undone. */
+  | { type: 'boardLog'; boardLog: BoardChangeView[] }
   | { type: 'emailSender'; emailSender: EmailSenderView }
   | { type: 'ceo'; ceo: CeoInfo }
   | { type: 'message'; message: PhoneMessage }

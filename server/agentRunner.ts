@@ -266,6 +266,16 @@ export function describeOfficeTool(action: string, input: Record<string, unknown
       return `♻️ rebuild PR #${String(input.pr ?? '?')}${floor}`;
     case 'write_brief':
       return `📋 write_brief #${String(input.number ?? '?')}${floor}`;
+    case 'merge_duplicates':
+      return `🧷 merge_duplicates #${String(input.duplicate ?? '?')} → #${String(input.keep ?? '?')}${floor}`;
+    case 'relabel':
+      return `🏷️ relabel #${String(input.number ?? '?')}${floor}`;
+    case 'reorder_backlog':
+      return `↕️ reorder_backlog${floor}${Array.isArray(input.order) ? `: ${input.order.slice(0, 6).map((n) => `#${n}`).join(', ')}` : ''}`;
+    case 'split_issue':
+      return `✂️ split_issue #${String(input.number ?? '?')}${floor}`;
+    case 'release_issue':
+      return `↩️ release_issue #${String(input.number ?? '?')}${floor}`;
   }
   return `🏢 ${action}(${clip(JSON.stringify(input), 120)})`;
 }

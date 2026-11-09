@@ -191,6 +191,11 @@ export async function closeIssue(fullName: string, number: number, comment: stri
   await gh(['issue', 'close', String(number), '-R', fullName, '--reason', reason, '--comment', comment]);
 }
 
+/** Reopen a closed issue, with a comment saying why. */
+export async function reopenIssue(fullName: string, number: number, comment: string): Promise<void> {
+  await gh(['issue', 'reopen', String(number), '-R', fullName, '--comment', comment]);
+}
+
 /** Replace an issue's body and/or add and remove labels. */
 export async function editIssue(fullName: string, number: number, edit: { body?: string; addLabels?: string[]; removeLabels?: string[] }): Promise<void> {
   const args = ['issue', 'edit', String(number), '-R', fullName];

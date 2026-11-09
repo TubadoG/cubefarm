@@ -8,7 +8,7 @@ import type { PrDetails } from './github.ts';
 import { defaultProjectsDir, DESK_SWEEP_INTERVAL_MS, HOME_DIR, LOG_BUFFER, SCHEDULER_INTERVAL_MS, STATE_FILE, SYNC_INTERVAL_MS, VERSION } from './config.ts';
 import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type DecisionContext, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
 import { alertStep, clockStep, decisionKey, deadlineOf, defaultComment, DEFAULT_DECISION_TIMEOUT_HOURS, managerReply, parseTimeoutHours, trackDecisions, whenLabel, type DecisionRecord } from './decisionClock.ts';
-import { DECIDED_DEFAULT, findBrief, NEEDS_INPUT, OFFICE_MARK, renderBrief, usableBrief, type Brief } from '../shared/brief.ts';
+import { DECIDED_DEFAULT, findBrief, NEEDS_INPUT, OFFICE_MARK, parseBrief, renderBrief, usableBrief, type Brief } from '../shared/brief.ts';
 import { afterClose, ASK_AGAIN_MS, closedWhy, closuresHeld, forgettable, issueOpen, nameList, pullNow, stillOpen, stoppedMessage, toAsk, toHold, type Closure, type FloorState, type KnownPull, type LearnedPull } from './closeCleanup.ts';
 import { depsPromptLine, type DepsOutcome } from './deps.ts';
 import { setUpDesk } from './deskSetup.ts';
@@ -27,7 +27,9 @@ import { reconcileStep, restartMessage, sessionStart, workState, type ReconcileS
 import { diagnose, finding, forget, NUDGE_WAIT_MS, nudgeText, QUIET_MS, triage, unclosedIssues, type Problem, type Remedy, type WatchAgent, type WatchMemory } from './watchdog.ts';
 import { sendBackPatch } from './sendBack.ts';
 import { checkTriageTarget, triageStep, type TriagePr } from './triage.ts';
-import { createLeadTools, DEFAULT_LEAD_SETTINGS, enqueueLead, escalationBrief, leadJobLabel, leadJobPrompt, leadModel, leadSettings, leadSystemPrompt, loadLeads, nextLeadJob, stuckStep, type LeadJob, type LeadState } from './lead.ts';
+import { boardWake, checkRelabel, createLeadTools, DEFAULT_LEAD_SETTINGS, enqueueLead, escalationBrief, issueBusinessHold, leadJobLabel, leadJobPrompt, leadModel, leadSettings, leadSystemPrompt, loadLeads, newLeadState, nextLeadJob, stuckStep, type BoardFacts, type LeadJob, type LeadState } from './lead.ts';
+import { boardView, isDigestMonday, lastWeek, newOrder, orderRank, pruneBoardLog, undoLink, undoSteps, withMergeNote, withoutMergeNote, type BoardChange, type BoardEntry } from './boardLog.ts';
+import { errorDesksToClear, failingRetryDue, heldReleaseDue } from './waits.ts';
 import { DEFAULT_PREVIEW, Previews, parsePreviewPatch } from './previews.ts';
 import { PREVIEW_SLUG } from './previewRunner.ts';
 import { pruneQaShots, qaShotsDir, readQaShot, removeQaShots, saveQaShots } from './qaShots.ts';
@@ -60,7 +62,7 @@ import { decisionKeyOf, decisionLink, MAX_DECISION_TEXT, parseDecisionChoice, ty
 import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DecisionInfo, type DigestFloor } from './digest.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
-import { blockers, holdUps, waitsMessage } from '../shared/issues.ts';
+import { blockers, holdUps, setDependsOn, waitsMessage } from '../shared/issues.ts';
 import { holdReason, notRoutine, parseHoldPaths } from '../shared/holds.ts';
 import { dayKey, journalFrame, legacyAgent, legacyRequest } from '../shared/journal.ts';
 import { cleanStyle, HAIR_COLORS, SKIN_TONES, type AgentStyle } from '../shared/looks.ts';
@@ -222,11 +224,16 @@ interface CeoState {
   lastFingerprint: string | null; // company state at the last review; unchanged means the next review is skipped
 }
 
-/** An open issue whose PR was closed: auto-assign leaves it for the manager (closeCleanup.ts toHold). */
+/**
+ * An open issue whose PR was closed: auto-assign leaves it until the floor lead decides, or HELD_RELEASE_MS pass
+ * (waits.ts). parked: a decision brief parked it, the manager's call: it stays until they hand it out.
+ */
 interface HeldIssue {
   repoId: string;
   issue: number;
   pr: number;
+  since?: number; // absent: held before the floor lead (counts from the office's start)
+  parked?: boolean;
 }
 
 interface Persisted {
@@ -249,6 +256,8 @@ interface Persisted {
   decisions: DecisionRecord[]; // decisions waiting for the manager, and when the office first saw them (decisionClock.ts)
   decisionNotes: Record<string, DecisionNotes>; // the Decision room's threads and answers, by decisionKeyOf
   leads: Record<string, LeadState>; // each floor lead's queue and current job, by repo id (lead.ts)
+  boardLog: BoardEntry[]; // the floor leads' board changes and their undo (boardLog.ts)
+  order: Record<string, number[]>; // each floor's backlog order set by its lead (reorder_backlog), by repo id
 }
 
 /** A Decision room card's own state: its thread with the CEO, and the manager's answer. */
@@ -550,6 +559,8 @@ export class Swarm {
     decisions: [],
     decisionNotes: {},
     leads: {},
+    boardLog: [],
+    order: {},
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -582,6 +593,13 @@ export class Swarm {
       closePull: (a) => this.triageClosePull(on(a)),
       rebuild: (a) => this.triageRebuild(on(a)),
       escalate: (a) => this.triageEscalate(on(a)),
+      closeIssue: (a) => this.boardCloseIssue(repo, a),
+      mergeDuplicates: (a) => this.boardMerge(repo, a),
+      relabel: (a) => this.boardRelabel(repo, a),
+      reorderBacklog: (a) => this.boardReorder(repo, a),
+      splitIssue: (a) => this.boardSplit(repo, a),
+      setDependencies: (a) => this.boardDepends(repo, a),
+      releaseIssue: (a) => this.boardRelease(repo, a),
     });
   }
   private ceoIssues = new IssueCap(MAX_ISSUES_PER_JOB); // issues filed during the current CEO job
@@ -770,6 +788,8 @@ export class Swarm {
         decisions: Array.isArray(loaded.decisions) ? loaded.decisions : [],
         decisionNotes: loaded.decisionNotes && typeof loaded.decisionNotes === 'object' ? loaded.decisionNotes : {},
         leads: loadLeads(loaded.leads),
+        boardLog: Array.isArray(loaded.boardLog) ? pruneBoardLog(loaded.boardLog, Date.now()) : [],
+        order: loaded.order && typeof loaded.order === 'object' ? loaded.order : {},
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -1179,6 +1199,7 @@ export class Swarm {
       progress: this.progressView(),
       pong: this.state.pong,
       decisions: this.decisionViews(),
+      boardLog: this.boardLogView(),
     };
   }
 
@@ -2192,7 +2213,10 @@ export class Swarm {
     const rt = this.repoRt.get(repo.id);
     const add = rt ? toHold(pr, this.floorState(rt)).filter((n) => !this.isHeld(repo.id, n)) : [];
     if (!add.length) return;
-    this.state.held.push(...add.map((issue) => ({ repoId: repo.id, issue, pr: pr.number })));
+    // A PR a decision brief parked (or the manager closed on a card with a brief) is the manager's call: it stays held.
+    const parked = usableBrief(this.briefs.get(decisionKey({ repoId: repo.id, kind: 'pr', number: pr.number })) ?? null);
+    this.state.held.push(...add.map((issue) => ({ repoId: repo.id, issue, pr: pr.number, since: Date.now(), parked })));
+    if (!parked && this.leadOf(repo)) this.enqueueLead(repo, { kind: 'board', reasons: ['held'], at: Date.now() });
     this.emitRepo(repo);
     this.save();
   }
@@ -3501,7 +3525,7 @@ export class Swarm {
   }
 
   private scheduleOffset = 0;
-  private issueFailures = new Map<string, number>(); // `${repoId}#${issue}` → failed sessions on it
+  private issueFailures = new Map<string, { count: number; at: number }>(); // `${repoId}#${issue}` → failed sessions on it, and the last one
   private nudged = new Set<string>(); // `${repoId}#${issue}`: its agent was asked once to finish the missing PR
   private prFilesSeen = new Map<string, { sha: string; files: string[] }>(); // `${repoId}#${pr}`: its changed files at that head, for merge holds
   private fixNudged = new Set<string>(); // `${repoId}#${pr}`: its fix session was asked once to push or say why not
@@ -3517,6 +3541,7 @@ export class Swarm {
     const issues = this.repoRt.get(repo.id)!.issues;
     const open = new Set(issues.map((i) => i.number));
     const weight = holdUps(issues);
+    const order = this.state.order[repo.id] ?? [];
     return issues
       .filter(
         (i) =>
@@ -3524,10 +3549,11 @@ export class Swarm {
           !this.issueTaken(repo, i.number) &&
           !this.isHeld(repo.id, i.number) &&
           blockers(i.body, open).length === 0 &&
-          (this.issueFailures.get(`${repo.id}#${i.number}`) ?? 0) < MAX_ISSUE_FAILURES,
+          (this.issueFailures.get(`${repo.id}#${i.number}`)?.count ?? 0) < MAX_ISSUE_FAILURES,
       )
       .map((issue) => ({ issue, ...weight.get(issue.number)! }))
-      .sort((x, y) => y.chain - x.chain || y.waiting - x.waiting || x.issue.number - y.issue.number);
+      // The floor lead's order first (reorder_backlog), then the ones holding up the most.
+      .sort((x, y) => orderRank(order, x.issue.number) - orderRank(order, y.issue.number) || y.chain - x.chain || y.waiting - x.waiting || x.issue.number - y.issue.number);
   }
 
   /**
@@ -3720,15 +3746,23 @@ export class Swarm {
     this.broadcast({ type: 'ops', ops });
   }
 
-  /** A failed session releases its issue for someone else; an issue that keeps failing waits for the manager. */
+  /**
+   * A failed session releases its issue for someone else. One that keeps failing is skipped until the floor lead looks at
+   * it (split, a note for the next developer, or close), or FAILING_RETRY_MS pass: never until the manager steps in.
+   */
   private issueFailed(repo: PersistedRepo, n: number | null) {
     if (n == null || this.limited()) return; // the usage limit isn't the issue's fault
     const key = `${repo.id}#${n}`;
-    const failures = (this.issueFailures.get(key) ?? 0) + 1;
-    this.issueFailures.set(key, failures);
-    if (failures === MAX_ISSUE_FAILURES) {
-      this.postMessage('office', `⚠️ Issue #${n} on ${repo.fullName} failed ${failures} sessions in a row, so auto-assign skips it now. Assign it to someone by hand once it's sorted.`);
-    }
+    const failures = (this.issueFailures.get(key)?.count ?? 0) + 1;
+    this.issueFailures.set(key, { count: failures, at: Date.now() });
+    if (failures === MAX_ISSUE_FAILURES) this.issueSkipped(repo, n, `failed ${failures} sessions in a row`);
+  }
+
+  /** An issue auto-assign now skips: the floor lead looks at it, else the office tries it again later (waits.ts). */
+  private issueSkipped(repo: PersistedRepo, n: number, why: string) {
+    const lead = this.leadOf(repo);
+    if (lead) this.enqueueLead(repo, { kind: 'board', reasons: ['failing'], at: Date.now() });
+    this.postMessage('office', `⚠️ Issue #${n} on ${repo.fullName} ${why}, so auto-assign skips it for now. ${lead ? `${lead.name}, the floor lead, looks at it` : 'The office tries it again in a few hours'}.`);
   }
 
   /**
@@ -3746,6 +3780,7 @@ export class Swarm {
     this.maybeHeartbeat();
     this.startCeoWork();
     this.stuckTick();
+    this.waitsTick();
     this.startLeadWork();
     const repos = this.state.repos.filter((r) => {
       const rt = this.repoRt.get(r.id);
@@ -4393,8 +4428,10 @@ export class Swarm {
     return [l.job, ...l.queue].find((j) => j?.kind === 'triage' && j.prNumber === q.prNumber) ?? null;
   }
 
+
   /** The record a triage job is for, while it is still waiting on a decision. */
   private stuckRecord(repoId: string, job: LeadJob) {
+    if (job.kind !== 'triage') return undefined;
     return this.state.qa.find((q) => q.repoId === repoId && q.prNumber === job.prNumber && q.status === 'needs-human' && !q.escalated);
   }
 
@@ -4546,13 +4583,13 @@ export class Swarm {
         if (a) this.removeLead(a);
         continue;
       }
-      this.state.leads[repo.id] ??= { queue: [], job: null };
+      this.state.leads[repo.id] ??= newLeadState();
       if (a) {
         const i = interrupted.indexOf(a);
         if (i >= 0) {
           interrupted.splice(i, 1);
           const l = this.state.leads[repo.id];
-          if (l.job) l.queue = [l.job, ...l.queue.filter((j) => j.prNumber !== l.job!.prNumber)];
+          if (l.job) l.queue = enqueueLead(l.queue, l.job, true);
           l.job = null;
           Object.assign(a, { status: 'idle', lastError: null });
           this.appendLog(a, [{ kind: 'system', text: '↺ The office server restarted. Picking the job back up.' }]);
@@ -4598,7 +4635,7 @@ export class Swarm {
       };
       this.state.agents.push(lead);
       this.agentRt.set(lead.id, { log: [], session: null, currentTool: null, browserUrl: null, screenshot: null, shots: [], terminal: null });
-      this.appendLog(lead, [{ kind: 'system', text: `🧭 ${name} is floor ${repo.floor}'s lead: they triage its stuck pull requests so technical problems never wait for you.` }]);
+      this.appendLog(lead, [{ kind: 'system', text: `🧭 ${name} is floor ${repo.floor}'s lead: they triage its stuck pull requests and keep its board in order, so technical problems never wait for you.` }]);
       this.broadcast({ type: 'agent', agent: this.agentView(lead, false) });
     }
   }
@@ -4616,7 +4653,7 @@ export class Swarm {
   }
 
   private enqueueLead(repo: PersistedRepo, job: LeadJob) {
-    const l = (this.state.leads[repo.id] ??= { queue: [], job: null });
+    const l = (this.state.leads[repo.id] ??= newLeadState());
     l.queue = enqueueLead(l.queue, job);
     this.save();
     setTimeout(() => this.schedule(), 150);
@@ -4629,8 +4666,9 @@ export class Swarm {
       const a = this.leadOf(repo);
       const l = this.state.leads[repo.id];
       if (!a || !l) continue;
-      const stale = l.queue.filter((j) => !this.stuckRecord(repo.id, j));
+      const stale = l.queue.filter((j) => j.kind === 'triage' && !this.stuckRecord(repo.id, j));
       if (stale.length) l.queue = l.queue.filter((j) => !stale.includes(j));
+      this.boardWakeTick(repo, l);
       if (BUSY.includes(a.status) || l.job || !l.queue.length || this.slotsFull()) continue;
       const rt = this.repoRt.get(repo.id);
       if (!rt || rt.cloneStatus !== 'ready' || rt.lastSync == null) continue; // something to read first
@@ -4654,18 +4692,19 @@ export class Swarm {
     this.save();
     const dir = path.join(LEADS_DIR, repo.id.replace(/[^\w.-]+/g, '__'));
     await fs.mkdir(dir, { recursive: true }).catch(() => undefined);
-    const pr = await this.triagePr(repo, job);
+    const pr = job.kind === 'triage' ? await this.triagePr(repo, job) : null;
     if (a.status !== 'working' || !this.state.agents.includes(a)) {
       l.job = null; // stopped before the session started
       this.endTriage(repo.id, job);
       return;
     }
+    if (job.kind === 'board' && job.reasons.includes('cleanup')) Object.assign(l, { lastCleanupAt: Date.now(), fingerprint: this.boardFingerprint(repo) });
     const clone = this.backend.mainDir(repo.fullName);
     const { model, effort } = leadModel(job.kind, a, this.state.settings.lead);
     rt.session = this.backend.startSession(
       {
         cwd: dir,
-        prompt: leadJobPrompt(job, { floor: repo.floor, fullName: repo.fullName, clone }, pr),
+        prompt: leadJobPrompt(job, { floor: repo.floor, fullName: repo.fullName, clone }, pr, job.kind === 'board' ? this.boardFacts(repo) : null),
         systemAppend: leadSystemPrompt({ name: a.name, floor: repo.floor, fullName: repo.fullName, company: this.state.settings.companyName, notesFile: path.join(dir, 'NOTES.md') }),
         model,
         effort,
@@ -4756,6 +4795,279 @@ export class Swarm {
           return { number: p.number, title: p.title, labels: p.labels ?? [], qa: q?.status ?? null, round: q?.round ?? null, stuckWhy: q?.status === 'needs-human' ? q.stuckWhy : null, escalated: q?.escalated ?? false, mergeable: p.mergeable, checks: p.checks };
         }),
     });
+  }
+
+  // ---------- the floor lead's board ----------
+
+  /** What a clean-up looks at: unchanged since the last one means it is skipped (lead.ts boardWake). */
+  private boardFingerprint(repo: PersistedRepo) {
+    const rt = this.repoRt.get(repo.id);
+    const data = [
+      rt?.issues.map((i) => [i.number, i.labels.join(','), i.body.length]),
+      rt?.pulls.filter((p) => p.state === 'OPEN').map((p) => p.number),
+      this.state.held.filter((h) => h.repoId === repo.id).map((h) => h.issue),
+      this.state.order[repo.id] ?? [],
+    ];
+    return crypto.createHash('sha1').update(JSON.stringify(data)).digest('hex');
+  }
+
+  /** The timer and backlog wake rules for a floor's lead, once its floor has synced. */
+  private boardWakeTick(repo: PersistedRepo, l: LeadState) {
+    const rt = this.repoRt.get(repo.id);
+    if (!rt?.lastSync || rt.cloneStatus !== 'ready') return;
+    const now = Date.now();
+    const w = boardWake({ now, state: l, ready: this.readyIssues(repo).length, minReady: repo.minReady, fingerprint: this.boardFingerprint(repo) });
+    l.low = w.low;
+    if (w.skipCleanup) l.lastCleanupAt = now; // nothing changed: the next clean-up is in 4 hours
+    if (w.reasons.length) this.enqueueLead(repo, { kind: 'board', reasons: w.reasons, at: now });
+  }
+
+  /** What a board job's prompt lists: the ready stock, held issues and issues skipped after failed sessions. */
+  private boardFacts(repo: PersistedRepo): BoardFacts {
+    const issues = this.repoRt.get(repo.id)?.issues ?? [];
+    const title = (n: number) => issues.find((i) => i.number === n)?.title ?? '';
+    return {
+      ready: this.readyIssues(repo).length,
+      minReady: repo.minReady,
+      held: this.state.held.filter((h) => h.repoId === repo.id && !h.parked && issues.some((i) => i.number === h.issue)).map((h) => ({ issue: h.issue, title: title(h.issue), pr: h.pr })),
+      failing: issues
+        .map((i) => ({ issue: i.number, title: i.title, failures: this.issueFailures.get(`${repo.id}#${i.number}`)?.count ?? 0 }))
+        .filter((f) => f.failures >= MAX_ISSUE_FAILURES),
+    };
+  }
+
+  /**
+   * The office's own fallbacks for the non-business waits (waits.ts), every scheduler pass: a held issue goes back in
+   * line after a day (unless a brief parked it), an issue skipped after failed sessions is tried again after a few
+   * hours, and an agent left in an error gets its desk cleared before the alarm would call the manager.
+   */
+  private waitsTick(now = Date.now()) {
+    const due = this.state.held.filter((h) => heldReleaseDue({ since: h.since ?? this.bootAt, parked: !!h.parked }, now));
+    if (due.length) {
+      this.state.held = this.state.held.filter((h) => !due.includes(h));
+      for (const id of new Set(due.map((h) => h.repoId))) {
+        const repo = this.state.repos.find((r) => r.id === id);
+        if (repo) this.emitRepo(repo);
+      }
+      this.postMessage('office', `↩️ ${due.map((h) => `#${h.issue}`).join(', ')} went back in line: ${due.length === 1 ? 'its PR was' : 'their PRs were'} closed a day ago and nobody closed ${due.length === 1 ? 'it' : 'them'}.`);
+      this.save();
+    }
+    for (const [key, f] of this.issueFailures) if (failingRetryDue(f, MAX_ISSUE_FAILURES, now)) this.issueFailures.delete(key);
+    for (const a of errorDesksToClear(this.state.agents, now)) {
+      try {
+        this.resetAgent(a.id);
+        this.appendLog(a, [{ kind: 'system', text: '🩺 The office cleared the desk after the error, so the next task can start.' }]);
+      } catch {
+        // busy again meanwhile: nothing to clear
+      }
+    }
+  }
+
+  /** A brief on an issue (body or a comment), for the business-hold check. */
+  private async issueHasBrief(repo: PersistedRepo, n: number) {
+    const talk = await this.backend.discussion(repo.fullName, n).catch(() => null);
+    return !!talk && !!findBrief(talk.body, talk.comments);
+  }
+
+  /** An open issue the lead may change: open on its floor, and (unless `inProgressOk`) nobody building it. */
+  private boardIssue(repo: PersistedRepo, n: number, what: string, inProgressOk = false) {
+    const issue = this.repoRt.get(repo.id)?.issues.find((i) => i.number === Number(n));
+    if (!issue) throw new HttpError(404, `#${n} isn't an open issue on floor ${repo.floor}.`);
+    if (!inProgressOk && this.issueTaken(repo, issue.number)) throw new HttpError(409, `#${issue.number} is in progress, so you can't ${what} it now.`);
+    return issue;
+  }
+
+  /** Refused for an issue held for a business reason: the manager's call (lead.ts issueBusinessHold). */
+  private async noBusinessHold(repo: PersistedRepo, issue: IssueInfo, what: string) {
+    const hold = issueBusinessHold({ labels: issue.labels, brief: !!parseBrief(issue.body) || (await this.issueHasBrief(repo, issue.number)) });
+    if (hold) throw new HttpError(409, `#${issue.number} is held for a business reason (${hold}), so you can't ${what} it. It waits for the manager.`);
+  }
+
+  /** Record a board change with its undo, and tell the tabs. */
+  private logBoard(repo: PersistedRepo, change: BoardChange) {
+    const by = this.leadOf(repo)?.name ?? 'The floor lead';
+    const e: BoardEntry = { id: crypto.randomUUID().slice(0, 12), repoId: repo.id, at: Date.now(), by, change, undoneAt: null, undoError: null };
+    this.state.boardLog = [...pruneBoardLog(this.state.boardLog, e.at), e];
+    this.emitBoardLog();
+    this.save();
+    return e;
+  }
+
+  private boardLogView() {
+    const floor = (id: string) => this.state.repos.find((r) => r.id === id)?.floor ?? 0;
+    return lastWeek(this.state.boardLog, Date.now()).map((e) => boardView(e, floor(e.repoId)));
+  }
+
+  private emitBoardLog() {
+    this.broadcast({ type: 'boardLog', boardLog: this.boardLogView() });
+  }
+
+  private async boardCloseIssue(repo: PersistedRepo, x: { number: number; note: string }) {
+    const issue = this.boardIssue(repo, x.number, 'close');
+    const note = String(x.note ?? '').trim().slice(0, 1000);
+    if (!note) throw new HttpError(400, 'Say why it is closing: the note is posted on it.');
+    await this.noBusinessHold(repo, issue, 'close');
+    checkCloseIssue({ floor: repo.floor, number: issue.number, state: 'OPEN', pulls: this.repoRt.get(repo.id)?.pulls ?? [] });
+    const by = this.leadOf(repo)?.name ?? 'The floor lead';
+    await this.backend.closeIssue(repo.fullName, issue.number, `${note}\n\n<sub>Closed by ${by}, the cubefarm floor lead. The manager can reopen it from the office's board log.</sub>\n${OFFICE_MARK}`, 'not planned');
+    this.logBoard(repo, { kind: 'close', issue: issue.number, title: issue.title, note });
+    this.learnIssueClosed(repo, issue.number);
+    void this.syncRepo(repo.id);
+    return `Closed #${issue.number} as not planned. It is in the board log, so the manager can reopen it.`;
+  }
+
+  private async boardMerge(repo: PersistedRepo, x: { keep: number; duplicate: number; note: string }) {
+    if (Number(x.keep) === Number(x.duplicate)) throw new HttpError(400, 'Name two different issues.');
+    const keep = this.boardIssue(repo, x.keep, 'merge into', true);
+    const dup = this.boardIssue(repo, x.duplicate, 'merge away');
+    await this.noBusinessHold(repo, dup, 'merge away');
+    checkCloseIssue({ floor: repo.floor, number: dup.number, state: 'OPEN', pulls: this.repoRt.get(repo.id)?.pulls ?? [] });
+    const note = String(x.note ?? '').trim().slice(0, 600) || 'Nothing beyond it.';
+    const by = this.leadOf(repo)?.name ?? 'The floor lead';
+    await this.backend.editIssue(repo.fullName, keep.number, { body: withMergeNote(keep.body, dup, note) });
+    await this.backend.closeIssue(repo.fullName, dup.number, `Duplicate of #${keep.number}: ${note}\n\n<sub>Merged by ${by}, the cubefarm floor lead. The manager can undo it from the office's board log.</sub>\n${OFFICE_MARK}`, 'not planned');
+    this.logBoard(repo, { kind: 'merge', keep: keep.number, duplicate: dup.number, title: dup.title, note });
+    this.learnIssueClosed(repo, dup.number);
+    void this.syncRepo(repo.id);
+    return `Merged #${dup.number} into #${keep.number}: #${dup.number} is closed and #${keep.number} carries the note.`;
+  }
+
+  private async boardRelabel(repo: PersistedRepo, x: { number: number; add?: string[]; remove?: string[] }) {
+    const issue = this.boardIssue(repo, x.number, 'relabel', true);
+    const add = [...new Set((x.add ?? []).map((l) => String(l).trim()).filter((l) => l && !issue.labels.includes(l)))];
+    const remove = [...new Set((x.remove ?? []).map((l) => String(l).trim()).filter((l) => issue.labels.includes(l)))];
+    try {
+      checkRelabel(x.add ?? [], x.remove ?? []);
+    } catch (err) {
+      throw new HttpError(409, (err as Error).message);
+    }
+    if (!add.length && !remove.length) return `#${issue.number} already has those labels.`;
+    await this.backend.editIssue(repo.fullName, issue.number, { addLabels: add, removeLabels: remove });
+    this.logBoard(repo, { kind: 'relabel', issue: issue.number, added: add, removed: remove });
+    void this.syncRepo(repo.id);
+    return `Relabelled #${issue.number}.`;
+  }
+
+  private async boardReorder(repo: PersistedRepo, x: { order: number[] }) {
+    const open = new Set((this.repoRt.get(repo.id)?.issues ?? []).map((i) => i.number));
+    const before = (this.state.order[repo.id] ?? []).filter((n) => open.has(n));
+    let after: number[];
+    try {
+      after = newOrder(before, (x.order ?? []).map(Number), open);
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
+    this.state.order[repo.id] = after;
+    this.logBoard(repo, { kind: 'reorder', before, after });
+    setTimeout(() => this.schedule(), 200);
+    return `The backlog starts with ${after.slice(0, 5).map((n) => `#${n}`).join(', ')}${after.length > 5 ? ', …' : ''}.`;
+  }
+
+  private async boardSplit(repo: PersistedRepo, x: { number: number; parts: { title: string; body: string }[]; note: string }) {
+    const issue = this.boardIssue(repo, x.number, 'split');
+    await this.noBusinessHold(repo, issue, 'split');
+    checkCloseIssue({ floor: repo.floor, number: issue.number, state: 'OPEN', pulls: this.repoRt.get(repo.id)?.pulls ?? [] });
+    const parts = (x.parts ?? []).map((p) => ({ title: String(p.title ?? '').trim().slice(0, 120), body: String(p.body ?? '').trim().slice(0, 4000) })).filter((p) => p.title && p.body);
+    if (parts.length < 2 || parts.length > 5) throw new HttpError(400, 'Split it into 2 to 5 parts, each with a title and a body.');
+    const note = String(x.note ?? '').trim().slice(0, 600);
+    const by = this.leadOf(repo)?.name ?? 'The floor lead';
+    // Only a split files issues: each part is the original's own scope, and says where it came from.
+    const filed: number[] = [];
+    for (const p of parts) filed.push(await this.backend.createIssue(repo.fullName, p.title, `${p.body}\n\n---\n_Split from #${issue.number} by ${by}, the cubefarm floor lead._`, issue.labels.filter((l) => !/^(swarm:hold|swarm:skip|needs-input|decided:.*)$/i.test(l))));
+    await this.backend.closeIssue(repo.fullName, issue.number, `Split into ${filed.map((n) => `#${n}`).join(', ')}: ${note || 'too big for one pull request.'}\n\n<sub>Split by ${by}, the cubefarm floor lead. The manager can undo it from the office's board log.</sub>\n${OFFICE_MARK}`, 'not planned');
+    this.logBoard(repo, { kind: 'split', issue: issue.number, title: issue.title, parts: filed });
+    this.issueFailures.delete(`${repo.id}#${issue.number}`);
+    this.learnIssueClosed(repo, issue.number);
+    await this.syncRepo(repo.id);
+    return `Split #${issue.number} into ${filed.map((n) => `#${n}`).join(', ')}, and closed it.`;
+  }
+
+  private async boardDepends(repo: PersistedRepo, x: { number: number; depends_on: number[] }) {
+    const issue = this.boardIssue(repo, x.number, 'change the dependencies of');
+    const issues = this.repoRt.get(repo.id)?.issues ?? [];
+    const before = blockers(issue.body, new Set(issues.map((i) => i.number)));
+    const summary = await this.setDependencies({ floor: repo.floor, number: issue.number, depends_on: x.depends_on ?? [] });
+    const after = [...new Set((x.depends_on ?? []).map(Number))];
+    if (before.join() !== after.join()) this.logBoard(repo, { kind: 'depends', issue: issue.number, before, after });
+    return summary;
+  }
+
+  private async boardRelease(repo: PersistedRepo, x: { number: number; note?: string }) {
+    const issue = this.boardIssue(repo, x.number, 'release');
+    const held = this.state.held.find((h) => h.repoId === repo.id && h.issue === issue.number);
+    const key = `${repo.id}#${issue.number}`;
+    const failing = (this.issueFailures.get(key)?.count ?? 0) >= MAX_ISSUE_FAILURES;
+    if (held?.parked) throw new HttpError(409, `#${issue.number} was parked by a decision brief: the manager hands it out again.`);
+    if (!held && !failing) throw new HttpError(409, `#${issue.number} isn't waiting: it is already in line.`);
+    await this.noBusinessHold(repo, issue, 'release');
+    const note = String(x.note ?? '').trim().slice(0, 1000);
+    if (note) await this.backend.commentIssue(repo.fullName, issue.number, `${note}\n\n<sub>From ${this.leadOf(repo)?.name ?? 'the floor lead'}, the cubefarm floor lead, for the next developer.</sub>\n${OFFICE_MARK}`);
+    if (held) this.state.held = this.state.held.filter((h) => h !== held);
+    this.issueFailures.delete(key);
+    this.logBoard(repo, { kind: 'release', issue: issue.number, was: held ? 'held' : 'failing', pr: held?.pr ?? null });
+    this.emitRepo(repo);
+    setTimeout(() => this.schedule(), 200);
+    return `#${issue.number} is back in line for the next free agent.`;
+  }
+
+  /** The manager undoes a board change from the Decision room (POST /api/board/:id/undo). No approval needed. */
+  async undoBoardChange(id: string) {
+    const e = this.state.boardLog.find((x) => x.id === id);
+    if (!e) throw new HttpError(404, 'That change is no longer in the board log.');
+    if (e.undoneAt !== null) throw new HttpError(409, 'That change was already undone.');
+    const repo = this.state.repos.find((r) => r.id === e.repoId);
+    if (!repo) throw new HttpError(404, 'That floor has left the building.');
+    try {
+      for (const step of undoSteps(e.change)) {
+        switch (step.do) {
+          case 'reopen':
+            if ((await this.backend.issueState(repo.fullName, step.issue).catch(() => null)) === 'CLOSED') await this.backend.reopenIssue(repo.fullName, step.issue, step.comment);
+            this.repoRt.get(repo.id)?.closedIssues.delete(step.issue);
+            break;
+          case 'close':
+            if ((await this.backend.issueState(repo.fullName, step.issue).catch(() => null)) === 'OPEN') {
+              await this.backend.closeIssue(repo.fullName, step.issue, step.comment, 'not planned');
+              this.learnIssueClosed(repo, step.issue);
+            }
+            break;
+          case 'drop-merge-note': {
+            const d = await this.backend.issueDetails(repo.fullName, step.issue);
+            const body = withoutMergeNote(d.body, step.duplicate);
+            if (body !== d.body) await this.backend.editIssue(repo.fullName, step.issue, { body });
+            break;
+          }
+          case 'labels':
+            await this.backend.editIssue(repo.fullName, step.issue, { addLabels: step.add, removeLabels: step.remove });
+            break;
+          case 'order':
+            this.state.order[repo.id] = step.order;
+            break;
+          case 'depends': {
+            const d = await this.backend.issueDetails(repo.fullName, step.issue);
+            const body = setDependsOn(d.body, step.deps);
+            if (body !== d.body) await this.backend.editIssue(repo.fullName, step.issue, { body });
+            break;
+          }
+          case 'hold':
+            if (step.was === 'held' && !this.isHeld(repo.id, step.issue)) this.state.held.push({ repoId: repo.id, issue: step.issue, pr: step.pr ?? 0, since: Date.now(), parked: true });
+            if (step.was === 'failing') this.issueFailures.set(`${repo.id}#${step.issue}`, { count: MAX_ISSUE_FAILURES, at: Date.now() });
+            break;
+        }
+      }
+      Object.assign(e, { undoneAt: Date.now(), undoError: null });
+    } catch (err) {
+      e.undoError = oneLine(err).slice(0, 300);
+      this.emitBoardLog();
+      this.save();
+      throw new HttpError(502, `GitHub refused part of the undo: ${e.undoError}. Try again.`);
+    } finally {
+      void this.syncRepo(repo.id);
+    }
+    this.emitBoardLog();
+    this.emitRepo(repo);
+    this.save();
+    this.toast('success', `Undone: ${boardView(e, repo.floor).summary.slice(0, 120)}`);
+    return boardView(e, repo.floor);
   }
 
   // ---------- idle desks ----------
@@ -5005,8 +5317,10 @@ export class Swarm {
     } else {
       this.stuckStrikes.delete(key); // given up: a hand assignment starts with a clean slate
       // Auto-assign skips an issue that failed this often; a PR's QA or fix goes to "needs you" the way stuck PRs do.
-      if (a.task === 'issue' && a.issueNumber != null) this.issueFailures.set(`${a.repoId}#${a.issueNumber}`, MAX_ISSUE_FAILURES);
-      this.requeue(a, `the screen hadn't changed for ${mins} minutes a second time, so ${what} waits for the manager`);
+      const issue = a.task === 'issue' ? a.issueNumber : null;
+      if (issue != null) this.issueFailures.set(`${a.repoId}#${issue}`, { count: MAX_ISSUE_FAILURES, at: Date.now() });
+      this.requeue(a, `the screen hadn't changed for ${mins} minutes a second time, so ${what} ${issue != null ? 'is skipped for now' : 'goes to the floor lead'}`);
+      if (issue != null && repo) this.issueSkipped(repo, issue, `froze ${a.name}'s terminal twice`);
       if (rec) this.stuck(rec, {}, `${a.name}'s session got stuck on it twice`);
     }
     this.postMessage('office', stuckMessage(a.name, mins, `${what}${repo && this.state.repos.length > 1 ? ` on ${repo.fullName}` : ''}`, action, lastScreenLine(screen)));
@@ -5891,6 +6205,19 @@ export class Swarm {
           merged: mergedSince(merged, now).map((p) => ({ number: p.number, title: p.title, url: p.url })),
           inProgress: (rt?.issues ?? []).filter((i) => this.issueTaken(repo, i.number)).map((i) => i.title),
           milestone: milestones[0] ? { title: milestones[0].title, open: milestones[0].open, closed: milestones[0].closed } : null,
+          // The Monday digest: last week's board changes by the floor lead, each with its undo in the office.
+          ...(isDigestMonday(new Date(now))
+            ? {
+                boardChanges: lastWeek(
+                  this.state.boardLog.filter((e) => e.repoId === repo.id),
+                  now,
+                ).map((e) => {
+                  const v = boardView(e, repo.floor);
+                  const url = this.state.settings.notify.officeUrl;
+                  return { at: e.at, by: e.by, summary: v.summary, undo: v.undo, undone: e.undoneAt !== null, link: url ? undoLink(url, e.id) : null };
+                }),
+              }
+            : {}),
         };
       }),
     );
@@ -6215,7 +6542,7 @@ export class Swarm {
             title: i.title,
             waitsFor: blockers(i.body, open),
             inProgress: this.issueTaken(r, i.number),
-            ...(this.isHeld(r.id, i.number) ? { waitsForManager: 'its PR was closed; only the manager hands it out again' } : {}),
+            ...(this.isHeld(r.id, i.number) ? { waitsAfterClose: "its PR was closed; the floor lead decides whether it goes back in line" } : {}),
           })),
           pullRequests: rt.pulls
             .filter((p) => p.state === 'OPEN')

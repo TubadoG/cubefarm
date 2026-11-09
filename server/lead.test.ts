@@ -4,7 +4,12 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { renderBrief, type Brief } from '../shared/brief.ts';
 import { noShell } from './clis.ts';
 import {
+  boardWake,
+  checkRelabel,
   createLeadTools,
+  issueBusinessHold,
+  LEAD_CLEANUP_MS,
+  newLeadState,
   DEFAULT_LEAD_SETTINGS,
   enqueueLead,
   escalationBrief,
@@ -45,12 +50,56 @@ describe('the lead’s queue', () => {
     expect(nextLeadJob([job(9, 30), job(3, 10), job(5, 20)])).toEqual(job(3, 10));
     expect(nextLeadJob([])).toBeNull();
   });
+  it('keeps one board job, with every reason it was woken for', () => {
+    const q = enqueueLead(enqueueLead([job(4, 5)], { kind: 'board', reasons: ['held'], at: 3 }), { kind: 'board', reasons: ['low-backlog', 'held'], at: 9 });
+    expect(q).toEqual([job(4, 5), { kind: 'board', reasons: ['low-backlog', 'held'], at: 3 }]);
+  });
+  it('triages stuck PRs before looking after the board', () => {
+    expect(nextLeadJob([{ kind: 'board', reasons: ['cleanup'], at: 1 }, job(8, 50)])).toEqual(job(8, 50));
+  });
   it('loads saved state, putting a job cut off by a restart back at the front', () => {
-    expect(loadLeads({ 'a/b': { queue: [job(5, 2), { kind: 'nope' }], job: job(3, 1) }, 'c/d': null })).toEqual({
-      'a/b': { queue: [job(3, 1), job(5, 2)], job: null },
-      'c/d': { queue: [], job: null },
+    expect(loadLeads({ 'a/b': { queue: [job(5, 2), { kind: 'nope' }], job: job(3, 1), lastCleanupAt: 7, low: true }, 'c/d': null })).toEqual({
+      'a/b': { ...newLeadState(), queue: [job(3, 1), job(5, 2)], lastCleanupAt: 7, low: true },
+      'c/d': newLeadState(),
     });
+    expect(loadLeads({ x: { queue: [{ kind: 'board', reasons: ['cleanup', 'bogus'], at: 1 }, { kind: 'board', reasons: ['held'], at: 2 }] } }).x.queue).toEqual([{ kind: 'board', reasons: ['held'], at: 2 }]);
     expect(loadLeads(undefined)).toEqual({});
+  });
+});
+
+describe('wake rules: the board', () => {
+  const now = 10 * LEAD_CLEANUP_MS;
+  const quiet = { lastCleanupAt: now - 60_000, low: false, fingerprint: 'f1' };
+  it('cleans up as soon as a lead arrives', () => {
+    expect(boardWake({ now, state: newLeadState(), ready: 9, minReady: 5, fingerprint: 'f1' })).toEqual({ reasons: ['cleanup'], low: false, skipCleanup: false });
+  });
+  it('cleans up every 4 hours when the board changed', () => {
+    expect(boardWake({ now, state: { ...quiet, lastCleanupAt: now - LEAD_CLEANUP_MS }, ready: 9, minReady: 5, fingerprint: 'f2' }).reasons).toEqual(['cleanup']);
+    expect(boardWake({ now, state: { ...quiet, lastCleanupAt: now - LEAD_CLEANUP_MS + 1 }, ready: 9, minReady: 5, fingerprint: 'f2' }).reasons).toEqual([]);
+  });
+  it('skips a clean-up when nothing changed since the last one: only its clock resets', () => {
+    expect(boardWake({ now, state: { ...quiet, lastCleanupAt: now - LEAD_CLEANUP_MS }, ready: 9, minReady: 5, fingerprint: 'f1' })).toEqual({ reasons: [], low: false, skipCleanup: true });
+  });
+  it('wakes when the ready backlog drops below minReady, once per drop', () => {
+    expect(boardWake({ now, state: quiet, ready: 4, minReady: 5, fingerprint: 'f1' })).toEqual({ reasons: ['low-backlog'], low: true, skipCleanup: false });
+    expect(boardWake({ now, state: { ...quiet, low: true }, ready: 2, minReady: 5, fingerprint: 'f1' }).reasons).toEqual([]);
+    expect(boardWake({ now, state: { ...quiet, low: true }, ready: 5, minReady: 5, fingerprint: 'f1' }).low).toBe(false);
+  });
+});
+
+describe('business holds on issues', () => {
+  it('holds swarm:hold, needs-input and a decision brief', () => {
+    expect(issueBusinessHold({ labels: ['Swarm:Hold'], brief: false })).toBe('label swarm:hold');
+    expect(issueBusinessHold({ labels: ['needs-input'], brief: false })).toMatch(/needs-input/);
+    expect(issueBusinessHold({ labels: [], brief: true })).toBe('it has a decision brief');
+    expect(issueBusinessHold({ labels: ['bug', 'ui'], brief: false })).toBeNull();
+  });
+  it("never lets the lead touch the manager's labels", () => {
+    expect(() => checkRelabel(['swarm:hold'], [])).toThrow(/manager's label/);
+    expect(() => checkRelabel([], ['needs-input'])).toThrow(/manager's label/);
+    expect(() => checkRelabel([], ['Decided:Default'])).toThrow(/manager's label/);
+    expect(() => checkRelabel([], [])).toThrow(/Name a label/);
+    expect(() => checkRelabel(['bug'], ['enhancement'])).not.toThrow();
   });
 });
 
@@ -60,8 +109,8 @@ describe('models', () => {
     expect(leadModel('triage', none, DEFAULT_LEAD_SETTINGS)).toEqual({ model: 'claude-opus-5-5', effort: 'high' });
     expect(leadModel('triage', { model: 'claude-fable-5-1', effort: 'max' }, DEFAULT_LEAD_SETTINGS)).toEqual({ model: 'claude-fable-5-1', effort: 'max' });
   });
-  it('cleans up the board on the cheap model, whatever the lead’s own', () => {
-    expect(leadModel('cleanup', { model: 'claude-opus-5-5', effort: 'max' }, DEFAULT_LEAD_SETTINGS)).toEqual({ model: 'claude-sonnet-5', effort: 'low' });
+  it('looks after the board on the cheap model, whatever the lead’s own', () => {
+    expect(leadModel('board', { model: 'claude-opus-5-5', effort: 'max' }, DEFAULT_LEAD_SETTINGS)).toEqual({ model: 'claude-sonnet-5', effort: 'low' });
   });
   it('are configurable, with bad values kept at what they were', () => {
     const s = leadSettings(DEFAULT_LEAD_SETTINGS, { triageModel: ' claude-opus-5 ', triageEffort: 'xhigh', cleanupModel: 42, cleanupEffort: 'lots', extra: 1 });
@@ -141,6 +190,13 @@ describe('the lead’s tools', () => {
     closePull: async () => 'ok',
     rebuild: async () => 'ok',
     escalate: async () => 'ok',
+    closeIssue: async () => 'ok',
+    mergeDuplicates: async () => 'ok',
+    relabel: async () => 'ok',
+    reorderBacklog: async () => 'ok',
+    splitIssue: async () => 'ok',
+    setDependencies: async () => 'ok',
+    releaseIssue: async () => 'ok',
   };
   const tools = createLeadTools(2, h);
 

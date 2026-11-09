@@ -39,6 +39,7 @@ const repos = new Map<string, FakeRepo>();
 const bareRepos = new Set<string>();
 const mergedSinceSync = new Map<string, number>(); // merges the fake project folder hasn't pulled yet
 const closedIssues = new Set<string>(); // `${fullName}#${n}`: issues closed by a merge
+const closedIssueData = new Map<string, IssueInfo>(); // `${fullName}#${n}`: issues closed with closeIssue, so a reopen brings them back
 const stalls = new Map<string, () => void>(); // agent id -> silences their running fake session (the office doctor's demo)
 /**
  * SWARM_DEMO_HANG (demo only), to see the stuck-screen watchdog (stuckScreen.ts) at work: "stall" freezes every fake
@@ -758,9 +759,19 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
     },
     closeIssue: async (fullName, number) => {
       const r = repos.get(fullName);
-      if (!r?.issues.some((i) => i.number === number)) throw new Error(`Issue #${number} is not open`);
+      const i = r?.issues.find((x) => x.number === number);
+      if (!r || !i) throw new Error(`Issue #${number} is not open`);
       closedIssues.add(`${fullName}#${number}`);
-      r.issues = r.issues.filter((i) => i.number !== number);
+      closedIssueData.set(`${fullName}#${number}`, i);
+      r.issues = r.issues.filter((x) => x.number !== number);
+    },
+    reopenIssue: async (fullName, number) => {
+      const r = repos.get(fullName);
+      const i = closedIssueData.get(`${fullName}#${number}`);
+      if (!r || !i) throw new Error(`Issue #${number} isn't closed`);
+      closedIssues.delete(`${fullName}#${number}`);
+      closedIssueData.delete(`${fullName}#${number}`);
+      r.issues.push(i);
     },
     updateBranch: async (fullName, number) => {
       const pr = repos.get(fullName)?.pulls.find((p) => p.number === number);
@@ -1495,6 +1506,19 @@ function leadSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle 
     return out.startsWith('Refused') ? `PR #${pr}: ${tool} was refused, so the office's rebuild takes over.` : `PR #${pr} ${did}.`;
   };
 
+  // The board: put back in line what waits after a closed PR or failed sessions; otherwise the board is fine.
+  const board = async (floor: number, prompt: string) => {
+    await use('floor_status', {});
+    const waiting = [...prompt.matchAll(/^- #(\d+) "[^"]*" \((?:PR #\d+ closed|\d+ failed)\)/gm)].map((x) => Number(x[1]));
+    if (!waiting.length) {
+      await think('Nothing duplicated, nothing stale, and the order already starts with what unblocks the most.');
+      return 'The board is in order; I changed nothing.';
+    }
+    await think(`${waiting.map((n) => `#${n}`).join(', ')} only need${waiting.length === 1 ? 's' : ''} another go: nothing about ${waiting.length === 1 ? 'it' : 'them'} is a business call.`);
+    for (const n of waiting) await use('release_issue', { floor, number: n, note: 'Start from the current main; the last attempt stalled, not the idea.' });
+    return `Put ${waiting.map((n) => `#${n}`).join(', ')} back in line.`;
+  };
+
   const finish = (ok: boolean, text: string, error?: string) => {
     if (done) return;
     done = true;
@@ -1502,11 +1526,12 @@ function leadSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle 
     cb.finished({ ok, text, costUsd: ok ? 0.1 + Math.random() * 0.3 : 0.02, turns: 4 + Math.floor(Math.random() * 6), errors: error ? [error] : [] });
   };
   const m = opts.prompt.match(/^Triage: pull request #(\d+) on floor (\d+)/);
+  const b = opts.prompt.match(/^Board: look after floor (\d+)'s board/);
   timers.push(
     setTimeout(async () => {
       try {
         cb.log([{ kind: 'system', text: `✻ Claude Code (demo) · ${opts.model} · ${opts.effort} effort · floor lead` }]);
-        const reply = m ? await triage(Number(m[2]), Number(m[1]), opts.prompt) : 'Nothing to do.';
+        const reply = m ? await triage(Number(m[2]), Number(m[1]), opts.prompt) : b ? await board(Number(b[1]), opts.prompt) : 'Nothing to do.';
         cb.log([{ kind: 'text', text: `● ${reply}` }]);
         finish(true, reply);
       } catch (err) {
