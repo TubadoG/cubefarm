@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefAlert, decisionLines, decisionNote, heldWhy, orList, readyDecision, stuckPrDecision, stuckPrPick } from './decision.ts';
+import { briefAlert, decisionLines, decisionNote, heldWhy, orList, readyDecision, stuckPickView, stuckPrDecision, stuckPrPick } from './decision.ts';
 
 const pr = { number: 12, title: 'Add visit schedule', url: 'https://github.com/o/rtsm/pull/12' };
 
@@ -92,5 +92,23 @@ describe('briefAlert', () => {
 
   it('says the CEO is writing a missing brief', () => {
     expect(briefAlert({ kind: 'issue', number: 7, title: 'Plan name', floor: 'web' }, null, null).body).toBe('The team needs your answer before building this. No decision brief yet: the CEO is writing it.');
+  });
+});
+
+describe('stuckPickView', () => {
+  it('maps the pick to the button the cards highlight', () => {
+    expect(stuckPickView('it still conflicts with main after 5 fixes').action).toBe('send-back');
+    expect(stuckPickView('2 fix sessions in a row failed').action).toBe('send-back');
+    expect(stuckPickView('QA ended without a usable report 3 times in a row').action).toBe('retry-qa');
+    expect(stuckPickView(null)).toEqual({ action: null, why: "The office can't tell what went wrong; the QA report has the details." });
+  });
+
+  it('never picks Retry QA for a conflict', () => {
+    expect(stuckPickView('it still conflicts with main after 5 fixes').action).not.toBe('retry-qa');
+  });
+
+  it('picks Close for a rebuild that got stuck again', () => {
+    expect(stuckPickView('it still conflicts with main after 5 fixes', true)).toEqual({ action: 'close', why: expect.stringContaining('rebuilt once') });
+    expect(stuckPrPick(null, true).pick).toBe('close it');
   });
 });

@@ -286,6 +286,9 @@ export interface QaCheck {
   details: string;
 }
 
+/** What the manager can do with a stuck PR: the Approvals and Kanban buttons. */
+export type StuckAction = 'retry-qa' | 'send-back' | 'merge' | 'close';
+
 export interface QaView {
   repoId: string;
   prNumber: number;
@@ -299,6 +302,8 @@ export interface QaView {
   mergeNote: string | null; // where auto-merge stands once QA passed, e.g. "waiting for checks: Vercel"
   heldFor?: string | null; // passed, but held for the manager: the first matching changed file, or "label swarm:hold"
   ceoLooking: boolean; // needs-human, and the CEO has a triage job for it (queued or running) before the manager hears
+  /** needs-human: the office's pick (server/decision.ts stuckPrPick), shown as the highlighted button with its why. */
+  stuckPick?: { action: StuckAction | null; why: string } | null;
   updatedAt: number;
   shots?: QaShotView[]; // QA's screenshots from the latest round (absent: none)
 }

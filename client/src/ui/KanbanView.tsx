@@ -3,6 +3,7 @@ import { api } from '../api';
 import { agentsOnRepo, kanbanFor, useStore, type Agent, type KanbanCard } from '../store';
 import { confirmDialog } from './Confirm';
 import { Panel } from './Panel';
+import { STUCK_LABEL, stuckButtons, stuckPickLine } from './stuckActions';
 
 /** Who has the card; "QA" while they're testing it. */
 function AgentChip({ agent, card }: { agent?: Agent; card: KanbanCard }) {
@@ -290,22 +291,35 @@ export function KanbanView({ repoId, embedded }: { repoId: string; embedded?: bo
                 <QaLink card={c} />
                 {previewButton(c)}
                 {(st === 'testing' || st === 'fixing') && terminalButton(c)}
-                {(!st || st === 'needs-human') && (
-                  <button className="btn btn-small btn-good" disabled={pending === c.key} onClick={() => act(c.key, () => api.sendToQa(repo.id, c.number))}>
-                    {st === 'needs-human' ? 'Retry QA' : 'Send to QA'}
-                  </button>
+                {st === 'needs-human' ? (
+                  stuckButtons(c.qa?.stuckPick).map(({ action, primary }) => (
+                    <button
+                      key={action}
+                      className={`btn btn-small ${primary ? 'btn-good' : action === 'close' || action === 'merge' ? 'btn-ghost' : ''}`}
+                      disabled={pending === c.key}
+                      onClick={() =>
+                        action === 'retry-qa' ? act(c.key, () => api.sendToQa(repo.id, c.number)) : action === 'send-back' ? sendBack(c) : action === 'merge' ? merge(c) : closePr(c)
+                      }
+                    >
+                      {STUCK_LABEL[action]}
+                    </button>
+                  ))
+                ) : (
+                  <>
+                    {!st && (
+                      <button className="btn btn-small btn-good" disabled={pending === c.key} onClick={() => act(c.key, () => api.sendToQa(repo.id, c.number))}>
+                        Send to QA
+                      </button>
+                    )}
+                    {st === 'failed' && (
+                      <button className="btn btn-small" disabled={pending === c.key} title="Hand it to its author, or any free agent, with QA's findings and your note, without another QA round first" onClick={() => sendBack(c)}>
+                        Send back for a fix
+                      </button>
+                    )}
+                    {closeButton(c)}
+                  </>
                 )}
-                {(st === 'needs-human' || st === 'failed') && (
-                  <button className="btn btn-small" disabled={pending === c.key} title="Hand it to its author, or any free agent, with QA's findings and your note, without another QA round first" onClick={() => sendBack(c)}>
-                    Send back for a fix
-                  </button>
-                )}
-                {st === 'needs-human' && (
-                  <button className="btn btn-small btn-ghost" disabled={pending === c.key} onClick={() => merge(c)}>
-                    Merge anyway
-                  </button>
-                )}
-                {closeButton(c)}
+                {st === 'needs-human' && stuckPickLine(c.qa?.stuckPick) && <div className="muted small" style={{ flexBasis: '100%' }}>{stuckPickLine(c.qa?.stuckPick)}</div>}
               </div>
             );
           },

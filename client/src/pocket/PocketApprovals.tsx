@@ -1,5 +1,5 @@
 // Pocket mode's Approvals tab: everything waiting on the manager's decision. Team changes (new agents and let-gos, the
-// phone's cards), the CEO's emails waiting for an OK, stuck PRs with the Kanban's Retry QA / Send back / Merge / Close, and passed PRs on floors that don't
+// phone's cards), the CEO's emails waiting for an OK, stuck PRs with the Kanban's Send back / Retry QA / Merge / Close (the office's pick first), and passed PRs on floors that don't
 // merge on their own.
 import { useState } from 'react';
 import { api } from '../api';
@@ -10,6 +10,7 @@ import { confirmDialog } from '../ui/Confirm';
 import { Resume } from '../ui/Phone';
 import { EmailCard } from '../ui/EmailCard';
 import { waitingOnYou } from './pocketData';
+import { STUCK_LABEL, stuckButtons, stuckPickLine } from '../ui/stuckActions';
 
 function PrCard({ repo, qa, ready }: { repo: RepoView; qa: QaView; ready?: boolean }) {
   const author = useStore((s) => (qa.devAgentId ? s.agents[qa.devAgentId] : undefined));
@@ -75,23 +76,29 @@ function PrCard({ repo, qa, ready }: { repo: RepoView; qa: QaView; ready?: boole
           QA report ↗
         </a>
       )}
+      {!ready && stuckPickLine(qa.stuckPick) && <div className="muted small">{stuckPickLine(qa.stuckPick)}</div>}
       <div className="pk-actions">
-        {!ready && (
-          <button className="btn btn-small btn-good" disabled={busy} onClick={() => void act(() => api.sendToQa(repo.id, pr.number))}>
-            Retry QA
-          </button>
+        {ready ? (
+          <>
+            <button className="btn btn-small btn-good" disabled={busy || pr.isDraft} onClick={() => void merge()}>
+              Merge
+            </button>
+            <button className="btn btn-small btn-ghost" disabled={busy} onClick={() => void close()}>
+              Close
+            </button>
+          </>
+        ) : (
+          stuckButtons(qa.stuckPick).map(({ action, primary }) => (
+            <button
+              key={action}
+              className={`btn btn-small ${primary ? 'btn-good' : action === 'close' ? 'btn-ghost' : ''}`}
+              disabled={busy || (action === 'merge' && pr.isDraft)}
+              onClick={() => void (action === 'retry-qa' ? act(() => api.sendToQa(repo.id, pr.number)) : action === 'send-back' ? sendBack() : action === 'merge' ? merge() : close())}
+            >
+              {STUCK_LABEL[action]}
+            </button>
+          ))
         )}
-        {!ready && (
-          <button className="btn btn-small" disabled={busy} onClick={() => void sendBack()}>
-            Send back
-          </button>
-        )}
-        <button className={`btn btn-small ${ready ? 'btn-good' : ''}`} disabled={busy || pr.isDraft} onClick={() => void merge()}>
-          {ready ? 'Merge' : 'Merge anyway'}
-        </button>
-        <button className="btn btn-small btn-ghost" disabled={busy} onClick={() => void close()}>
-          Close
-        </button>
       </div>
     </div>
   );

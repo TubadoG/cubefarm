@@ -108,6 +108,7 @@ describe('office tools', () => {
       sendBack: async () => '',
       rerunChecks: async () => '',
       closePull: async () => '',
+      rebuild: async () => '',
       escalate: async () => '',
       sendEmail: async () => '',
     });
@@ -129,6 +130,7 @@ describe('office tools', () => {
       'configure_agent',
       'escalate',
       'file_issue',
+      'rebuild',
       'rerun_checks',
       'retry_qa',
       'scale_team',
@@ -320,7 +322,7 @@ describe('triage', () => {
     for (const fact of ['#108', 'Jukebox volume', 'QA round 3', pr.summary, pr.fixInstructions, pr.mergeNote, pr.why, 'GitHub checks: failing (failed: CI / e2e)', 'mergeable: CONFLICTING (DIRTY)', 'triage 1 of 2']) {
       expect(prompt).toContain(fact);
     }
-    expect(prompt).toContain('retry_qa, send_back, rerun_checks, close_pull or escalate');
+    expect(prompt).toContain('retry_qa, send_back, rerun_checks, close_pull, rebuild or escalate');
   });
 
   it('has nothing to do once the PR is no longer stuck', () => {
