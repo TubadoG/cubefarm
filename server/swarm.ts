@@ -3111,7 +3111,7 @@ export class Swarm {
         pass
           ? `✅ ${a.name} passed PR #${rec.prNumber}${repo.autoMerge ? "; it merges once GitHub's checks are green" : ': ready to merge'}`
           : nextStatus === 'needs-human'
-            ? `❌ PR #${rec.prNumber} failed QA ${qaRounds} times${triaged ? `; ${this.ceo().name} takes a look before it comes to you` : ' and needs a human'}`
+            ? `❌ PR #${rec.prNumber} failed QA ${qaRounds} times${triaged ? `; ${this.ceo().name} takes a look first` : '; the office rebuilds it or asks you'}`
             : next === 'conflict'
               ? `❌ ${a.name} failed PR #${rec.prNumber}, and it conflicts with ${repo.defaultBranch}; sending it back to merge and fix`
               : `❌ ${a.name} failed PR #${rec.prNumber}; sending it back to the developer`,
@@ -3318,7 +3318,7 @@ export class Swarm {
     a.lastError = `No new commits were pushed for PR #${rec.prNumber}`;
     this.appendLog(a, [step.log]);
     const triaged = needsHuman ? this.stuck(rec, step.set, `it went back for fixes, but ${step.set.sessionFailures} fix sessions in a row ended without pushing a commit`) : (this.setQa(rec, step.set), false);
-    const next = !needsHuman ? '; it goes back for another try' : triaged ? `; ${this.ceo().name} takes a look` : '; it needs you';
+    const next = !needsHuman ? '; it goes back for another try' : triaged ? `; ${this.ceo().name} takes a look` : '; the office rebuilds it or asks you';
     this.toast('error', `${a.name} ended the fix for PR #${rec.prNumber} without pushing a commit${next}`);
   }
 
