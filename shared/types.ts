@@ -5,6 +5,7 @@ import type { ProgressView, RewardView } from './progress.ts';
 import type { WeatherSettings, WeatherView, WorldEventSettings } from './outside.ts';
 import type { ThemeSettings } from './themes.ts';
 import type { AgentStyle } from './looks.ts';
+import type { DecisionView } from './decisions.ts';
 
 export type AgentStatus =
   | 'idle' // at desk, nothing assigned
@@ -588,7 +589,7 @@ export interface PhoneMessage {
   voice?: Exclude<VoiceProvider, 'off'>; // who read it aloud when it arrived (absent: nobody), for the phone's ▶ replay
 }
 
-export type CeoJobKind = 'onboard' | 'plan' | 'review' | 'chat' | 'triage';
+export type CeoJobKind = 'onboard' | 'plan' | 'review' | 'chat' | 'triage' | 'decision';
 
 export interface CeoInfo {
   queue: { kind: CeoJobKind; label: string }[]; // jobs waiting for the CEO
@@ -640,6 +641,7 @@ export interface WorldSnapshot {
   emailSender: EmailSenderView;
   progress: ProgressView; // coins, decorations and achievements (#210)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
+  decisions?: DecisionView[]; // the Decision room's cards: every open decision on every floor (absent in old journals)
 }
 
 /** What changed about an agent since the office last sent it, with its id; every field for one it never sent. */
@@ -669,6 +671,8 @@ export type ServerEvent =
   | { type: 'settings'; settings: SwarmSettings }
   | { type: 'request'; request: HireRequestView }
   | { type: 'email'; email: EmailView }
+  /** The Decision room's cards, all of them, whenever one changes. */
+  | { type: 'decisions'; decisions: DecisionView[] }
   | { type: 'emailSender'; emailSender: EmailSenderView }
   | { type: 'ceo'; ceo: CeoInfo }
   | { type: 'message'; message: PhoneMessage }

@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AgentCard } from './AgentCard';
 import { floorPrCounts, repoOnFloor, usePhoneBadge, useStore } from '../store';
 import { CEO_ID } from '../../../shared/types';
+import { decisionKeyOf, isDecisionsPath, parseDecisionHash } from '../../../shared/decisions';
 import { HeldHint } from './HeldHint';
 import { CareerPeek } from './CareerCard';
 import { CoinChip } from './CoinChip';
@@ -81,6 +82,29 @@ function PhoneButton() {
       <span className="phone-btn-label">
         <Key action="phone" /> {badge ? `${badge} waiting` : busy ? `${ceo.name} is working` : 'Phone'}
       </span>
+    </button>
+  );
+}
+
+/** The Decision room: every open decision as a card, with how many wait. */
+function DecisionsButton() {
+  const started = useStore((s) => s.started);
+  const overlay = useStore((s) => s.overlay);
+  const openOverlay = useStore((s) => s.openOverlay);
+  const open = useStore((s) => s.decisions.filter((d) => !d.answeredAt).length);
+  // A /decisions link opens the room once the manager is in the office (the start screen would cover it).
+  useEffect(() => {
+    if (!started || !isDecisionsPath(location.pathname)) return;
+    const p = parseDecisionHash(location.hash);
+    openOverlay({ kind: 'decisions', focus: p ? decisionKeyOf(p.repoId, p.number) : undefined });
+    history.replaceState(null, '', `/${location.search}`); // closing the room leaves the office, not the link
+  }, [started, openOverlay]);
+  if (!started || overlay?.kind === 'decisions') return null;
+  return (
+    <button className={`phone-btn decisions-btn ${open ? 'phone-btn-ring' : ''}`} onClick={() => openOverlay({ kind: 'decisions' })} title="The Decision room: every decision that waits for you">
+      <span className="phone-btn-icon">🧭</span>
+      {open > 0 && <span className="badge phone-btn-badge">{open}</span>}
+      <span className="phone-btn-label">{open ? `${open} decision${open === 1 ? '' : 's'}` : 'Decisions'}</span>
     </button>
   );
 }
@@ -228,6 +252,7 @@ export function HUD() {
       <CameraHud />
       <PresenceHud />
       <PhoneButton />
+      <DecisionsButton />
       <VoiceIndicator />
       <div className="toasts">
         {toasts.map((t) => (

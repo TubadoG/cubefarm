@@ -9,6 +9,7 @@ import { speechText } from '../../shared/speech';
 import { showDesktopNote } from './notifications';
 import { EMPTY_OPS, newAlarms } from './ops';
 import type { DecorItem, ProgressView } from '../../shared/progress';
+import type { DecisionView } from '../../shared/decisions';
 import { needsManager, qaCardNote, type CardTone } from './qaCard';
 import { announce } from './ui/announce';
 import { alarm, audioUnlocked, chirp, cue } from './ui/sfx';
@@ -39,7 +40,9 @@ export type Overlay =
   | { kind: 'catalogue'; repoId?: string } // the lobby kiosk (#210)
   | { kind: 'decor-box'; repoId: string } // a floor's decor box
   /** The floor as a list (Settings → Accessibility): who is there, their status and what they're doing. */
-  | { kind: 'floorList' };
+  | { kind: 'floorList' }
+  /** The Decision room (shared/decisions.ts): every open decision as a card. focus: a card's key to scroll to. */
+  | { kind: 'decisions'; focus?: string };
 
 /** Help's tabs: how the office works, and the controls (keys, mouse, gamepad). */
 export type HelpTab = 'office' | 'controls';
@@ -128,6 +131,7 @@ interface State {
   weather: WeatherView; // the real local weather's place and latest reading (Settings → Weather)
   ticker: TickerItem[]; // the floors' recent activity lines, oldest first (world/ActivityTicker.tsx)
   emails: EmailView[]; // the CEO's emails: pending ones wait for the manager's OK (Approvals)
+  decisions: DecisionView[]; // the Decision room's cards
   emailSender: EmailSenderView; // whether email's sender is set up on the server (its kind and a hint only)
   notifyChannels: NotifyChannelsView; // which chat apps have a webhook saved (hints only) and how many devices get push
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
@@ -259,6 +263,7 @@ export const useStore = create<State>((set, get) => ({
   ticker: [],
   notifyChannels: { webhooks: { ntfy: { set: false, hint: '' } }, pushDevices: 0 },
   emails: [],
+  decisions: [],
   emailSender: { set: false, mode: null, hint: '' },
   pong: {},
   restarting: false,
@@ -313,6 +318,7 @@ export const useStore = create<State>((set, get) => ({
           qa,
           prPreviews,
           requests: d.requests,
+          decisions: d.decisions ?? [],
           ceo: d.ceo,
           messages: d.messages,
           phoneReadAt: d.phoneReadAt,
@@ -458,6 +464,9 @@ export const useStore = create<State>((set, get) => ({
       }
       case 'email':
         set({ emails: [...get().emails.filter((e) => e.id !== ev.email.id), ev.email].sort((a, b) => a.createdAt - b.createdAt) });
+        break;
+      case 'decisions':
+        set({ decisions: ev.decisions });
         break;
       case 'emailSender':
         set({ emailSender: ev.emailSender });

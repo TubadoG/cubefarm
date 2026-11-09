@@ -5512,3 +5512,108 @@ html[data-high-contrast] :is(button, a, input, select, textarea, summary, [tabin
   border-top: 1px solid var(--border-hairline);
   overflow-wrap: anywhere;
 }
+
+/* ---------- the Decision room (ui/DecisionRoom.tsx) ---------- */
+.decisions-btn {
+  bottom: 64px;
+}
+.decision-panel {
+  max-width: 820px;
+}
+.decision-room {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.decision-card {
+  min-width: 0;
+  background: var(--paper);
+  border: 1px solid var(--border-hairline);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  scroll-margin-top: 12px;
+}
+.decision-focused {
+  box-shadow: 0 0 0 2px var(--sky);
+}
+.decision-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.decision-head .grow {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.decision-head .chip {
+  white-space: nowrap;
+}
+.decision-brief {
+  margin: 10px 0;
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) 1fr;
+  gap: 4px 12px;
+}
+.decision-brief dt {
+  font-weight: 700;
+  color: var(--muted);
+}
+.decision-brief dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.decision-brief ol {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.decision-answered {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--good-surface);
+  color: var(--good-ink);
+}
+.decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.decision-row {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+.decision-row input {
+  flex: 1;
+  min-width: 0;
+}
+.decision-thread {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.decision-msg {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--good-surface);
+}
+.decision-msg p {
+  margin: 2px 0 0;
+}
+.decision-msg-manager {
+  background: var(--warn-surface);
+}
+@media (max-width: 560px) {
+  .decision-brief {
+    grid-template-columns: 1fr;
+  }
+  .decision-brief dd {
+    margin-bottom: 6px;
+  }
+}
