@@ -82,7 +82,7 @@ without a brief, that the CEO is writing it. The daily digest shows the same (do
 **The deadline** (`server/decisionClock.ts`). The office notes when it first sees each `needs-input` issue and each
 held PR (kept in `state.json`); the deadline is that time plus the floor's `decisionTimeoutHours`. A brief that
 appears later doesn't restart the clock, but you always get at least 24 hours with a real brief before the default.
-Only an explicit answer stops the clock: one recorded through the office (Approvals: merge, close, send back), a
+Only an explicit answer stops the clock: one recorded through the office (the Decision room, or Approvals: merge, close, send back), a
 GitHub comment whose first line starts with `Decision:` (any case, e.g. `Decision: option 2`), or a person removing
 `needs-input` / `swarm:hold` or merging or closing the PR. Ordinary comments never do: the office, the agents and you
 all post under the same GitHub login, so QA reports, developers' notes and briefs can't be told from yours. If the
@@ -97,6 +97,30 @@ deadline passes with no answer, the office applies the recommendation, once:
 
 No brief with a recommendation, no default: it waits for you. Everything it does is reversible: reply, re-label,
 or revert the merge. To turn it off for a floor, set **decide after** to 0.
+
+### The Decision room
+
+Every open decision on every floor, as a card: `needs-input` issues, held PRs, and stuck PRs the CEO escalated to you.
+Open it with **🧭 Decisions** above the phone button in the office, the **Decisions** tab in pocket mode, the callout
+at the top of **Approvals**, or a link: the digest and the push alerts link each decision to its card
+(`/decisions#owner/repo/number` on Settings → Notifications → **Office address for links**, the office's public URL such as `https://foundry.example.com`; an address with a path, for an office behind a proxy, keeps it). Without that address set, the digest and alerts carry no card links.
+
+A card shows the brief (background, the decision, the options, the recommendation, risk and mitigation) and the time
+left before the office applies the recommendation. Its buttons record your answer:
+
+- **Approve recommendation**, or **Option N**: on an issue, the office comments `Decision: …` on GitHub and swaps
+  `needs-input` for `decided:manager`, so the team builds it; on a PR, a choice to merge as it is merges it, and any
+  other choice sends it back to a developer with that choice as the note.
+- **Send back** (PR) or **Answer** (issue) with your note in your own words.
+- **Close PR** / **Decline**: the PR closes; the issue closes as not planned.
+
+Every answer stops the clock. **Ask** sends your question to the CEO as a job with the card's context (the issue or PR,
+its brief, the clone); the answer appears on the card's thread (kept in `state.json`) and as a GitHub comment, and
+the CEO rewrites the brief with `write_brief` when your question shows it was unclear. REST:
+`POST /api/decisions/:owner%2F:repo/:n/answer` (`{"choice":"approve"}`, `{"choice":"option","option":2}`,
+`{"choice":"send-back","note":"…"}`, `{"choice":"close"}`) and `POST /api/decisions/:owner%2F:repo/:n/ask`
+(`{"question":"…"}`). The answer rules are in `server/decisionAnswer.ts`, the links and the countdown in
+`shared/decisions.ts`.
 
 ## QA
 

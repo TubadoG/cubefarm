@@ -1403,8 +1403,29 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
   const prompt = opts.prompt;
   const where = prompt.match(/[Ff]loor (\d+) \(([^,)]+)/);
   const triage = prompt.match(/^Triage: pull request #(\d+) on floor (\d+)/);
+  const asked = prompt.match(/^The manager has a question about a decision in the Decision room: (?:pull request|issue) #(\d+) "([^"]*)" on floor (\d+)/);
   const run = triage
     ? () => scripts.triage(Number(triage[2]), Number(triage[1]), prompt)
+    : asked
+      ? async () => {
+          // A question from a Decision room card: read the issue, write a brief if it has none, then answer.
+          const [, num, title, floor] = asked;
+          const question = prompt.match(/The manager's question:\n"""([\s\S]*?)"""/)?.[1]?.trim() ?? '';
+          await step([{ kind: 'tool', tool: 'Read', text: `⏺ Read #${num} and its brief` }, { kind: 'result', text: '  ⎿ Read 24 lines' }]);
+          if (/It has no decision brief yet/.test(prompt)) {
+            await use('write_brief', {
+              floor: Number(floor),
+              number: Number(num),
+              background: `"${short(title, 60)}" needs a call the spec doesn't make, so the team stopped to ask.`,
+              decision: `How should "${short(title, 60)}" work?`,
+              options: ['The simple version: ships this week, covers the common case.', 'The full version: covers every case, about a week more.'],
+              recommendation: 'The simple version: it unblocks the team now, and the full one can follow if users ask.',
+              risk: 'Some edge cases wait; they are listed in the issue so nothing is lost.',
+            });
+          }
+          await think('Answering in plain words.');
+          return `Good question. ${question ? `On "${short(question, 80)}": ` : ''}the recommendation is the lower-risk path: it ships sooner and can be changed later in one place. I'm the demo CEO, so this answer is made up, but the real one reads the code first.`;
+        }
     : /no longer needs triage/.test(prompt)
       ? async () => 'NO_MESSAGE'
       : /just joined the company/.test(prompt)

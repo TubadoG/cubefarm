@@ -6,7 +6,7 @@ import type { Backend } from './backend.ts';
 import type { LogEntry, SessionHandle, SessionResult } from './agentRunner.ts';
 import type { PrDetails } from './github.ts';
 import { defaultProjectsDir, DESK_SWEEP_INTERVAL_MS, HOME_DIR, LOG_BUFFER, SCHEDULER_INTERVAL_MS, STATE_FILE, SYNC_INTERVAL_MS, VERSION } from './config.ts';
-import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
+import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type DecisionContext, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
 import { alertStep, clockStep, decisionKey, deadlineOf, defaultComment, DEFAULT_DECISION_TIMEOUT_HOURS, managerReply, parseTimeoutHours, trackDecisions, whenLabel, type DecisionRecord } from './decisionClock.ts';
 import { DECIDED_DEFAULT, findBrief, NEEDS_INPUT, OFFICE_MARK, renderBrief, usableBrief, type Brief } from '../shared/brief.ts';
 import { afterClose, ASK_AGAIN_MS, closedWhy, closuresHeld, forgettable, issueOpen, nameList, pullNow, stillOpen, stoppedMessage, toAsk, toHold, type Closure, type FloorState, type KnownPull, type LearnedPull } from './closeCleanup.ts';
@@ -53,6 +53,8 @@ import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
 import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
 import { Mailer } from './email.ts';
 import { briefAlert, decisionNote, stuckPrDecision } from './decision.ts';
+import { answerPlan } from './decisionAnswer.ts';
+import { decisionKeyOf, decisionLink, MAX_DECISION_TEXT, parseDecisionChoice, type DecisionMessage, type DecisionReason, type DecisionView } from '../shared/decisions.ts';
 import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DecisionInfo, type DigestFloor } from './digest.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
@@ -228,6 +230,14 @@ interface Persisted {
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard, by repo id
   digestSentDay: string | null; // the local day (YYYY-MM-DD) the daily digest last went out (or was refused)
   decisions: DecisionRecord[]; // decisions waiting for the manager, and when the office first saw them (decisionClock.ts)
+  decisionNotes: Record<string, DecisionNotes>; // the Decision room's threads and answers, by decisionKeyOf
+}
+
+/** A Decision room card's own state: its thread with the CEO, and the manager's answer. */
+interface DecisionNotes {
+  thread: DecisionMessage[];
+  answer: string | null;
+  answeredAt: number | null;
 }
 
 interface Shot {
@@ -514,6 +524,7 @@ export class Swarm {
     pong: {},
     digestSentDay: null,
     decisions: [],
+    decisionNotes: {},
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -717,6 +728,7 @@ export class Swarm {
         pong: loaded.pong && typeof loaded.pong === 'object' ? loaded.pong : {},
         digestSentDay: typeof loaded.digestSentDay === 'string' ? loaded.digestSentDay : null,
         decisions: Array.isArray(loaded.decisions) ? loaded.decisions : [],
+        decisionNotes: loaded.decisionNotes && typeof loaded.decisionNotes === 'object' ? loaded.decisionNotes : {},
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -1121,6 +1133,7 @@ export class Swarm {
       officeUpdate: this.officeHead ? this.officeUpdateView() : undefined,
       progress: this.progressView(),
       pong: this.state.pong,
+      decisions: this.decisionViews(),
     };
   }
 
@@ -1875,6 +1888,8 @@ export class Swarm {
         void this.syncFolder(repo);
       }
       void this.advanceMerges(repo);
+      this.emitDecisions();
+      if (this.openDecisions().some((o) => !this.briefs.has(decisionKey(o)))) this.decisionTickSoon(); // a new card needs its brief
     } catch (err) {
       rt.syncError = (err as Error).message;
     } finally {
@@ -3886,7 +3901,7 @@ export class Swarm {
   private enqueueCeo(job: CeoJob) {
     const q = this.state.ceo.queue;
     const same = q.findIndex((j) => j.kind === job.kind && (job.kind === 'review' || job.kind === 'chat' || (j.repoId === job.repoId && j.prNumber === job.prNumber)));
-    if (same >= 0) q[same] = job.kind === 'chat' ? { ...q[same], text: `${q[same].text}\n${job.text}` } : job;
+    if (same >= 0) q[same] = job.kind === 'chat' || job.kind === 'decision' ? { ...q[same], text: `${q[same].text}\n${job.text}` } : job;
     else q.push(job);
     this.emitCeo();
     this.save();
@@ -3906,7 +3921,7 @@ export class Swarm {
     }
     if (!a || BUSY.includes(a.status) || c.job || c.queue.length === 0) return;
     if (this.slotsFull()) return;
-    const rank: Record<CeoJob['kind'], number> = { chat: 0, triage: 0, onboard: 1, plan: 1, review: 2 };
+    const rank: Record<CeoJob['kind'], number> = { chat: 0, decision: 0, triage: 0, onboard: 1, plan: 1, review: 2 };
     // A floor's jobs wait for its clone and first sync, so the CEO has something to read.
     const ready = (j: CeoJob) => {
       const rt = j.repoId ? this.repoRt.get(j.repoId) : undefined;
@@ -3951,7 +3966,7 @@ export class Swarm {
       { kind: 'system', text: '' },
       { kind: 'system', text: `━━━ ${label} ━━━` },
     ]);
-    if (job.kind === 'chat') this.appendLog(a, [{ kind: 'manager', text: `▶ Manager: ${job.text}` }]);
+    if (job.kind === 'chat' || job.kind === 'decision') this.appendLog(a, [{ kind: 'manager', text: `▶ Manager: ${job.text}` }]);
     if (job.kind === 'review') {
       this.state.ceo.lastReviewAt = Date.now();
       this.state.ceo.lastFingerprint = this.fingerprint();
@@ -3976,7 +3991,7 @@ export class Swarm {
     rt.session = this.backend.startSession(
       {
         cwd: CEO_DIR,
-        prompt: ceoJobPrompt(job, floor, triage, job.kind === 'review' ? this.reviewInput() : null),
+        prompt: ceoJobPrompt(job, floor, triage, job.kind === 'review' ? this.reviewInput() : null, job.kind === 'decision' ? this.decisionContext(job) : null),
         systemAppend: ceoSystemPrompt(this.ceoPromptInput(a)),
         model: a.model || CEO_MODEL,
         effort: a.effort || CEO_EFFORT,
@@ -4000,6 +4015,7 @@ export class Swarm {
         browserUrl: () => undefined,
         screenshot: () => undefined,
         turn: (text) => {
+          if (job.kind === 'decision') return; // the answer goes on the card when the job ends (onCeoFinished)
           const reply = ceoReply(text);
           if (reply) this.postMessage('ceo', reply);
         },
@@ -4022,6 +4038,7 @@ export class Swarm {
     const job = this.state.ceo.job;
     this.state.ceo.job = null;
     if (job?.kind === 'triage') this.endTriage(job);
+    if (job?.kind === 'decision') void this.decisionAnswered(job, result.ok && !result.interrupted ? result.text : null);
     if (result.interrupted) this.interrupted(a);
     if (a.status === 'stopped') {
       // the manager already logged the stop
@@ -4984,12 +5001,14 @@ export class Swarm {
   }
 
   /** The manager answered a decision through the office (Approvals, a close): its clock stops. */
-  private answered(repoId: string, kind: 'issue' | 'pr', number: number) {
+  private answered(repoId: string, kind: 'issue' | 'pr', number: number, answer?: string) {
     const d = this.state.decisions.find((r) => r.repoId === repoId && r.kind === kind && r.number === number);
-    if (d && d.appliedAt === null && d.answeredAt === null) {
-      d.answeredAt = Date.now();
-      this.save();
-    }
+    if (d && d.appliedAt === null && d.answeredAt === null) d.answeredAt = Date.now();
+    const notes = this.state.decisionNotes[decisionKeyOf(repoId, number)];
+    if (notes && answer) Object.assign(notes, { answer, answeredAt: Date.now() });
+    else if (answer) this.state.decisionNotes[decisionKeyOf(repoId, number)] = { thread: [], answer, answeredAt: Date.now() };
+    this.save();
+    this.emitDecisions();
   }
 
   /** Run the decision clock soon (a PR was just held), not on every call. */
@@ -5037,9 +5056,19 @@ export class Swarm {
         }
         await this.applyDefault(repo, d, item, brief, now);
       }
+      // Stuck PRs the CEO handed on aren't on the clock, but their cards show a brief too.
+      for (const item of this.openDecisions().filter((o) => o.reason === 'stuck')) {
+        const repo = this.state.repos.find((r) => r.id === item.repoId);
+        if (!repo) continue;
+        const talk = await this.backend.discussion(repo.fullName, item.number).catch(() => null);
+        if (talk) this.briefs.set(decisionKey(item), findBrief(talk.body, talk.comments));
+      }
+      const open = new Set(this.openDecisions().map((o) => decisionKeyOf(o.repoId, o.number)));
+      for (const k of Object.keys(this.state.decisionNotes)) if (!open.has(k)) delete this.state.decisionNotes[k];
     } finally {
       this.deciding = false;
       this.save();
+      this.emitDecisions();
     }
   }
 
@@ -5048,7 +5077,8 @@ export class Swarm {
     const deadline = this.decisionDeadline(d);
     const floor = repo.fullName.split('/')[1] ?? repo.fullName;
     const n = briefAlert({ kind: d.kind, number: d.number, title: item.title, floor }, usableBrief(brief) ? brief : null, deadline ? whenLabel(deadline) : null, DECISION_MAX);
-    this.notifier.notify('needsHuman', n.title, n.body, n.title, item.url);
+    const office = this.state.settings.notify.officeUrl;
+    this.notifier.notify('needsHuman', n.title, n.body, n.title, office ? decisionLink(office, repo.id, d.number) : item.url);
   }
 
   /** Past the deadline with no reply: the office applies the brief's recommendation (clockStep says how). */
@@ -5083,18 +5113,7 @@ export class Swarm {
         this.postMessage('office', `⏱️ No reply on ${where} (${item.title}) within ${hours} h, so the office merged it, as its brief recommends.`);
       } else {
         if (!rec || rec.status !== 'passed') throw new Error('it is no longer waiting as passed');
-        // Like the manager's send-back, but from a passed (held) PR: a developer does what the brief recommends.
-        this.setQa(rec, {
-          status: 'failed',
-          fixReason: 'qa',
-          fixInstructions: `Nobody answered the decision brief within ${hours} h, so the office goes with its recommendation: ${step.note}`,
-          heldFor: null,
-          sessionFailures: 0,
-          retests: rec.retests + 1,
-          mergeNote: null,
-          pendingSince: null,
-        });
-        setTimeout(() => this.schedule(), 200);
+        this.returnHeldPr(rec, `Nobody answered the decision brief within ${hours} h, so the office goes with its recommendation: ${step.note}`);
         await this.backend.commentIssue(repo.fullName, d.number, defaultComment(hours, step.note, 'sends it back'));
         this.postMessage('office', `⏱️ No reply on ${where} (${item.title}) within ${hours} h, so it went back to a developer with the brief's recommendation.`);
       }
@@ -5108,8 +5127,8 @@ export class Swarm {
   private async writeBrief(x: { floor: number; number: number; background: string; decision: string; options: string[]; recommendation: string; risk: string; if_no_reply?: string }) {
     const repo = this.floorRepo(x.floor);
     const n = Number(x.number);
-    const item = this.waitingDecisions().find((w) => w.repoId === repo.id && w.number === n);
-    if (!item) throw new Error(`#${n} on floor ${repo.floor} isn't waiting for the manager: only needs-input issues and held PRs get a brief.`);
+    const item = this.openDecisions().find((w) => w.repoId === repo.id && w.number === n);
+    if (!item) throw new Error(`#${n} on floor ${repo.floor} isn't waiting for the manager: only needs-input issues, held PRs and escalated PRs get a brief.`);
     const d = this.state.decisions.find((r) => decisionKey(r) === decisionKey(item));
     if (d && (d.briefAt ?? null) === null) d.briefAt = Date.now(); // the manager gets a day with it (deadlineOf)
     const deadline = d ? this.decisionDeadline(d) : deadlineOf({ firstSeen: Date.now() }, repo.decisionTimeoutHours);
@@ -5126,7 +5145,163 @@ export class Swarm {
     await this.backend.commentIssue(repo.fullName, n, `${renderBrief(brief, by)}\n\n<sub>Written by ${this.ceo().name}, the cubefarm CEO.</sub>\n${OFFICE_MARK}`);
     this.briefs.set(decisionKey(item), brief);
     this.decisionTickSoon();
+    this.emitDecisions();
     return `Posted the brief on ${item.kind === 'pr' ? 'PR ' : ''}#${n} on floor ${repo.floor}.${by ? ` If the manager doesn't reply by ${by}, the office applies your recommendation.` : ''}`;
+  }
+
+  // ---------- the Decision room ----------
+
+  /** Every open decision: the decision clock's (needs-input issues, held PRs) and stuck PRs the CEO handed on. */
+  private openDecisions(): { repoId: string; kind: 'issue' | 'pr'; number: number; title: string; url: string; reason: DecisionReason }[] {
+    const out = this.waitingDecisions().map((w) => ({ ...w, reason: (w.kind === 'issue' ? 'needs-input' : 'held') as DecisionReason }));
+    for (const q of this.state.qa) {
+      if (q.status !== 'needs-human' || !q.escalated) continue;
+      const pr = this.repoRt.get(q.repoId)?.pulls.find((p) => p.number === q.prNumber && p.state === 'OPEN');
+      if (pr && !out.some((o) => o.repoId === q.repoId && o.number === pr.number)) out.push({ repoId: q.repoId, kind: 'pr', number: pr.number, title: pr.title, url: pr.url, reason: 'stuck' });
+    }
+    return out;
+  }
+
+  /** The Decision room's cards, oldest decision first. */
+  private decisionViews(): DecisionView[] {
+    return this.openDecisions()
+      .map((o): DecisionView => {
+        const repo = this.state.repos.find((r) => r.id === o.repoId);
+        const rec = this.state.decisions.find((d) => decisionKey(d) === decisionKey(o));
+        const notes = this.state.decisionNotes[decisionKeyOf(o.repoId, o.number)];
+        const brief = this.briefs.get(decisionKey(o));
+        const job = this.state.ceo.job;
+        const asking = [job, ...this.state.ceo.queue].some((j) => j?.kind === 'decision' && j.repoId === o.repoId && j.prNumber === o.number);
+        return {
+          key: decisionKeyOf(o.repoId, o.number),
+          repoId: o.repoId,
+          floor: repo?.floor ?? 0,
+          kind: o.kind,
+          reason: o.reason,
+          number: o.number,
+          title: o.title,
+          url: o.url,
+          brief: brief ?? null,
+          briefRead: brief !== undefined,
+          deadline: rec && rec.appliedAt === null ? this.decisionDeadline(rec) : null,
+          answeredAt: notes?.answeredAt ?? rec?.answeredAt ?? null,
+          answer: notes?.answer ?? null,
+          thread: notes?.thread ?? [],
+          asking,
+        };
+      })
+      .sort((a, b) => a.floor - b.floor || a.number - b.number);
+  }
+
+  private lastDecisions = '';
+
+  /** Send the Decision room's cards to the tabs, when they changed. */
+  private emitDecisions() {
+    const decisions = this.decisionViews();
+    const json = JSON.stringify(decisions);
+    if (json === this.lastDecisions) return;
+    this.lastDecisions = json;
+    this.broadcast({ type: 'decisions', decisions });
+  }
+
+  /** One open decision, or a 404 the card can show. */
+  private openDecision(repoId: string, number: number) {
+    const repo = this.repo(repoId);
+    const item = this.openDecisions().find((o) => o.repoId === repo.id && o.number === number);
+    if (!item) throw new HttpError(404, `#${number} on ${repo.fullName} no longer waits for a decision.`);
+    return { repo, item };
+  }
+
+  /**
+   * The manager's answer from a card (decisionAnswer.ts answerPlan): an explicit "Decision:" comment on GitHub, then the
+   * issue's labels (or its close), or the PR's merge, send-back or close through the office's own actions. The 48-hour
+   * clock stops.
+   */
+  async answerDecision(repoId: string, number: number, body: unknown) {
+    const { repo, item } = this.openDecision(repoId, number);
+    let choice;
+    try {
+      choice = parseDecisionChoice(body);
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
+    const brief = this.briefs.get(decisionKey(item)) ?? null;
+    let plan;
+    try {
+      plan = answerPlan({ kind: item.kind, reason: item.reason, brief: usableBrief(brief) ? brief : null, by: this.state.settings.managerName || 'the manager' }, choice);
+    } catch (err) {
+      throw new HttpError(409, (err as Error).message);
+    }
+    await this.backend.commentIssue(repo.fullName, number, plan.comment);
+    this.answered(repo.id, item.kind, number, plan.summary);
+    const rt = this.repoRt.get(repo.id);
+    if (plan.issue && 'close' in plan.issue) await this.closeIssueByManager(repo.id, number);
+    else if (plan.issue) {
+      const { add, remove } = plan.issue.labels;
+      await this.backend.editIssue(repo.fullName, number, { addLabels: add, removeLabels: remove });
+      const issue = rt?.issues.find((i) => i.number === number);
+      if (issue) issue.labels = [...issue.labels.filter((l) => !remove.includes(l.toLowerCase()) && !add.includes(l)), ...add];
+      this.emitRepo(repo);
+      setTimeout(() => this.schedule(), 200);
+    } else if (plan.pr?.do === 'merge') await this.mergePull(repo.id, number);
+    else if (plan.pr?.do === 'close') await this.closePull(repo.id, number);
+    else if (plan.pr?.do === 'send-back') {
+      const rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === number);
+      if (rec?.status === 'passed') this.returnHeldPr(rec, `From the manager: ${plan.pr.note}`);
+      else await this.sendBackToDev(repo.id, number, plan.pr.note);
+    }
+    this.postMessage('office', `🧭 Decision on ${item.kind === 'pr' ? 'PR ' : ''}#${number} on ${repo.fullName}: you ${plan.summary}`);
+    this.emitDecisions();
+    return { ok: true, answer: plan.summary };
+  }
+
+  /** A held (passed) PR goes back to a developer with these instructions, as a send-back from Approvals would. */
+  private returnHeldPr(rec: QaRecord, instructions: string) {
+    this.setQa(rec, { status: 'failed', fixReason: 'qa', fixInstructions: instructions, heldFor: null, sessionFailures: 0, retests: rec.retests + 1, mergeNote: null, pendingSince: null });
+    setTimeout(() => this.schedule(), 200);
+  }
+
+  /** The manager's question on a card goes to the CEO as a job; the answer comes back on the card's thread. */
+  askDecision(repoId: string, number: number, body: unknown) {
+    const { repo, item } = this.openDecision(repoId, number);
+    const question = typeof (body as { question?: unknown })?.question === 'string' ? (body as { question: string }).question.trim() : '';
+    if (!question) throw new HttpError(400, 'Write the question for the CEO.');
+    if (question.length > MAX_DECISION_TEXT) throw new HttpError(400, `The question is too long (at most ${MAX_DECISION_TEXT} characters).`);
+    const key = decisionKeyOf(repo.id, number);
+    const notes = (this.state.decisionNotes[key] ??= { thread: [], answer: null, answeredAt: null });
+    notes.thread.push({ from: 'manager', text: question, at: Date.now() });
+    this.enqueueCeo({ kind: 'decision', repoId: repo.id, prNumber: item.number, text: question, at: Date.now() });
+    this.emitDecisions();
+    return { ok: true };
+  }
+
+  /** What a decision job's prompt says about its card. null: it is no longer open. */
+  private decisionContext(job: CeoJob): DecisionContext | null {
+    const item = this.openDecisions().find((o) => o.repoId === job.repoId && o.number === job.prNumber);
+    if (!item) return null;
+    const brief = this.briefs.get(decisionKey(item));
+    const reason = item.reason === 'needs-input' ? 'the issue is labelled needs-input' : item.reason === 'held' ? 'QA passed and the office holds the PR for the manager' : 'the PR got stuck and the CEO escalated it';
+    return { kind: item.kind, number: item.number, title: item.title, url: item.url, reason, brief: usableBrief(brief ?? null) ? renderBrief(brief!) : null };
+  }
+
+  /** A decision job ended: the CEO's answer goes on the card's thread and on GitHub. text null: it failed. */
+  private async decisionAnswered(job: CeoJob, text: string | null) {
+    const repo = this.state.repos.find((r) => r.id === job.repoId);
+    if (!repo || job.prNumber === undefined) return;
+    const key = decisionKeyOf(repo.id, job.prNumber);
+    const notes = (this.state.decisionNotes[key] ??= { thread: [], answer: null, answeredAt: null });
+    const reply = text ? ceoReply(text) : null;
+    const ceo = this.ceo().name;
+    if (!reply) {
+      notes.thread.push({ from: 'office', text: `${ceo} couldn't answer this time. Ask again, or answer on GitHub.`, at: Date.now() });
+    } else {
+      notes.thread.push({ from: 'ceo', text: reply, at: Date.now() });
+      const question = (job.text ?? '').split('\n').map((l) => `> ${l}`).join('\n');
+      await this.backend.commentIssue(repo.fullName, job.prNumber, `**${ceo} (CEO), answering the manager in the Decision room:**\n\n${question}\n\n${reply}\n${OFFICE_MARK}`).catch((err) => console.warn(`could not post the CEO's answer on ${repo.fullName}#${job.prNumber}: ${oneLine(err)}`));
+    }
+    this.save();
+    this.emitDecisions();
+    this.decisionTickSoon(); // the CEO may have rewritten the brief
   }
 
   // ---------- the daily digest ----------

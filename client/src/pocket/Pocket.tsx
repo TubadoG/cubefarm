@@ -15,18 +15,29 @@ import { setMode } from './mode';
 import { approvalsBadge, pipelineOf, waitingOnYou, type Pipeline } from './pocketData';
 import { Approvals } from './PocketApprovals';
 import { Team } from './PocketTeam';
+import { DecisionRoom } from '../ui/DecisionRoom';
+import { decisionKeyOf, isDecisionsPath, parseDecisionHash } from '../../../shared/decisions';
 
 // Opened from the Team and Kanban tabs; loaded when first opened (the terminal brings xterm.js).
 const TerminalView = lazy(() => import('../ui/TerminalView').then((m) => ({ default: m.TerminalView })));
 const AppViewer = lazy(() => import('../ui/AppViewer').then((m) => ({ default: m.AppViewer })));
 
-export type PocketTab = 'company' | 'chat' | 'kanban' | 'team' | 'approvals';
-const TABS: PocketTab[] = ['company', 'chat', 'kanban', 'team', 'approvals'];
+export type PocketTab = 'company' | 'chat' | 'kanban' | 'team' | 'approvals' | 'decisions';
+const TABS: PocketTab[] = ['company', 'chat', 'kanban', 'team', 'approvals', 'decisions'];
 
-/** The tab a link (a notification's ?tab=) asks for. */
+/** The tab a link asks for: a notification's ?tab=, or a Decision room link (/decisions#owner/repo/12). */
 function tabFrom(url: string | null | undefined): PocketTab | null {
-  const t = url ? new URL(url, location.origin).searchParams.get('tab') : null;
+  if (!url) return null;
+  const u = new URL(url, location.origin);
+  if (isDecisionsPath(u.pathname)) return 'decisions';
+  const t = u.searchParams.get('tab');
   return TABS.includes(t as PocketTab) ? (t as PocketTab) : null;
+}
+
+/** The card a Decision room link points at, as its key. */
+function focusFrom(url: string | null | undefined): string | null {
+  const p = url ? parseDecisionHash(new URL(url, location.origin).hash) : null;
+  return p ? decisionKeyOf(p.repoId, p.number) : null;
 }
 
 const name = (fullName: string) => fullName.split('/')[1] ?? fullName;
@@ -221,6 +232,8 @@ function Settings({ onClose }: { onClose: () => void }) {
 export default function Pocket() {
   const [tab, setTab] = useState<PocketTab>(() => tabFrom(location.href) ?? 'company');
   const [repoId, setRepoId] = useState<string | null>(null);
+  const [focus, setFocus] = useState<string | null>(() => focusFrom(location.href));
+  const decisions = useStore((s) => s.decisions.filter((d) => !d.answeredAt).length);
   const [settings, setSettings] = useState(false);
   const company = useStore((s) => s.settings.companyName);
   const loaded = useStore((s) => s.loaded);
@@ -238,11 +251,22 @@ export default function Pocket() {
   // A tapped notification (here, or through the service worker) opens what it's about.
   useEffect(() => {
     const onOpen = (e: Event) => {
-      const t = tabFrom((e as CustomEvent<string>).detail);
+      const url = (e as CustomEvent<string>).detail;
+      const t = tabFrom(url);
       if (t) setTab(t);
+      setFocus(focusFrom(url));
+    };
+    const onHash = () => {
+      if (!isDecisionsPath(location.pathname)) return;
+      setTab('decisions');
+      setFocus(focusFrom(location.href));
     };
     window.addEventListener('cubefarm:open', onOpen);
-    return () => window.removeEventListener('cubefarm:open', onOpen);
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('cubefarm:open', onOpen);
+      window.removeEventListener('hashchange', onHash);
+    };
   }, []);
   // While the chat is on screen, new CEO messages don't toast (the store reads this as the phone's chat being open).
   useEffect(() => {
@@ -261,6 +285,7 @@ export default function Pocket() {
     ['kanban', '📋', 'Kanban', 0],
     ['team', '👥', 'Team', 0],
     ['approvals', '✋', 'Approvals', waiting],
+    ['decisions', '🧭', 'Decisions', decisions],
   ];
   return (
     <div className="pocket">
@@ -290,7 +315,12 @@ export default function Pocket() {
             {tab === 'chat' && <Chat autoFocus={false} />}
             {tab === 'kanban' && <Board repoId={repoId} pick={setRepoId} />}
             {tab === 'team' && <Team focusRepo={repoId} />}
-            {tab === 'approvals' && <Approvals />}
+            {tab === 'approvals' && <Approvals onDecisions={() => setTab('decisions')} />}
+            {tab === 'decisions' && (
+              <div className="pk-page">
+                <DecisionRoom focus={focus} />
+              </div>
+            )}
           </>
         )}
       </main>

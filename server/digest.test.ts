@@ -263,3 +263,16 @@ describe('decision briefs in the digest', () => {
     expect(bare.text).toContain(NO_BRIEF);
   });
 });
+
+describe('Decision room links in the digest', () => {
+  it('link every decision to its card', () => {
+    const d = buildDigest([floor('o/rtsm', { needsInput: [{ number: 7, title: 'Plan name', url: 'u7', excerpt: '' }], waiting: waitingPulls([pull(3)], [{ prNumber: 3, status: 'passed', heldFor: 'label swarm:hold' }], true, 'rtsm') })], {
+      officeUrl: 'https://office.example.com',
+      now: 0,
+    });
+    expect(d.text).toContain('  Answer in the Decision room: https://office.example.com/decisions#o/rtsm/7');
+    expect(d.text).toContain('  Answer in the Decision room: https://office.example.com/decisions#o/rtsm/3');
+    expect(d.html).toContain('<a href="https://office.example.com/decisions#o/rtsm/7">Answer in the Decision room</a>');
+    expect(buildDigest([floor('o/rtsm', { needsInput: [{ number: 7, title: 'Plan name', url: 'u7', excerpt: '' }] })]).text).not.toContain('Decision room');
+  });
+});

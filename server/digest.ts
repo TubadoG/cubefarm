@@ -4,6 +4,7 @@
 import { briefLines, NEEDS_INPUT, type Brief } from '../shared/brief.ts';
 import { escapeHtml } from '../shared/email.ts';
 import type { IssueInfo, PullInfo, QaStatus } from '../shared/types.ts';
+import { decisionLink } from '../shared/decisions.ts';
 import { dueSoon, whenLabel } from './decisionClock.ts';
 import { decisionLines, readyDecision, stuckPrDecision, type Decision } from './decision.ts';
 
@@ -161,20 +162,24 @@ export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string; n
     text.push('', 'Summary:', ...summary.map((l) => `- ${l}`));
     html.push('<p style="margin:8px 0 2px"><b>Summary</b></p><ul>', ...summary.map((l) => `<li>${escapeHtml(l)}</li>`), '</ul>');
     const infoHtml = (d: DecisionInfo) => decisionInfoLines(d, now).map((l) => `<br>${l.startsWith('Due within') ? `<b>${escapeHtml(l)}</b>` : escapeHtml(l)}`).join('');
+    // Each decision links to its card in the Decision room, where it is answered in one tap.
+    const room = (n: number) => (opts.officeUrl ? decisionLink(opts.officeUrl, f.name, n) : null);
+    const roomText = (n: number) => (room(n) ? [`  Answer in the Decision room: ${room(n)}`] : []);
+    const roomHtml = (n: number) => (room(n) ? `<br><a href="${escapeHtml(room(n)!)}">Answer in the Decision room</a>` : '');
     if (f.waiting.length) {
       text.push('', 'PRs waiting for your decision:');
       // With a brief, the brief is the decision (its options and recommendation); without one, the office's own.
       for (const p of f.waiting) {
         const [title, options, pick, approve] = decisionLines(p.decision);
         const lines = p.brief ? [title, ...decisionInfoLines(p, now), approve] : [title, options, pick, ...decisionInfoLines(p, now), approve];
-        text.push('', `- ${p.decision.question}`, ...lines.map((l) => `  ${l}`), `  ${p.url}`);
+        text.push('', `- ${p.decision.question}`, ...lines.map((l) => `  ${l}`), `  ${p.url}`, ...roomText(p.number));
       }
       html.push(
         '<p style="margin:8px 0 2px"><b>PRs waiting for your decision</b></p><ul>',
         ...f.waiting.map((p) => {
           const [, options, pick, approve] = decisionLines(p.decision).map(escapeHtml);
           const office = p.brief ? '' : `<br>${options}<br>${pick}`;
-          return `<li style="margin-bottom:10px"><b>${escapeHtml(p.decision.question)}</b><br>${link(p)}${office}${infoHtml(p)}<br><span style="color:#555">${approve}</span></li>`;
+          return `<li style="margin-bottom:10px"><b>${escapeHtml(p.decision.question)}</b><br>${link(p)}${office}${infoHtml(p)}<br><span style="color:#555">${approve}</span>${roomHtml(p.number)}</li>`;
         }),
         '</ul>',
       );
@@ -184,11 +189,11 @@ export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string; n
       for (const i of f.needsInput) {
         const info = decisionInfoLines(i, now);
         const quote = i.excerpt && !i.brief ? [`  > ${i.excerpt}`] : [];
-        text.push(`- #${i.number} ${i.title}`, `  ${i.url}`, ...quote, ...info.map((l) => `  ${l}`));
+        text.push(`- #${i.number} ${i.title}`, `  ${i.url}`, ...quote, ...info.map((l) => `  ${l}`), ...roomText(i.number));
       }
       html.push(
         '<p style="margin:8px 0 2px"><b>Issues that need your input</b></p><ul>',
-        ...f.needsInput.map((i) => `<li style="margin-bottom:10px">${link(i)}${i.excerpt && !i.brief ? `<br><span style="color:#555">${escapeHtml(i.excerpt)}</span>` : ''}${infoHtml(i)}</li>`),
+        ...f.needsInput.map((i) => `<li style="margin-bottom:10px">${link(i)}${i.excerpt && !i.brief ? `<br><span style="color:#555">${escapeHtml(i.excerpt)}</span>` : ''}${infoHtml(i)}${roomHtml(i.number)}</li>`),
         '</ul>',
       );
     }

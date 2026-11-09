@@ -15,11 +15,18 @@ type Internals = {
 const REPO = 'demo-co/pixel-todo';
 const H = 3_600_000;
 
+/** A sync that waits for one already running (connectRepo starts its own), so it sees what was just filed. */
+async function sync(swarm: Swarm) {
+  const rt = (swarm as unknown as { repoRt: Map<string, { syncing?: boolean }> }).repoRt.get(REPO);
+  while (rt?.syncing) await new Promise((r) => setTimeout(r, 5));
+  await swarm.syncRepo(REPO);
+}
+
 async function office() {
   const backend = createDemoBackend();
   const swarm = new Swarm(backend);
   await swarm.connectRepo(REPO);
-  await swarm.syncRepo(REPO);
+  await sync(swarm);
   const internals = swarm as unknown as Internals;
   internals.ensureCeo([]);
   return { backend, swarm, internals };
@@ -30,7 +37,7 @@ const BRIEF = ['## Decision brief', '### Background', 'v2 needs a palette.', '##
 /** A fresh needs-input issue (the demo's GitHub is shared by every office in this file). */
 async function ask(backend: Backend, swarm: Swarm, body = BRIEF) {
   const n = await backend.createIssue(REPO, `Question ${Math.random().toString(36).slice(2, 7)}`, body, [NEEDS_INPUT]);
-  await swarm.syncRepo(REPO);
+  await sync(swarm);
   return n;
 }
 const labels = async (backend: Backend, n: number) => (await backend.listIssues(REPO)).find((i) => i.number === n)?.labels ?? [];
