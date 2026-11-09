@@ -104,12 +104,6 @@ describe('office tools', () => {
       writeBrief: async () => '',
       setDependencies: async () => '',
       closeIssue: async () => '',
-      retryQa: async () => '',
-      sendBack: async () => '',
-      rerunChecks: async () => '',
-      closePull: async () => '',
-      rebuild: async () => '',
-      escalate: async () => '',
       sendEmail: async () => '',
     });
     const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
@@ -125,16 +119,10 @@ describe('office tools', () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       'agent_detail',
       'close_issue',
-      'close_pull',
       'company_status',
       'configure_agent',
-      'escalate',
       'file_issue',
-      'rebuild',
-      'rerun_checks',
-      'retry_qa',
       'scale_team',
-      'send_back',
       'send_email',
       'set_dependencies',
       'set_floor_profile',
@@ -296,43 +284,20 @@ describe('team guidance', () => {
   });
 });
 
-describe('triage', () => {
+describe('triage moved to the floor leads', () => {
   const system = ceoSystemPrompt({ name: 'Luna', company: 'Acme', manager: 'Sam', notesFile: 'notes.md', sessionLimit: 0, maxAgents: 10, scaling: 'approve' });
   const floor = { floor: 2, fullName: 'acme/app', clone: '/clones/app', mission: '', backlog: 3 };
-  const job: CeoJob = { kind: 'triage', repoId: 'r1', prNumber: 108, at: 0 };
-  const pr = {
-    number: 108,
-    title: 'Jukebox volume',
-    url: 'https://github.com/acme/app/pull/108',
-    round: 3,
-    why: 'it still conflicts with main after 3 fixes',
-    summary: 'Works, but the slider overflows on phones.',
-    fixInstructions: 'Wrap the slider below 480px.',
-    mergeNote: 'the conflict was never resolved',
-    checks: 'failing',
-    failedChecks: ['CI / e2e'],
-    pendingChecks: [],
-    mergeable: 'CONFLICTING',
-    mergeState: 'DIRTY',
-    triage: 1,
-  };
 
-  it('gives the job everything QA and GitHub know about the PR', () => {
-    const prompt = ceoJobPrompt(job, floor, pr);
-    for (const fact of ['#108', 'Jukebox volume', 'QA round 3', pr.summary, pr.fixInstructions, pr.mergeNote, pr.why, 'GitHub checks: failing (failed: CI / e2e)', 'mergeable: CONFLICTING (DIRTY)', 'triage 1 of 2']) {
-      expect(prompt).toContain(fact);
-    }
-    expect(prompt).toContain('retry_qa, send_back, rerun_checks, close_pull, rebuild or escalate');
-  });
-
-  it('has nothing to do once the PR is no longer stuck', () => {
-    expect(ceoJobPrompt(job, floor, null)).toBe('Pull request #108 no longer needs triage. Reply NO_MESSAGE.');
-  });
-
-  it('adds a triage section to the system prompt and keeps its safety rules', () => {
-    expect(system).toContain('Triage jobs:');
+  it('tells the CEO stuck PRs are the floor lead’s, and keeps its safety rules', () => {
+    expect(system).not.toContain('Triage jobs:');
+    expect(system).toContain("Stuck pull requests are each floor lead's job");
     expect(system).toContain('They are read-only to you. You cannot run shell commands.');
     expect(system).toContain('Change things only through the mcp__office__ tools.');
+  });
+
+  it('turns a triage job saved before floor leads into nothing to do', () => {
+    const job: CeoJob = { kind: 'triage', repoId: 'r1', prNumber: 108, at: 0 };
+    expect(ceoJobPrompt(job, floor)).toBe("Pull request #108 is the floor lead's to triage now. Reply NO_MESSAGE.");
   });
 });
 

@@ -108,6 +108,11 @@ describe('launchArgs', () => {
     expect(args.slice(args.indexOf('--disallowedTools'), args.indexOf('--'))).toEqual(['--disallowedTools', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ...CROSS_TURN_TOOLS, 'Bash', 'PowerShell', 'NotebookEdit']);
   });
 
+  it("keeps a floor lead's hands off the shell too, so it can never push", () => {
+    const { args } = launchArgs('claude', ctx({ role: 'lead' }));
+    expect(args.slice(args.indexOf('--disallowedTools'), args.indexOf('--'))).toEqual(['--disallowedTools', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ...CROSS_TURN_TOOLS, 'Bash', 'PowerShell', 'NotebookEdit']);
+  });
+
   it('keeps tools that wait across turns away from Claude Code, but not background shells', () => {
     const { args } = launchArgs('claude', ctx());
     expect(CROSS_TURN_TOOLS).toEqual(['Monitor', 'ScheduleWakeup', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger']);

@@ -181,7 +181,7 @@ const BUSY: AgentStatus[] = ['preparing', 'working'];
 function rightNow(f: OpsFloorState) {
   const stages = f.prs.map((p) => prStage(p.qa));
   const count = (s: string) => stages.filter((x) => x === s).length;
-  const people = f.agents.filter((a) => a.role !== 'ceo');
+  const people = f.agents.filter((a) => a.role === 'agent'); // the team: not the CEO or a floor lead
   return {
     ready: f.ready,
     building: people.filter((a) => a.task === 'issue' && BUSY.includes(a.status)).length,
@@ -208,7 +208,7 @@ export function floorAlarms(f: OpsFloorState, now: number): OpsAlarm[] {
     .filter((p) => prStage(p.qa) === 'needsYou')
     .map((p) => ({ ...base, id: `pr:${f.repoId}#${p.number}`, kind: 'pr', prNumber: p.number, agentId: null, text: `PR #${p.number} needs you${p.why ? `: ${firstLine(p.why)}` : ''}`, since: p.qa!.updatedAt }));
   const agents: OpsAlarm[] = f.agents
-    .filter((a) => a.role !== 'ceo' && a.status === 'error' && a.endedAt !== null && now - a.endedAt >= ALARM_ERROR_MS)
+    .filter((a) => a.role === 'agent' && a.status === 'error' && a.endedAt !== null && now - a.endedAt >= ALARM_ERROR_MS)
     .map((a) => ({ ...base, id: `agent:${a.id}`, kind: 'agent', prNumber: null, agentId: a.id, text: `${a.name} is stuck on an error${a.lastError ? `: ${firstLine(a.lastError)}` : ''}`, since: a.endedAt! }));
   return [...prs, ...agents];
 }

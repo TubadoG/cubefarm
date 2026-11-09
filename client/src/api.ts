@@ -72,6 +72,7 @@ export const api = {
       holdPaths?: string[];
       routineOnly?: boolean;
       autoPlan?: boolean;
+      floorLead?: boolean;
       minReady?: number;
       decisionTimeoutHours?: number;
       browserTesting?: boolean;

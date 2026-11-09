@@ -90,7 +90,7 @@ describe('floors that plan themselves (autoPlan)', () => {
     const base = { name: 'Luna', company: 'Acme', manager: 'Sam', notesFile: 'notes.md', sessionLimit: 0, maxAgents: 10, scaling: 'approve' as const };
     expect(ceoSystemPrompt(base)).not.toContain('autoPlan');
     expect(ceoSystemPrompt({ ...base, autoPlan: true })).toContain('Exception: floors with autoPlan on');
-    const review = ceoJobPrompt({ kind: 'review', at: 0 }, null, null, {
+    const review = ceoJobPrompt({ kind: 'review', at: 0 }, null, {
       autoPlan: [
         { floor: 2, fullName: 'acme/rtsm', clone: '/c/rtsm', ready: 1, minReady: 5 },
         { floor: 3, fullName: 'acme/site', clone: '/c/site', ready: 6, minReady: 5 },

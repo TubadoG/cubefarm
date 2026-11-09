@@ -74,6 +74,7 @@ export interface RepoView {
   autoPlan?: boolean; // the CEO keeps this floor's backlog stocked from its brief and roadmap in its reviews (absent in old journals)
   minReady?: number; // with autoPlan: how many issues ready to start the CEO keeps
   decisionTimeoutHours?: number; // a decision the manager doesn't answer in this long gets the brief's recommendation (0 = never)
+  floorLead?: boolean; // the floor has a standing lead (docs/floor-lead.md), extra to its team; absent in old journals
   folderSync: string | null; // how the floor's main checkout stands against GitHub: "in sync", "updated to abc1234", "2 behind: local changes" …
   browserTesting: boolean;
   links: string[]; // ids of related repos this floor's agents can read for context
@@ -151,8 +152,14 @@ export interface ProjectFolderView {
   floor: number | null; // already a floor in the office
 }
 
-/** Every agent on a floor is the same kind of worker (docs/agents.md); the one CEO works in the lobby and runs the company. */
-export type AgentRole = 'agent' | 'ceo';
+/**
+ * Every agent on a floor is the same kind of worker (docs/agents.md); the one CEO works in the lobby and runs the
+ * company; a floor's lead (docs/floor-lead.md) is extra to its team and triages its stuck PRs.
+ */
+export type AgentRole = 'agent' | 'ceo' | 'lead';
+
+/** A floor's team: the workers who build, test and fix, not the CEO or the floor lead. */
+export const isWorker = (a: { role: AgentRole }) => a.role === 'agent';
 
 /** Desks in a floor's room: 12 in the open-plan grid and 3 along the east wall. A team is at most this big. */
 export const FLOOR_SEATS = 15;
@@ -266,7 +273,7 @@ export interface PromptPart {
 
 /** GET /api/agents/:id/prompt: what the agent is told on each kind of task, with placeholders for the task's details. */
 export interface AgentPromptView {
-  kind: 'agent' | 'ceo';
+  kind: 'agent' | 'ceo' | 'lead';
   parts: PromptPart[];
 }
 
@@ -301,7 +308,7 @@ export interface QaView {
   commentUrl: string | null; // the PR comment with the latest QA report
   mergeNote: string | null; // where auto-merge stands once QA passed, e.g. "waiting for checks: Vercel"
   heldFor?: string | null; // passed, but held for the manager: the first matching changed file, or "label swarm:hold"
-  ceoLooking: boolean; // needs-human, and the CEO has a triage job for it (queued or running) before the manager hears
+  ceoLooking: boolean; // needs-human, and the office (the floor lead's triage, or a rebuild) still handles it: the manager hasn't been asked
   /** needs-human: the office's pick (server/decision.ts stuckPrPick), shown as the highlighted button with its why. */
   stuckPick?: { action: StuckAction | null; why: string } | null;
   updatedAt: number;
@@ -341,6 +348,15 @@ export interface SwarmSettings {
   listen: ListenSettings;
   notify: NotifySettings;
   email: EmailSettings; // Settings → Email: whom the CEO may email (docs/email.md)
+  lead: LeadSettings; // the floor leads' models (docs/floor-lead.md)
+}
+
+/** The floor leads' models: a strong one to diagnose a stuck PR, a cheap one for board clean-ups. '' model: the default. */
+export interface LeadSettings {
+  triageModel: string;
+  triageEffort: EffortLevel;
+  cleanupModel: string;
+  cleanupEffort: EffortLevel;
 }
 
 /** What the office tells the manager about when they're away (docs/pocket.md). */
@@ -481,7 +497,7 @@ export interface OpsNumbers {
   fixing: number; // open PRs back with a developer: QA failed, checks or a conflict
   toMerge: number; // open PRs that passed QA
   needsYou: number; // open PRs waiting on the manager (needsManager)
-  triage: number; // stuck PRs the CEO is looking at before they reach the manager
+  triage: number; // stuck PRs the floor lead (or a rebuild) handles before they could reach the manager
   // throughput
   mergedToday: number; // since midnight
   mergedHour: number; // in the last 60 minutes

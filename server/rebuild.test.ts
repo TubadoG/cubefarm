@@ -1,41 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { parseBrief, usableBrief, renderBrief } from '../shared/brief.ts';
-import { businessHold, closeComment, giveUpStep, issueComment, MAX_REBUILDS, parkBrief, parkDue, rebuildIssue, rebuildNote, rebuildSlug, technicalStuck } from './rebuild.ts';
-
-// The reasons swarm.ts stuck() gives.
-const TECHNICAL = [
-  'it still conflicts with main after 5 fixes',
-  'it still fails its checks after 5 fixes',
-  'it failed QA 6 times, the most QA rounds a PR gets (6)',
-  '2 fix sessions in a row failed',
-  'it went back for fixes, but 2 fix sessions in a row ended without pushing a commit',
-  'QA ended without a usable report 3 times in a row',
-  "Kim's session got stuck on it twice",
-  "its desk couldn't be set up",
-];
-
-describe('technicalStuck', () => {
-  it('counts every reason the office gives for a stuck PR as technical', () => {
-    for (const why of TECHNICAL) expect(technicalStuck(why)).toBe(true);
-  });
-
-  it('does not count an unknown reason or none', () => {
-    expect(technicalStuck(null)).toBe(false);
-    expect(technicalStuck('')).toBe(false);
-    expect(technicalStuck('the manager stopped it')).toBe(false);
-  });
-});
+import { businessHold, closeComment, giveUpStep, issueComment, MAX_REBUILDS, parkBrief, parkDue, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
 
 describe('businessHold', () => {
   const none = { labels: [], heldFor: null, hold: null, brief: false };
   it('finds no business hold on an ordinary PR', () => {
     expect(businessHold(none)).toBeNull();
   });
-  it('treats the hold label, a brief, a held pass, hold paths and non-routine work as business', () => {
+  it('treats the hold label, a brief, a held pass and hold paths as business', () => {
     expect(businessHold({ ...none, labels: ['bug', 'Swarm:Hold'] })).toBe('label swarm:hold');
     expect(businessHold({ ...none, brief: true })).toBe('it has a decision brief');
     expect(businessHold({ ...none, heldFor: 'server/payments/x.ts' })).toBe('server/payments/x.ts');
-    expect(businessHold({ ...none, hold: 'not routine: it changes dependencies (package.json)' })).toBe('not routine: it changes dependencies (package.json)');
+    expect(businessHold({ ...none, hold: 'server/payments/x.ts' })).toBe('server/payments/x.ts');
+  });
+  it('does not count work that is only "not routine" (size, dependencies, CI) as a business hold', () => {
+    expect(businessHold({ ...none, hold: 'not routine: it changes dependencies (package.json)' })).toBeNull();
+    expect(businessHold({ ...none, heldFor: 'not routine: it is a big change (812 lines; routine is up to 400)' })).toBeNull();
+    // a real hold path still counts, even next to a not-routine pass hold
+    expect(businessHold({ ...none, heldFor: 'not routine: it changes CI', hold: 'migrations/001.sql' })).toBe('migrations/001.sql');
   });
 });
 
@@ -45,9 +27,13 @@ describe('giveUpStep', () => {
     expect(giveUpStep({ why: conflict, business: null, rebuilds: 0 })).toEqual({ do: 'rebuild' });
   });
 
-  it('keeps today’s escalation for business holds and unknown reasons', () => {
+  it('escalates business holds only', () => {
     expect(giveUpStep({ why: conflict, business: 'label swarm:hold', rebuilds: 0 })).toEqual({ do: 'escalate', brief: false });
-    expect(giveUpStep({ why: null, business: null, rebuilds: 0 })).toEqual({ do: 'escalate', brief: false });
+  });
+
+  it('rebuilds a PR stuck for an unknown reason instead of handing it to the manager', () => {
+    expect(giveUpStep({ why: null, business: null, rebuilds: 0 })).toEqual({ do: 'rebuild' });
+    expect(giveUpStep({ why: 'the manager stopped it', business: null, rebuilds: 0 })).toEqual({ do: 'rebuild' });
   });
 
   it('loop guard: a rebuild stuck again goes to the manager with a brief', () => {

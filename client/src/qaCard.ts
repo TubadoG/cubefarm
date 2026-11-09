@@ -34,7 +34,7 @@ export function qaCardNote(
         tone: pr.mergeable === 'CONFLICTING' || pr.checks === 'failing' ? 'warn' : 'good',
       };
     case 'needs-human':
-      if (rec.ceoLooking) return { note: '🧭 CEO is looking', tone: 'warn' };
+      if (rec.ceoLooking) return { note: '🧭 Floor lead is on it', tone: 'warn' };
       return { note: `⚠️ needs you${rec.mergeNote ? ` · ${rec.mergeNote}` : ''}`, tone: 'bad' };
     case 'failed':
       return { note: '🔧 back to the developer', tone: 'warn' };

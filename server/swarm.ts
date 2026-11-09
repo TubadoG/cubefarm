@@ -27,6 +27,7 @@ import { reconcileStep, restartMessage, sessionStart, workState, type ReconcileS
 import { diagnose, finding, forget, NUDGE_WAIT_MS, nudgeText, QUIET_MS, triage, unclosedIssues, type Problem, type Remedy, type WatchAgent, type WatchMemory } from './watchdog.ts';
 import { sendBackPatch } from './sendBack.ts';
 import { checkTriageTarget, triageStep, type TriagePr } from './triage.ts';
+import { createLeadTools, DEFAULT_LEAD_SETTINGS, enqueueLead, escalationBrief, leadJobLabel, leadJobPrompt, leadModel, leadSettings, leadSystemPrompt, loadLeads, nextLeadJob, stuckStep, type LeadJob, type LeadState } from './lead.ts';
 import { DEFAULT_PREVIEW, Previews, parsePreviewPatch } from './previews.ts';
 import { PREVIEW_SLUG } from './previewRunner.ts';
 import { pruneQaShots, qaShotsDir, readQaShot, removeQaShots, saveQaShots } from './qaShots.ts';
@@ -53,7 +54,7 @@ import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
 import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
 import { Mailer } from './email.ts';
 import { briefAlert, decisionNote, stuckPickView, stuckPrDecision } from './decision.ts';
-import { businessHold, closeComment, MAX_REBUILDS, giveUpStep, issueComment, parkBrief, parkDue, parkedComment, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
+import { businessHold, closeComment, MAX_REBUILDS, giveUpStep, REBUILD_RETRY_MS, issueComment, parkBrief, parkDue, parkedComment, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
 import { answerPlan } from './decisionAnswer.ts';
 import { decisionKeyOf, decisionLink, MAX_DECISION_TEXT, parseDecisionChoice, type DecisionMessage, type DecisionReason, type DecisionView } from '../shared/decisions.ts';
 import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DecisionInfo, type DigestFloor } from './digest.ts';
@@ -68,7 +69,7 @@ import { parsePongResult, PONG_PLAYER, recordGame } from '../shared/pong.ts';
 import { effectiveModel } from '../shared/models.ts';
 import { DEFAULT_WEATHER, DEFAULT_WORLD_EVENTS, weatherSettings, worldEventSettings } from '../shared/outside.ts';
 import { DEFAULT_THEME_SETTINGS, dueGreeting, themeSettings } from '../shared/themes.ts';
-import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, FLOOR_SEATS, INSTALL_STEP } from '../shared/types.ts';
+import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, FLOOR_SEATS, INSTALL_STEP, isWorker } from '../shared/types.ts';
 import type {
   AgentActivity,
   AgentCli,
@@ -124,6 +125,7 @@ interface PersistedRepo {
   autoPlan: boolean; // the CEO files issues for this floor in its reviews, from the brief and roadmap (ceo.ts mayFileIssue)
   minReady: number; // with autoPlan: the issues ready to start the CEO keeps in stock
   decisionTimeoutHours: number; // a decision the manager doesn't answer in this long gets the brief's recommendation (0 = never)
+  floorLead: boolean; // a standing floor lead (lead.ts), extra to the team, triages the floor's stuck PRs
   browserTesting: boolean;
   links: string[]; // other connected repos this floor's agents may read
   localPath: string | null; // the manager's own project folder (null: a clone under WORKSPACE_ROOT)
@@ -137,7 +139,7 @@ interface PersistedRepo {
 interface PersistedAgent {
   id: string;
   name: string;
-  repoId: string; // '' for the CEO, who works in the lobby
+  repoId: string; // '' for the CEO, who works in the lobby; the floor lead's is its floor
   role: AgentRole;
   look: AgentLook;
   task: AgentTask | null;
@@ -185,8 +187,9 @@ interface QaRecord extends Omit<QaView, 'ceoLooking' | 'stuckPick'> {
   rerunSha: string | null; // the head commit whose failed checks the office re-ran (once per commit)
   rerunAt: number | null;
   qaChecks: PullInfo['checks'] | null; // GitHub's checks when QA last failed it: a later re-run can be the fix
-  stuckWhy: string | null; // why it last became needs-human, for the CEO's triage and the manager's alert
-  triages: number; // CEO triage jobs it has had (triage.ts caps them)
+  stuckWhy: string | null; // why it last became needs-human, for the floor lead's triage and the manager's alert
+  triages: number; // floor lead triage jobs it has had (triage.ts caps them)
+  rebuildRetryAt: number | null; // GitHub refused its rebuild: the office tries again at this time instead of asking the manager
   escalated: boolean; // needs-human and the manager has been told; cleared when it leaves needs-human
   parkBy: number | null; // a rebuild stuck again went to the manager with a park brief (rebuild.ts): closed at this time if nobody answers; null: no deadline
   parked: boolean; // it went to the manager with that brief
@@ -245,6 +248,7 @@ interface Persisted {
   digestSentDay: string | null; // the local day (YYYY-MM-DD) the daily digest last went out (or was refused)
   decisions: DecisionRecord[]; // decisions waiting for the manager, and when the office first saw them (decisionClock.ts)
   decisionNotes: Record<string, DecisionNotes>; // the Decision room's threads and answers, by decisionKeyOf
+  leads: Record<string, LeadState>; // each floor lead's queue and current job, by repo id (lead.ts)
 }
 
 /** A Decision room card's own state: its thread with the CEO, and the manager's answer. */
@@ -343,6 +347,10 @@ const CEO_EFFORT: EffortLevel = 'xhigh';
 const CEO_NAME = 'Morgan';
 // The CEO's own folder: its notes about the company live here. Repos are read through their clones.
 const CEO_DIR = path.join(HOME_DIR, 'ceo');
+// Each floor lead's folder (its notes on the floor), by floor repo.
+const LEADS_DIR = path.join(HOME_DIR, 'leads');
+// Floor leads' names: from their own pool, so a lead is told apart from the team at a glance.
+const LEAD_NAMES = ['Quinn', 'Rowan', 'Harper', 'Sasha', 'Jordan', 'Avery', 'Reese', 'Emerson', 'Blake', 'Kendall', 'Parker', 'Sydney'];
 const DEFAULT_PROJECTS_DIR = defaultProjectsDir(path.resolve(import.meta.dirname, '..'));
 const MAX_ISSUES_PER_JOB = 12;
 const KEEP_MESSAGES = 200;
@@ -522,6 +530,7 @@ export class Swarm {
       listen: { ...DEFAULT_LISTEN },
       notify: notifySettings(DEFAULT_NOTIFY, {}),
       email: emailSettings(DEFAULT_EMAIL, {}),
+      lead: { ...DEFAULT_LEAD_SETTINGS },
     },
     repos: [],
     agents: [],
@@ -540,6 +549,7 @@ export class Swarm {
     digestSentDay: null,
     decisions: [],
     decisionNotes: {},
+    leads: {},
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -556,13 +566,22 @@ export class Swarm {
       writeBrief: (a) => this.writeBrief(a),
       setDependencies: (a) => this.setDependencies(a),
       closeIssue: (a) => this.closeIssue(a),
-      retryQa: (a) => this.triageRetryQa(a),
-      sendBack: (a) => this.triageSendBack(a),
-      rerunChecks: (a) => this.triageRerunChecks(a),
-      closePull: (a) => this.triageClosePull(a),
-      rebuild: (a) => this.triageRebuild(a),
-      escalate: (a) => this.triageEscalate(a),
       sendEmail: (a) => this.ceoEmail(a),
+    });
+  }
+
+  /** A floor lead's office tools: its own floor only, and only what a lead may do (lead.ts). */
+  private leadTools(repo: PersistedRepo): OfficeTools {
+    const on = <T,>(a: T) => ({ ...a, floor: repo.floor, repoId: repo.id });
+    return createLeadTools(repo.floor, {
+      floorStatus: () => this.floorStatus(repo),
+      writeBrief: (a) => this.writeBrief(on(a), `${this.leadOf(repo)?.name ?? 'The floor lead'}, the cubefarm floor lead`),
+      retryQa: (a) => this.triageRetryQa(on(a)),
+      sendBack: (a) => this.triageSendBack(on(a)),
+      rerunChecks: (a) => this.triageRerunChecks(on(a)),
+      closePull: (a) => this.triageClosePull(on(a)),
+      rebuild: (a) => this.triageRebuild(on(a)),
+      escalate: (a) => this.triageEscalate(on(a)),
     });
   }
   private ceoIssues = new IssueCap(MAX_ISSUES_PER_JOB); // issues filed during the current CEO job
@@ -694,6 +713,7 @@ export class Swarm {
           autoPlan: r.autoPlan ?? false,
           minReady: r.minReady ?? DEFAULT_MIN_READY,
           decisionTimeoutHours: r.decisionTimeoutHours ?? DEFAULT_DECISION_TIMEOUT_HOURS,
+          floorLead: r.floorLead ?? true,
           links: r.links ?? [],
           mission: r.mission ?? '',
           summary: r.summary ?? '',
@@ -729,6 +749,7 @@ export class Swarm {
           qaChecks: q.qaChecks ?? null,
           stuckWhy: q.stuckWhy ?? null,
           triages: q.triages ?? 0,
+          rebuildRetryAt: q.rebuildRetryAt ?? null,
           escalated: q.escalated ?? q.status === 'needs-human', // stuck before triage existed: the manager was told
           parkBy: q.parkBy ?? null,
           parked: q.parked ?? false,
@@ -748,6 +769,7 @@ export class Swarm {
         digestSentDay: typeof loaded.digestSentDay === 'string' ? loaded.digestSentDay : null,
         decisions: Array.isArray(loaded.decisions) ? loaded.decisions : [],
         decisionNotes: loaded.decisionNotes && typeof loaded.decisionNotes === 'object' ? loaded.decisionNotes : {},
+        leads: loadLeads(loaded.leads),
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -775,6 +797,7 @@ export class Swarm {
       }
       if (this.state.settings.scaling !== 'auto') this.state.settings.scaling = 'approve';
       this.state.settings.maxAgents = clampMaxAgents(this.state.settings.maxAgents);
+      this.state.settings.lead = leadSettings(DEFAULT_LEAD_SETTINGS, loaded.settings?.lead);
       this.state.settings.voice = voiceSettings(DEFAULT_VOICE, loaded.settings?.voice);
       this.state.settings.themes = themeSettings(DEFAULT_THEME_SETTINGS, loaded.settings?.themes);
       this.state.settings.weather = weatherSettings(DEFAULT_WEATHER, loaded.settings?.weather);
@@ -805,11 +828,11 @@ export class Swarm {
       this.agentRt.set(a.id, { log: tail, session: null, currentTool: null, browserUrl: null, screenshot: await loadScreen(a.id), shots: [], terminal: await this.loadTerminal(a.id) });
     }
     // CLIs the terminal keeper kept running through the restart go back into their terminals, and busy ones carry on.
-    // (The CEO's session is resumed instead: its office tools live in this process.)
+    // (The CEO's and the floor leads' jobs start again instead: their office tools live in this process.)
     const back = await this.backend
       .reconnectClis((id) => {
         const a = this.state.agents.find((x) => x.id === id);
-        return a && a.role !== 'ceo' ? this.terminalFor(a) : null;
+        return a && isWorker(a) ? this.terminalFor(a) : null;
       })
       .catch((err) => {
         console.warn('could not reconnect to the terminal keeper', err);
@@ -844,8 +867,9 @@ export class Swarm {
     }
     for (const r of this.state.repos) this.ensureAgent(r);
     this.ensureCeo(interrupted);
+    this.ensureLeads(interrupted);
     // Agents from before the ledger start their careers now.
-    for (const a of this.state.agents) if (a.role !== 'ceo') applyLedger(this.state.progress, { kind: 'hired', agentId: a.id, at: Date.now() });
+    for (const a of this.state.agents) if (isWorker(a)) applyLedger(this.state.progress, { kind: 'hired', agentId: a.id, at: Date.now() });
 
     for (const r of this.state.repos) void this.cloneRepo(r.id);
     await Promise.all(this.state.repos.map((r) => this.syncRepo(r.id)));
@@ -1033,6 +1057,7 @@ export class Swarm {
       autoPlan: r.autoPlan,
       minReady: r.minReady,
       decisionTimeoutHours: r.decisionTimeoutHours,
+      floorLead: r.floorLead,
       folderSync: rt.folderSync,
       browserTesting: r.browserTesting,
       links: r.links,
@@ -1086,7 +1111,7 @@ export class Swarm {
       hasScreenshot: !!rt.screenshot,
       screenshotAt: rt.screenshot?.at ?? null,
       lastError: a.lastError,
-      career: a.role === 'ceo' ? null : (this.state.progress.careers[a.id] ?? null),
+      career: isWorker(a) ? (this.state.progress.careers[a.id] ?? null) : null,
       log: withLog ? rt.log : [],
       activity: this.activityOf(a),
     };
@@ -1113,7 +1138,7 @@ export class Swarm {
       commentUrl: q.commentUrl,
       mergeNote: q.mergeNote,
       heldFor: q.heldFor ?? null,
-      ceoLooking: q.status === 'needs-human' && !q.escalated && this.triageJob(q) != null,
+      ceoLooking: q.status === 'needs-human' && !q.escalated,
       stuckPick: q.status === 'needs-human' ? stuckPickView(q.stuckWhy, q.parked) : null,
       updatedAt: q.updatedAt,
       shots: q.shots ?? [],
@@ -1415,6 +1440,7 @@ export class Swarm {
       autoPlan: false,
       minReady: DEFAULT_MIN_READY,
       decisionTimeoutHours: DEFAULT_DECISION_TIMEOUT_HOURS,
+      floorLead: true,
       browserTesting: true,
       links: [],
       localPath: folder,
@@ -1431,6 +1457,7 @@ export class Swarm {
     this.emitRepo(repo);
     this.toast('success', `${repo.fullName} moved into floor ${floor}`);
     this.ensureAgent(repo);
+    this.ensureLeads();
     void this.cloneRepo(repo.id);
     void this.syncRepo(repo.id);
     // The CEO studies every new floor and sizes its team; a brief given here is the manager asking for a plan.
@@ -1499,7 +1526,11 @@ export class Swarm {
     for (const r of this.state.requests.filter((x) => x.repoId === id && x.status === 'pending')) {
       this.decide(r, { status: 'rejected', note: 'The floor was disconnected.', decidedBy: null });
     }
-    for (const a of this.state.agents.filter((x) => x.repoId === id)) this.fireAgent(a.id, true);
+    for (const a of this.state.agents.filter((x) => x.repoId === id)) {
+      if (a.role === 'lead') this.removeLead(a);
+      else this.fireAgent(a.id, true);
+    }
+    delete this.state.leads[id];
     void this.previews.remove({ ...repo });
     this.state.repos = this.state.repos.filter((r) => r.id !== id);
     for (const q of this.state.qa.filter((x) => x.repoId === id)) {
@@ -1522,7 +1553,7 @@ export class Swarm {
 
   updateRepo(
     id: string,
-    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'routineOnly' | 'autoPlan' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & {
+    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'routineOnly' | 'autoPlan' | 'floorLead' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & {
       previewCommand?: unknown;
       previewEnv?: unknown;
       holdPaths?: unknown;
@@ -1558,6 +1589,10 @@ export class Swarm {
       if (repo.autoMerge) void this.syncRepo(repo.id);
     }
     if (patch.autoPlan !== undefined) repo.autoPlan = !!patch.autoPlan;
+    if (patch.floorLead !== undefined && !!patch.floorLead !== repo.floorLead) {
+      repo.floorLead = !!patch.floorLead;
+      this.ensureLeads(); // stuck PRs it was queued for fall back on the office's rebuild (stuckTick)
+    }
     if (minReady !== undefined) repo.minReady = minReady;
     if (timeout !== undefined) repo.decisionTimeoutHours = timeout;
     if (patch.browserTesting !== undefined) repo.browserTesting = !!patch.browserTesting;
@@ -2182,12 +2217,19 @@ export class Swarm {
     },
   ) {
     const repo = this.repo(repoId);
-    const team = this.state.agents.filter((a) => a.repoId === repo.id);
+    const here = this.state.agents.filter((a) => a.repoId === repo.id);
+    const team = here.filter(isWorker); // the floor lead is extra to the team, but sits at a desk
     const max = this.state.settings.maxAgents;
     if (team.length >= max) throw new HttpError(409, `Floor ${repo.floor} already has ${team.length} agents, its most (${max}). Raise "Most agents per floor" in Settings to add more.`);
-    const used = new Set(team.map((a) => a.desk));
+    const used = new Set(here.map((a) => a.desk));
     let desk = 0;
     while (used.has(desk)) desk++;
+    // The team comes first: on a full floor the lead gives up its desk, and sits down again once one frees up.
+    const lead = here.find((a) => a.role === 'lead');
+    if (desk >= FLOOR_SEATS && lead && !BUSY.includes(lead.status)) {
+      desk = lead.desk;
+      this.removeLead(lead);
+    }
     if (desk >= FLOOR_SEATS) throw new HttpError(409, `Floor ${repo.floor} has no free desk (${FLOOR_SEATS} desks)`);
     const name = opts.name?.trim().slice(0, 24) || this.freeName();
     const cli = isCli(opts.cli) ? opts.cli : '';
@@ -2236,7 +2278,7 @@ export class Swarm {
 
   /** Every floor has at least one agent. */
   private ensureAgent(repo: PersistedRepo) {
-    if (this.state.agents.some((a) => a.repoId === repo.id)) return;
+    if (this.state.agents.some((a) => a.repoId === repo.id && isWorker(a))) return;
     this.hireAgent(repo.id, {});
   }
 
@@ -2275,7 +2317,8 @@ export class Swarm {
   fireAgent(id: string, force = false) {
     const a = this.agent(id);
     if (a.role === 'ceo') throw new HttpError(409, `${a.name} runs the company and can't be let go.`);
-    if (!force && this.state.agents.filter((x) => x.repoId === a.repoId).length <= 1) {
+    if (a.role === 'lead') throw new HttpError(409, `${a.name} is the floor lead: turn "Floor lead" off in the floor's settings instead.`);
+    if (!force && this.state.agents.filter((x) => x.repoId === a.repoId && isWorker(x)).length <= 1) {
       throw new HttpError(409, `${a.name} is the only agent on this floor, and every floor keeps at least one.`);
     }
     for (const r of this.state.requests.filter((x) => x.kind === 'let-go' && x.agentId === id && x.status === 'pending')) {
@@ -2372,6 +2415,7 @@ export class Swarm {
     const a = this.agent(agentId);
     const repo = this.repo(a.repoId);
     if (a.role === 'ceo') throw new HttpError(400, `${a.name} runs the company; give issues to the agents on the floors.`);
+    if (a.role === 'lead') throw new HttpError(400, `${a.name} is the floor lead: they triage stuck PRs, so give issues to the team.`);
     if (BUSY.includes(a.status)) throw new HttpError(409, `${a.name} is busy: ${this.agentDoing(a)}`);
     this.ensureSlot();
     const issues = this.repoRt.get(repo.id)?.issues ?? [];
@@ -2404,13 +2448,13 @@ export class Swarm {
    */
   private sessionRuntime(a: PersistedAgent, resume?: string): { terminal?: AgentTerminal; cli?: AgentCli; label?: string; resumeSessionId?: string } {
     const inTerminal = this.state.settings.runtime === 'terminal' && this.backend.terminals;
-    let cli: AgentCli = a.role === 'ceo' ? 'claude' : a.cli || this.state.settings.defaultCli;
+    let cli: AgentCli = isWorker(a) ? a.cli || this.state.settings.defaultCli : 'claude';
     if (resume && a.sessionCli && a.sessionCli !== cli) {
       if (inTerminal) cli = a.sessionCli;
       else if (a.sessionCli !== 'claude') resume = undefined;
     }
     if (!inTerminal) return { resumeSessionId: resume };
-    const what = a.role === 'ceo' ? a.issueTitle : a.task === 'qa' ? `QA · PR #${a.prNumber}` : a.task === 'fix' ? `fixing PR #${a.prNumber}` : a.issueNumber ? `#${a.issueNumber} ${a.issueTitle ?? ''}` : null;
+    const what = !isWorker(a) ? a.issueTitle : a.task === 'qa' ? `QA · PR #${a.prNumber}` : a.task === 'fix' ? `fixing PR #${a.prNumber}` : a.issueNumber ? `#${a.issueNumber} ${a.issueTitle ?? ''}` : null;
     return { terminal: this.terminalFor(a), cli, label: `${a.name}${what ? ` · ${what}` : ''}`.slice(0, 80).trim(), resumeSessionId: resume };
   }
 
@@ -2470,6 +2514,11 @@ export class Swarm {
   agentPrompt(id: string): AgentPromptView {
     const a = this.agent(id);
     if (a.role === 'ceo') return ceoPromptPreview(ceoSystemPrompt(this.ceoPromptInput(a)));
+    if (a.role === 'lead') {
+      const repo = this.repo(a.repoId);
+      const text = leadSystemPrompt({ name: a.name, floor: repo.floor, fullName: repo.fullName, company: this.state.settings.companyName, notesFile: path.join(LEADS_DIR, '<floor>', 'NOTES.md') });
+      return { kind: 'lead' as const, parts: [{ label: 'Floor lead', text }] };
+    }
     const repo = this.repo(a.repoId);
     return agentPromptPreview({ agent: a, repo, port: this.port(a), slug: slugify(a.name), linked: this.linkedDirs(repo) });
   }
@@ -2556,7 +2605,7 @@ export class Swarm {
       ...(task === 'fix' ? { status: needsHuman ? 'needs-human' : 'failed', devAgentId: job.author } : { status: needsHuman ? 'needs-human' : 'queued', qaAgentId: null }),
       sessionFailures: step.sessionFailures,
     };
-    // A desk that won't set up is technical: the CEO triages it (often a retry clears it), then the office rebuilds.
+    // A desk that won't set up is technical: the floor lead triages it (often a retry clears it), then the office rebuilds.
     if (needsHuman) this.stuck(rec, { ...patch, mergeNote: "its desk couldn't be set up" }, "its desk couldn't be set up");
     else this.setQa(rec, patch);
     if (step.next === 'retry') return;
@@ -2857,6 +2906,7 @@ export class Swarm {
         qaChecks: null,
         stuckWhy: null,
         triages: 0,
+        rebuildRetryAt: null,
         escalated: false,
         parkBy: null,
         parked: false,
@@ -2883,7 +2933,7 @@ export class Swarm {
     }
     const dev = this.state.agents.find((a) => a.repoId === repo.id && a.role !== 'ceo' && a.task !== 'qa' && (a.prNumber === prNumber || a.branch === pr.headRefName));
     const tester = agentId ? this.agent(agentId) : null;
-    if (tester && (tester.repoId !== repo.id || tester.role === 'ceo')) throw new HttpError(400, `${tester.name} doesn't work on ${repo.fullName}`);
+    if (tester && (tester.repoId !== repo.id || !isWorker(tester))) throw new HttpError(400, `${tester.name} doesn't work on ${repo.fullName}`);
     if (tester && BUSY.includes(tester.status)) throw new HttpError(409, `${tester.name} is busy: ${this.agentDoing(tester)}`);
     if (tester) this.ensureSlot();
     this.clearPrepStrikes(repo.id, prNumber);
@@ -3111,7 +3161,7 @@ export class Swarm {
         pass
           ? `✅ ${a.name} passed PR #${rec.prNumber}${repo.autoMerge ? "; it merges once GitHub's checks are green" : ': ready to merge'}`
           : nextStatus === 'needs-human'
-            ? `❌ PR #${rec.prNumber} failed QA ${qaRounds} times${triaged ? `; ${this.ceo().name} takes a look first` : '; the office rebuilds it or asks you'}`
+            ? `❌ PR #${rec.prNumber} failed QA ${qaRounds} times${this.stuckBy(rec, triaged)}`
             : next === 'conflict'
               ? `❌ ${a.name} failed PR #${rec.prNumber}, and it conflicts with ${repo.defaultBranch}; sending it back to merge and fix`
               : `❌ ${a.name} failed PR #${rec.prNumber}; sending it back to the developer`,
@@ -3318,7 +3368,7 @@ export class Swarm {
     a.lastError = `No new commits were pushed for PR #${rec.prNumber}`;
     this.appendLog(a, [step.log]);
     const triaged = needsHuman ? this.stuck(rec, step.set, `it went back for fixes, but ${step.set.sessionFailures} fix sessions in a row ended without pushing a commit`) : (this.setQa(rec, step.set), false);
-    const next = !needsHuman ? '; it goes back for another try' : triaged ? `; ${this.ceo().name} takes a look` : '; the office rebuilds it or asks you';
+    const next = !needsHuman ? '; it goes back for another try' : this.stuckBy(rec, triaged);
     this.toast('error', `${a.name} ended the fix for PR #${rec.prNumber} without pushing a commit${next}`);
   }
 
@@ -3337,6 +3387,7 @@ export class Swarm {
   async message(id: string, text: string, typed = false) {
     const a = this.agent(id);
     if (a.role === 'ceo') return this.messageCeo(text);
+    if (a.role === 'lead') throw new HttpError(400, `${a.name} is the floor lead and works from the floor's events. Message the CEO, or answer in the Decision room.`);
     const repo = this.repo(a.repoId);
     if (!text.trim()) throw new HttpError(400, 'Empty message');
     const rt = this.agentRt.get(id)!;
@@ -3370,6 +3421,7 @@ export class Swarm {
     if (patch.runtime === 'terminal' || patch.runtime === 'sdk') s.runtime = patch.runtime;
     if (patch.scaling === 'approve' || patch.scaling === 'auto') s.scaling = patch.scaling;
     if (patch.maxAgents !== undefined) s.maxAgents = clampMaxAgents(patch.maxAgents);
+    if (patch.lead !== undefined) s.lead = leadSettings(s.lead, { ...s.lead, ...(patch.lead && typeof patch.lead === 'object' ? patch.lead : {}) });
     if (patch.ceoHeartbeatMin !== undefined) s.ceoHeartbeatMin = Math.max(0, Math.min(1440, Math.round(Number(patch.ceoHeartbeatMin)) || 0));
     if (typeof patch.managerName === 'string') s.managerName = patch.managerName.trim().slice(0, 40);
     if (typeof patch.companyName === 'string') s.companyName = patch.companyName.trim().slice(0, 60);
@@ -3445,7 +3497,7 @@ export class Swarm {
 
   /** A floor's agents who can take work now, by desk. */
   private available(repo: PersistedRepo) {
-    return this.state.agents.filter((a) => a.repoId === repo.id && a.role !== 'ceo' && this.isFree(a)).sort((x, y) => x.desk - y.desk);
+    return this.state.agents.filter((a) => a.repoId === repo.id && isWorker(a) && this.isFree(a)).sort((x, y) => x.desk - y.desk);
   }
 
   private scheduleOffset = 0;
@@ -3502,7 +3554,7 @@ export class Swarm {
     const fixes = waiting('failed', 'fix');
     const owed = new Set(fixes.map((q) => q.devAgentId).filter((id): id is string => !!id));
     for (const rec of waiting('queued', 'qa')) {
-      const othersCan = this.state.agents.some((a) => a.repoId === repo.id && a.role !== 'ceo' && a.id !== rec.devAgentId && a.status !== 'stopped');
+      const othersCan = this.state.agents.some((a) => a.repoId === repo.id && isWorker(a) && a.id !== rec.devAgentId && a.status !== 'stopped');
       const tester = pickTester(free, rec.devAgentId, owed, othersCan, now - rec.updatedAt);
       if (!tester) continue;
       void this.runQa(tester, repo, rec);
@@ -3693,6 +3745,8 @@ export class Swarm {
     // Management first: the CEO's jobs are short and shape everyone else's work.
     this.maybeHeartbeat();
     this.startCeoWork();
+    this.stuckTick();
+    this.startLeadWork();
     const repos = this.state.repos.filter((r) => {
       const rt = this.repoRt.get(r.id);
       return rt && rt.lastSync != null && rt.cloneStatus !== 'error';
@@ -3811,6 +3865,7 @@ export class Swarm {
       if (rt) Object.assign(rt, { session: null, currentTool: null });
     }
     this.ensureCeo(interrupted);
+    this.ensureLeads(interrupted);
     this.recover(interrupted, preparing);
     interrupted.forEach((a) => this.emitAgent(a));
     await this.reportUpdate(result);
@@ -3939,8 +3994,8 @@ export class Swarm {
   private startCeoWork(): void {
     const a = this.state.agents.find((x) => x.id === CEO_ID);
     const c = this.state.ceo;
-    // A triage whose PR is no longer stuck (the manager stepped in, or it closed) has nothing left to do.
-    const stale = c.queue.filter((j) => j.kind === 'triage' && !this.stuckRecord(j));
+    // Triage moved to the floor leads: a CEO triage job saved before that has nothing left to do (stuckTick reroutes its PR).
+    const stale = c.queue.filter((j) => j.kind === 'triage');
     if (stale.length) {
       c.queue = c.queue.filter((j) => !stale.includes(j));
       this.emitCeo();
@@ -4005,11 +4060,9 @@ export class Swarm {
     this.emitCeo();
     this.save();
     await fs.mkdir(CEO_DIR, { recursive: true }).catch(() => undefined);
-    const triage = job.kind === 'triage' ? await this.triagePr(job) : null;
     if (a.status !== 'working') {
       // stopped before the session started
       this.state.ceo.job = null;
-      if (job.kind === 'triage') this.endTriage(job);
       this.emitCeo();
       return;
     }
@@ -4018,7 +4071,7 @@ export class Swarm {
     rt.session = this.backend.startSession(
       {
         cwd: CEO_DIR,
-        prompt: ceoJobPrompt(job, floor, triage, job.kind === 'review' ? this.reviewInput() : null, job.kind === 'decision' ? this.decisionContext(job) : null),
+        prompt: ceoJobPrompt(job, floor, job.kind === 'review' ? this.reviewInput() : null, job.kind === 'decision' ? this.decisionContext(job) : null),
         systemAppend: ceoSystemPrompt(this.ceoPromptInput(a)),
         model: a.model || CEO_MODEL,
         effort: a.effort || CEO_EFFORT,
@@ -4064,7 +4117,6 @@ export class Swarm {
     recordCost(this.state.ops, '', result.costUsd, a.endedAt);
     const job = this.state.ceo.job;
     this.state.ceo.job = null;
-    if (job?.kind === 'triage') this.endTriage(job);
     if (job?.kind === 'decision') void this.decisionAnswered(job, result.ok && !result.interrupted ? result.text : null);
     if (result.interrupted) this.interrupted(a);
     if (a.status === 'stopped') {
@@ -4135,7 +4187,7 @@ export class Swarm {
         const rt = this.repoRt.get(r.id);
         return [r.id, r.mission, r.summary, rt?.issues.map((i) => i.number), rt?.pulls.filter((p) => p.state === 'OPEN').map((p) => p.number)];
       }),
-      agents: this.state.agents.filter((a) => a.role !== 'ceo').map((a) => [a.id, FREE.includes(a.status) ? 'free' : a.status]),
+      agents: this.state.agents.filter(isWorker).map((a) => [a.id, FREE.includes(a.status) ? 'free' : a.status]),
       qa: this.state.qa.map((q) => [q.repoId, q.prNumber, q.status]),
       requests: this.state.requests.filter((r) => r.status === 'pending').map((r) => r.id),
       autoPlan: this.state.repos.map((r) => [r.autoPlan, r.minReady]),
@@ -4164,29 +4216,59 @@ export class Swarm {
   // ---------- triage ----------
 
   /**
-   * A PR the office can't move on its own (needs-human): the CEO triages it first, at most MAX_TRIAGES times, and the
-   * manager hears when the CEO escalates or takes no action, or when it keeps getting stuck. True: it went to the CEO.
+   * A PR the office can't move on its own (needs-human): the floor lead triages it first, at most MAX_TRIAGES times
+   * (lead.ts stuckStep); with no lead, or its tries spent, the office gives up on it at once (giveUp: rebuilt, or the
+   * manager for a business hold). True: it went to the floor lead.
    */
   private stuck(rec: QaRecord, patch: Partial<QaRecord>, why: string): boolean {
     if (!this.state.qa.includes(rec)) return false; // its PR closed: nothing is stuck
-    this.setQa(rec, { ...patch, status: 'needs-human', stuckWhy: why });
-    const step = triageStep({ kind: 'stuck', triages: rec.triages });
-    if (step.do !== 'triage') {
-      void this.giveUp(rec, step.do === 'escalate' ? step.note : null);
+    this.setQa(rec, { ...patch, status: 'needs-human', stuckWhy: why, rebuildRetryAt: null });
+    return this.routeStuck(rec);
+  }
+
+  /** Send a stuck, unescalated PR to its floor lead, or give up on it. True: it went to the floor lead. */
+  private routeStuck(rec: QaRecord): boolean {
+    const repo = this.state.repos.find((r) => r.id === rec.repoId);
+    const lead = repo && this.leadOf(repo);
+    if (!repo || stuckStep({ lead: !!lead, triages: rec.triages }) === 'give-up') {
+      const note = rec.triages ? triageStep({ kind: 'stuck', triages: rec.triages }) : null;
+      void this.giveUp(rec, note?.do === 'escalate' ? note.note : null);
       return false;
     }
     rec.triages += 1;
-    this.enqueueCeo({ kind: 'triage', repoId: rec.repoId, prNumber: rec.prNumber, at: Date.now() });
-    this.setQa(rec, {}); // the card shows the CEO looking
+    this.enqueueLead(repo, { kind: 'triage', prNumber: rec.prNumber, at: Date.now() });
+    this.setQa(rec, {}); // the card shows the lead looking
     return true;
   }
 
-  /** Tell the manager a stuck PR needs them, once each time it gets stuck. note: what the CEO adds. */
+  /**
+   * Every scheduler pass: stuck PRs nobody is handling (after a restart, a lead turned off, or a rebuild GitHub refused
+   * whose retry is due) are routed again, so none waits for the manager by accident.
+   */
+  private stuckTick(now = Date.now()) {
+    for (const rec of this.state.qa) {
+      if (rec.status !== 'needs-human' || rec.escalated || this.givingUp.has(`${rec.repoId}#${rec.prNumber}`) || this.leadJobFor(rec)) continue;
+      if (rec.rebuildRetryAt !== null) {
+        if (now >= rec.rebuildRetryAt) void this.giveUp(rec, null);
+        continue;
+      }
+      this.routeStuck(rec);
+    }
+  }
+
+  /** Tell the manager a stuck PR needs them, once each time it gets stuck. note: what the lead adds. */
   private escalate(rec: QaRecord, note: string | null) {
     if (rec.status !== 'needs-human' || rec.escalated) return;
     this.setQa(rec, { escalated: true });
     const repo = this.state.repos.find((r) => r.id === rec.repoId);
     if (repo) this.postMessage('office', `⚠️ PR #${rec.prNumber} on ${repo.fullName} needs you: ${rec.stuckWhy ?? 'it is stuck'}.${note ? ` ${note}` : ''}`);
+  }
+
+  /** Who looks at a PR that just got stuck, for the phone: the floor lead, or the office. */
+  private stuckBy(rec: QaRecord, triaged: boolean) {
+    const repo = this.state.repos.find((r) => r.id === rec.repoId);
+    const lead = triaged && repo ? this.leadOf(repo) : undefined;
+    return lead ? `; ${lead.name}, the floor lead, takes a look` : '; the office rebuilds it, or asks you if it is held for a business reason';
   }
 
   // ---------- rebuilds ----------
@@ -4217,7 +4299,7 @@ export class Swarm {
       const { issues, count } = this.rebuildsOf(repo.id, pull);
       const step = giveUpStep({ why: rec.stuckWhy, business, rebuilds: count });
       if (!pull || rec.status !== 'needs-human' || rec.escalated || !this.state.qa.includes(rec)) return; // moved on meanwhile
-      if (step.do === 'rebuild') return void (await this.rebuildPull(repo, rec, pull, `${this.ceo().name}'s triage could not move it`));
+      if (step.do === 'rebuild') return void (await this.rebuildPull(repo, rec, pull, rec.triages ? 'the floor lead could not move it' : 'the office rebuilds what it can'));
       if (step.brief) {
         const hours = repo.decisionTimeoutHours;
         const deadline = deadlineOf({ firstSeen: Date.now() }, hours);
@@ -4229,8 +4311,13 @@ export class Swarm {
       this.escalate(rec, step.brief ? 'It was already rebuilt once: see the decision brief.' : note);
       if (step.brief) this.emitDecisions();
     } catch (err) {
-      // The rebuild couldn't be done (GitHub refused): the manager hears rather than the PR sitting unseen.
-      this.escalate(rec, `The office couldn't rebuild it: ${oneLine(err)}.`);
+      // GitHub refused the rebuild (a close or a comment): the office tries again later (stuckTick), not the manager.
+      if (this.state.qa.includes(rec) && rec.status === 'needs-human' && !rec.escalated) {
+        const first = rec.rebuildRetryAt === null;
+        rec.rebuildRetryAt = Date.now() + REBUILD_RETRY_MS;
+        if (first) this.postMessage('office', `♻️ The office couldn't rebuild PR #${rec.prNumber} on ${repo.fullName} yet (${oneLine(err)}); it tries again every ${REBUILD_RETRY_MS / 60_000} minutes.`);
+        this.save();
+      }
     } finally {
       this.givingUp.delete(key);
     }
@@ -4299,22 +4386,22 @@ export class Swarm {
     }
   }
 
-  /** The CEO's triage job for this PR, queued or running. */
-  private triageJob(q: Pick<QaRecord, 'repoId' | 'prNumber'>) {
-    const c = this.state.ceo;
-    return [c.job, ...c.queue].find((j) => j?.kind === 'triage' && j.repoId === q.repoId && j.prNumber === q.prNumber) ?? null;
+  /** The floor lead's triage job for this PR, queued or running. */
+  private leadJobFor(q: Pick<QaRecord, 'repoId' | 'prNumber'>) {
+    const l = this.state.leads[q.repoId];
+    if (!l) return null;
+    return [l.job, ...l.queue].find((j) => j?.kind === 'triage' && j.prNumber === q.prNumber) ?? null;
   }
 
   /** The record a triage job is for, while it is still waiting on a decision. */
-  private stuckRecord(job: CeoJob) {
-    return this.state.qa.find((q) => q.repoId === job.repoId && q.prNumber === job.prNumber && q.status === 'needs-human' && !q.escalated);
+  private stuckRecord(repoId: string, job: LeadJob) {
+    return this.state.qa.find((q) => q.repoId === repoId && q.prNumber === job.prNumber && q.status === 'needs-human' && !q.escalated);
   }
 
   /** What a triage job's prompt says about its PR: the QA record and GitHub's view of it now. null: no longer stuck. */
-  private async triagePr(job: CeoJob): Promise<TriagePr | null> {
-    const rec = this.stuckRecord(job);
-    const repo = this.state.repos.find((r) => r.id === job.repoId);
-    if (!rec || !repo) return null;
+  private async triagePr(repo: PersistedRepo, job: LeadJob): Promise<TriagePr | null> {
+    const rec = this.stuckRecord(repo.id, job);
+    if (!rec) return null;
     const listed = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === rec.prNumber);
     const pr = await this.backend.prDetails(repo.fullName, rec.prNumber).catch(() => null);
     if ((pr ?? listed)?.state !== 'OPEN') return null;
@@ -4336,43 +4423,50 @@ export class Swarm {
     };
   }
 
-  /** A triage job ended (done, failed or stopped): a PR still waiting on a decision goes to the manager. */
-  private endTriage(job: CeoJob) {
-    const rec = this.stuckRecord(job);
+  /** A triage job ended (done, failed or stopped): a PR still waiting on a decision is given up on (rebuilt, as a rule). */
+  private endTriage(repoId: string, job: LeadJob) {
+    const rec = this.stuckRecord(repoId, job);
     const pull = rec && this.repoRt.get(rec.repoId)?.pulls.find((p) => p.number === rec.prNumber);
     const step = triageStep({ kind: 'ended', acted: !rec || (pull != null && pull.state !== 'OPEN') }); // a closed PR leaves QA on the next sync
     if (rec && step.do === 'escalate') void this.giveUp(rec, step.note);
   }
 
-  /** The stuck PR a triage tool names; refused unless it is on the current triage job's floor (see checkTriageTarget). */
-  private async triageTarget(x: { floor: number; pr: number }) {
-    const job = this.state.ceo.job;
-    const jobFloor = job?.kind === 'triage' ? (this.state.repos.find((r) => r.id === job.repoId)?.floor ?? null) : null;
-    const repo = this.state.repos.find((r) => r.floor === x.floor);
+  /** The stuck PR a lead's triage tool names; refused unless it is that lead's current triage (see checkTriageTarget). */
+  private async triageTarget(x: { floor: number; pr: number; repoId: string }) {
+    const repo = this.state.repos.find((r) => r.id === x.repoId);
+    const job = this.state.leads[x.repoId]?.job;
+    const jobFloor = repo && job?.kind === 'triage' ? repo.floor : null;
     const pr = Number(x.pr);
     const listed = repo ? this.repoRt.get(repo.id)?.pulls.find((p) => p.number === pr) : undefined;
     // The last sync may be a minute old and doesn't list closed PRs: ask GitHub about this one.
     const pull = repo && x.floor === jobFloor ? await this.backend.prDetails(repo.fullName, pr).catch(() => listed) : listed;
     const rec = repo ? this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === pr) : undefined;
     checkTriageTarget({ jobFloor, floor: x.floor, pr, pull, status: rec?.status });
-    return { repo: repo!, rec: rec!, listed };
+    return { repo: repo!, rec: rec!, listed, lead: this.leadOf(repo!)?.name ?? 'The floor lead' };
   }
 
-  private async triageRetryQa(x: { floor: number; pr: number }) {
+  /** A PR's business hold, if any (rebuild.ts businessHold): the lead may not close or rebuild it. */
+  private async businessHoldOf(repo: PersistedRepo, rec: QaRecord, pull: PullInfo | undefined) {
+    if (!pull) return null;
+    const [hold, talk] = await Promise.all([this.holdFor(repo, pull).catch(() => null), this.backend.discussion(repo.fullName, rec.prNumber).catch(() => null)]);
+    return businessHold({ labels: pull.labels, heldFor: rec.heldFor ?? null, hold, brief: !!talk && !!findBrief(talk.body, talk.comments) });
+  }
+
+  private async triageRetryQa(x: { floor: number; pr: number; repoId: string }) {
     const { repo, rec } = await this.triageTarget(x);
     await this.sendToQa(repo.id, rec.prNumber);
     return `PR #${rec.prNumber} is queued for QA round ${rec.round}.`;
   }
 
-  private async triageSendBack(x: { floor: number; pr: number; note: string }) {
-    const { repo, rec } = await this.triageTarget(x);
+  private async triageSendBack(x: { floor: number; pr: number; note: string; repoId: string }) {
+    const { repo, rec, lead } = await this.triageTarget(x);
     const note = String(x.note ?? '').trim();
     if (!note) throw new HttpError(400, 'Say what the developer should do: the note goes with the fix.');
-    await this.sendBackToDev(repo.id, rec.prNumber, note, `${this.ceo().name}, the CEO`);
+    await this.sendBackToDev(repo.id, rec.prNumber, note, `${lead}, the floor lead`);
     return `PR #${rec.prNumber} goes back to a developer with QA's findings and your note.`;
   }
 
-  private async triageRerunChecks(x: { floor: number; pr: number }) {
+  private async triageRerunChecks(x: { floor: number; pr: number; repoId: string }) {
     const { repo, rec, listed } = await this.triageTarget(x);
     const runIds = failedRunIds(listed?.failedChecks ?? []);
     if (!listed || !runIds.length) {
@@ -4390,39 +4484,278 @@ export class Swarm {
     return `Re-running ${runs} on PR #${rec.prNumber}, and it is queued for QA round ${rec.round}.`;
   }
 
-  private async triageClosePull(x: { floor: number; pr: number; comment: string }) {
-    const { repo, rec, listed } = await this.triageTarget(x);
+  private async triageClosePull(x: { floor: number; pr: number; comment: string; repoId: string }) {
+    const { repo, rec, listed, lead } = await this.triageTarget(x);
     const comment = String(x.comment ?? '').trim();
     if (!comment) throw new HttpError(400, 'Say why the pull request is closing: the comment is posted on it.');
+    const business = await this.businessHoldOf(repo, rec, listed);
+    if (business) throw new HttpError(409, `PR #${rec.prNumber} waits for the manager for a business reason (${business}), so you can't close it. Escalate it with a brief if it needs them.`);
     const issues = listed ? issuesResolvedBy(listed) : [];
-    const ceo = this.ceo().name;
-    await this.backend.commentPull(repo.fullName, rec.prNumber, `${comment}\n\n<sub>Closed by ${ceo}, the cubefarm CEO, after triage.${issues.length ? ' Its issue stays open, so it is built again.' : ''}</sub>\n${OFFICE_MARK}`);
+    await this.backend.commentPull(repo.fullName, rec.prNumber, `${comment}\n\n<sub>Closed by ${lead}, the cubefarm floor lead, after triage.${issues.length ? ' Its issue stays open, so it is built again.' : ''}</sub>\n${OFFICE_MARK}`);
     // Closing deletes no branch and leaves the issue open, so the scheduler hands it out again.
     await this.backend.closePull(repo.fullName, rec.prNumber);
-    this.postMessage('office', `🗂️ ${ceo} closed PR #${rec.prNumber} on floor ${repo.floor}: ${comment.split('\n')[0].slice(0, 200)}`);
+    this.postMessage('office', `🗂️ ${lead} closed PR #${rec.prNumber} on floor ${repo.floor}: ${comment.split('\n')[0].slice(0, 200)}`);
     this.dropRecord(repo, rec.prNumber);
     this.learnPull(repo, { number: rec.prNumber, headRefName: listed?.headRefName ?? '', closesIssues: listed?.closesIssues ?? [] }, 'CLOSED', true); // built again
     void this.syncRepo(repo.id);
     return `Closed PR #${rec.prNumber}.${issues.length ? ` ${issues.map((n) => `#${n}`).join(', ')} stay${issues.length === 1 ? 's' : ''} open, so a developer builds it again.` : ''}`;
   }
 
-  private async triageRebuild(x: { floor: number; pr: number }) {
-    const { repo, rec, listed } = await this.triageTarget(x);
+  private async triageRebuild(x: { floor: number; pr: number; repoId: string }) {
+    const { repo, rec, listed, lead } = await this.triageTarget(x);
     if (!listed) throw new HttpError(409, `PR #${rec.prNumber} isn't in the floor's last sync yet; try again in a minute.`);
-    const [hold, talk] = await Promise.all([this.holdFor(repo, listed).catch(() => null), this.backend.discussion(repo.fullName, rec.prNumber).catch(() => null)]);
-    const business = businessHold({ labels: listed.labels, heldFor: rec.heldFor ?? null, hold, brief: !!talk && !!findBrief(talk.body, talk.comments) });
-    if (business) throw new HttpError(409, `PR #${rec.prNumber} waits for the manager for a business reason (${business}), so it isn't rebuilt. Escalate it if it needs them.`);
+    const business = await this.businessHoldOf(repo, rec, listed);
+    if (business) throw new HttpError(409, `PR #${rec.prNumber} waits for the manager for a business reason (${business}), so it isn't rebuilt. Escalate it with a brief if it needs them.`);
     const { count } = this.rebuildsOf(repo.id, listed);
     if (count >= MAX_REBUILDS) throw new HttpError(409, `PR #${rec.prNumber} is already a rebuild. End the triage without acting: the office brings the manager a brief to park it.`);
-    await this.rebuildPull(repo, rec, listed, `${this.ceo().name} chose to rebuild it`);
+    await this.rebuildPull(repo, rec, listed, `${lead}, the floor lead, chose to rebuild it`);
     return `Closed PR #${rec.prNumber}; its issue is built again from ${repo.defaultBranch}, and the old branch is kept.`;
   }
 
-  private async triageEscalate(x: { floor: number; pr: number; reason: string }) {
-    const { rec } = await this.triageTarget(x);
-    const step = triageStep({ kind: 'escalate', reason: String(x.reason ?? '').split('\n')[0].slice(0, 300) });
-    if (step.do === 'escalate') this.escalate(rec, step.note && `${this.ceo().name}: ${step.note}`);
-    return `The manager has PR #${rec.prNumber} now, with your diagnosis.`;
+  /** Escalate is for business decisions only: it carries a complete decision brief (lead.ts escalationBrief), posted on the PR. */
+  private async triageEscalate(x: { floor: number; pr: number; brief: string; repoId: string }) {
+    const { repo, rec, lead } = await this.triageTarget(x);
+    let brief: Brief;
+    try {
+      brief = escalationBrief(x.brief);
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
+    await this.backend.commentPull(repo.fullName, rec.prNumber, `${renderBrief(brief)}\n\n<sub>Written by ${lead}, the cubefarm floor lead.</sub>\n${OFFICE_MARK}`);
+    this.briefs.set(decisionKey({ repoId: repo.id, kind: 'pr', number: rec.prNumber }), brief);
+    this.escalate(rec, `${lead}: ${brief.decision.split('\n')[0].slice(0, 300)}`);
+    this.emitDecisions();
+    return `The manager has PR #${rec.prNumber} now, with your brief in the Decision room.`;
+  }
+
+  // ---------- floor leads ----------
+
+  /** A floor's lead, when it has one and the floor wants one. */
+  private leadOf(repo: PersistedRepo) {
+    return repo.floorLead ? this.state.agents.find((a) => a.role === 'lead' && a.repoId === repo.id) : undefined;
+  }
+
+  /**
+   * Every floor that wants a lead has one, at the highest free desk (the team takes desks from the lowest up); a floor
+   * that turned it off loses it. A lead cut off by a restart picks its job back up (loadLeads requeued it).
+   */
+  private ensureLeads(interrupted: PersistedAgent[] = []) {
+    for (const repo of this.state.repos) {
+      const a = this.state.agents.find((x) => x.role === 'lead' && x.repoId === repo.id);
+      if (!repo.floorLead) {
+        if (a) this.removeLead(a);
+        continue;
+      }
+      this.state.leads[repo.id] ??= { queue: [], job: null };
+      if (a) {
+        const i = interrupted.indexOf(a);
+        if (i >= 0) {
+          interrupted.splice(i, 1);
+          const l = this.state.leads[repo.id];
+          if (l.job) l.queue = [l.job, ...l.queue.filter((j) => j.prNumber !== l.job!.prNumber)];
+          l.job = null;
+          Object.assign(a, { status: 'idle', lastError: null });
+          this.appendLog(a, [{ kind: 'system', text: '↺ The office server restarted. Picking the job back up.' }]);
+        }
+        continue;
+      }
+      const used = new Set(this.state.agents.filter((x) => x.repoId === repo.id).map((x) => x.desk));
+      let desk = FLOOR_SEATS - 1;
+      while (desk >= 0 && used.has(desk)) desk--;
+      if (desk < 0) continue; // a full floor: the office's rebuild covers its stuck PRs until a desk frees up
+      const taken = new Set(this.state.agents.map((x) => x.name));
+      const name = LEAD_NAMES.find((n) => !taken.has(n)) ?? `Lead ${repo.floor}`;
+      const lead: PersistedAgent = {
+        id: crypto.randomUUID(),
+        name,
+        repoId: repo.id,
+        role: 'lead',
+        look: lookFor(name),
+        task: null,
+        desk,
+        color: '#2f6f5e',
+        hair: pick(HAIR),
+        skin: pick(SKIN),
+        style: null,
+        model: '',
+        effort: '',
+        cli: 'claude',
+        machine: null,
+        status: 'idle',
+        issueNumber: null,
+        issueTitle: null,
+        branch: null,
+        prNumber: null,
+        prUrl: null,
+        startedAt: null,
+        endedAt: null,
+        costUsd: 0,
+        turns: 0,
+        sessionId: null,
+        sessionCli: null,
+        lastError: null,
+        logTail: [],
+      };
+      this.state.agents.push(lead);
+      this.agentRt.set(lead.id, { log: [], session: null, currentTool: null, browserUrl: null, screenshot: null, shots: [], terminal: null });
+      this.appendLog(lead, [{ kind: 'system', text: `🧭 ${name} is floor ${repo.floor}'s lead: they triage its stuck pull requests so technical problems never wait for you.` }]);
+      this.broadcast({ type: 'agent', agent: this.agentView(lead, false) });
+    }
+  }
+
+  /** The floor turned its lead off (or left the building): its session stops and its queue goes; stuck PRs fall back on the rebuild. */
+  private removeLead(a: PersistedAgent) {
+    if (BUSY.includes(a.status)) a.status = 'stopped';
+    this.agentRt.get(a.id)?.session?.stop();
+    this.agentRt.get(a.id)?.terminal?.dispose();
+    void fs.rm(terminalFile(a.id), { force: true }).catch(() => undefined);
+    delete this.state.leads[a.repoId];
+    this.state.agents = this.state.agents.filter((x) => x.id !== a.id);
+    this.agentRt.delete(a.id);
+    this.broadcast({ type: 'agentRemoved', agentId: a.id });
+  }
+
+  private enqueueLead(repo: PersistedRepo, job: LeadJob) {
+    const l = (this.state.leads[repo.id] ??= { queue: [], job: null });
+    l.queue = enqueueLead(l.queue, job);
+    this.save();
+    setTimeout(() => this.schedule(), 150);
+  }
+
+  /** Start each free lead's next job, when a session slot is open. Triage jobs whose PR moved on are dropped. */
+  private startLeadWork() {
+    this.ensureLeads(); // a lead that gave up its desk to the team sits down again once one is free
+    for (const repo of this.state.repos) {
+      const a = this.leadOf(repo);
+      const l = this.state.leads[repo.id];
+      if (!a || !l) continue;
+      const stale = l.queue.filter((j) => !this.stuckRecord(repo.id, j));
+      if (stale.length) l.queue = l.queue.filter((j) => !stale.includes(j));
+      if (BUSY.includes(a.status) || l.job || !l.queue.length || this.slotsFull()) continue;
+      const rt = this.repoRt.get(repo.id);
+      if (!rt || rt.cloneStatus !== 'ready' || rt.lastSync == null) continue; // something to read first
+      const job = nextLeadJob(l.queue)!;
+      l.queue = l.queue.filter((j) => j !== job);
+      void this.runLeadJob(a, repo, job);
+    }
+  }
+
+  private async runLeadJob(a: PersistedAgent, repo: PersistedRepo, job: LeadJob) {
+    const rt = this.agentRt.get(a.id)!;
+    const l = this.state.leads[repo.id];
+    const label = leadJobLabel(job);
+    l.job = job;
+    Object.assign(a, { status: 'working' as AgentStatus, task: null, issueNumber: null, issueTitle: label, startedAt: Date.now(), endedAt: null, costUsd: 0, turns: 0, lastError: null });
+    this.appendLog(a, [
+      { kind: 'system', text: '' },
+      { kind: 'system', text: `━━━ ${label} ━━━` },
+    ]);
+    this.emitAgent(a);
+    this.save();
+    const dir = path.join(LEADS_DIR, repo.id.replace(/[^\w.-]+/g, '__'));
+    await fs.mkdir(dir, { recursive: true }).catch(() => undefined);
+    const pr = await this.triagePr(repo, job);
+    if (a.status !== 'working' || !this.state.agents.includes(a)) {
+      l.job = null; // stopped before the session started
+      this.endTriage(repo.id, job);
+      return;
+    }
+    const clone = this.backend.mainDir(repo.fullName);
+    const { model, effort } = leadModel(job.kind, a, this.state.settings.lead);
+    rt.session = this.backend.startSession(
+      {
+        cwd: dir,
+        prompt: leadJobPrompt(job, { floor: repo.floor, fullName: repo.fullName, clone }, pr),
+        systemAppend: leadSystemPrompt({ name: a.name, floor: repo.floor, fullName: repo.fullName, company: this.state.settings.companyName, notesFile: path.join(dir, 'NOTES.md') }),
+        model,
+        effort,
+        browserTesting: false,
+        additionalDirectories: [clone],
+        role: 'lead',
+        office: this.leadTools(repo),
+        ...this.sessionRuntime(a),
+      },
+      {
+        log: (entries) => this.appendLog(a, entries),
+        tool: (name) => {
+          if (rt.currentTool === name) return;
+          rt.currentTool = name;
+          this.emitAgent(a);
+        },
+        sessionId: (id) => {
+          a.sessionId = id;
+          a.sessionCli = id ? 'claude' : null;
+        },
+        browserUrl: () => undefined,
+        screenshot: () => undefined,
+        turn: () => undefined, // a lead never messages the manager: only an escalation's brief reaches them
+        limited: (at) => this.pauseForLimit(at),
+        usageWarning: (info) => this.paceForWarning(info),
+        finished: (result) => this.onLeadFinished(a, repo.id, result),
+      },
+    );
+  }
+
+  private onLeadFinished(a: PersistedAgent, repoId: string, result: SessionResult) {
+    const rt = this.agentRt.get(a.id);
+    if (!rt || this.officeUpdate.handedOver) return;
+    rt.session = null;
+    rt.currentTool = null;
+    a.endedAt = Date.now();
+    a.costUsd += result.costUsd;
+    a.turns += result.turns;
+    recordCost(this.state.ops, repoId, result.costUsd, a.endedAt);
+    const l = this.state.leads[repoId];
+    const job = l?.job ?? null;
+    if (l) l.job = null;
+    if (job) this.endTriage(repoId, job);
+    if (result.interrupted) this.interrupted(a);
+    if (a.status === 'stopped') {
+      // the manager already logged the stop
+    } else if (!result.ok) {
+      // The office's rebuild covers the PR (endTriage), and the lead takes the next job: nothing waits on the manager.
+      a.status = 'done';
+      a.lastError = result.errors.join('; ') || 'Session failed';
+      this.appendLog(a, [{ kind: 'error', text: `✗ ${a.lastError}: the office rebuilds the PR if it is still stuck` }]);
+    } else {
+      a.status = 'done';
+      this.appendLog(a, [{ kind: 'done', text: `✔ Done in ${this.minutes(a)}m · ${a.turns} turns` }]);
+    }
+    this.emitAgent(a);
+    this.save();
+    setTimeout(() => this.schedule(), 300);
+  }
+
+  /** floor_status: the floor as its lead sees it, compact. */
+  private floorStatus(repo: PersistedRepo): string {
+    const rt = this.repoRt.get(repo.id);
+    const issues = rt?.issues ?? [];
+    const open = new Set(issues.map((i) => i.number));
+    const qa = new Map(this.state.qa.filter((q) => q.repoId === repo.id).map((q) => [q.prNumber, q]));
+    return JSON.stringify({
+      floor: repo.floor,
+      repo: repo.fullName,
+      clone: this.backend.mainDir(repo.fullName),
+      defaultBranch: repo.defaultBranch,
+      brief: repo.mission || null,
+      settings: { autoMerge: repo.autoMerge, routineOnly: repo.routineOnly, holdPaths: repo.holdPaths, autoPlan: repo.autoPlan, minReady: repo.minReady },
+      team: this.state.agents.filter((a) => a.repoId === repo.id && isWorker(a)).map((a) => ({ name: a.name, status: a.status, task: a.task, issue: a.issueNumber, pr: a.prNumber })),
+      readyToStart: this.readyIssues(repo).map((r) => r.issue.number),
+      issues: issues.map((i) => ({
+        number: i.number,
+        title: i.title,
+        labels: i.labels,
+        waitsFor: blockers(i.body, open),
+        inProgress: this.issueTaken(repo, i.number),
+        heldForManager: this.isHeld(repo.id, i.number),
+      })),
+      pullRequests: (rt?.pulls ?? [])
+        .filter((p) => p.state === 'OPEN')
+        .map((p) => {
+          const q = qa.get(p.number);
+          return { number: p.number, title: p.title, labels: p.labels ?? [], qa: q?.status ?? null, round: q?.round ?? null, stuckWhy: q?.status === 'needs-human' ? q.stuckWhy : null, escalated: q?.escalated ?? false, mergeable: p.mergeable, checks: p.checks };
+        }),
+    });
   }
 
   // ---------- idle desks ----------
@@ -4739,7 +5072,7 @@ export class Swarm {
     let text = 'The watchdog looked.';
     if (action === 'restart') text = await this.demoRestart(dd);
     else if (action === 'stuck') {
-      const a = this.state.agents.find((x) => x.role !== 'ceo' && x.status === 'working' && !this.stalled.has(x.id) && this.agentRt.get(x.id)?.session && dd.stall(x.id));
+      const a = this.state.agents.find((x) => isWorker(x) && x.status === 'working' && !this.stalled.has(x.id) && this.agentRt.get(x.id)?.session && dd.stall(x.id));
       if (!a) throw new HttpError(409, 'Nobody is working right now. Wait for someone to start an issue, then try again.');
       this.stalled.add(a.id);
       this.activity.set(a.id, Date.now() - QUIET_MS - 60_000);
@@ -4829,7 +5162,7 @@ export class Swarm {
 
   /** Who wrote a PR, as far as the office knows: its QA record's author, the one holding it, or the one its branch is named after. */
   private prAuthor(repo: PersistedRepo, pr: PullInfo): string | null {
-    const devs = this.state.agents.filter((a) => a.repoId === repo.id && a.role !== 'ceo');
+    const devs = this.state.agents.filter((a) => a.repoId === repo.id && isWorker(a));
     const rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === pr.number);
     if (rec?.devAgentId && devs.some((a) => a.id === rec.devAgentId)) return rec.devAgentId;
     const holder = devs.find((a) => a.task !== 'qa' && (a.prNumber === pr.number || a.branch === pr.headRefName));
@@ -4843,7 +5176,7 @@ export class Swarm {
     const now = Date.now();
     this.ledger({ kind: 'tick', at: now });
     for (const r of this.state.repos) {
-      const team = this.state.agents.filter((a) => a.repoId === r.id);
+      const team = this.state.agents.filter((a) => a.repoId === r.id && isWorker(a));
       if (team.length >= FULL_HOUSE && team.every((a) => BUSY.includes(a.status))) this.ledger({ kind: 'full-house', repoName: r.fullName, people: team.length, at: now });
     }
   }
@@ -5282,7 +5615,7 @@ export class Swarm {
   }
 
   /** The CEO's write_brief: a brief comment on a waiting decision, with the office's deadline in it. */
-  private async writeBrief(x: { floor: number; number: number; background: string; decision: string; options: string[]; recommendation: string; risk: string; if_no_reply?: string }) {
+  private async writeBrief(x: { floor: number; number: number; background: string; decision: string; options: string[]; recommendation: string; risk: string; if_no_reply?: string }, author = `${this.ceo().name}, the cubefarm CEO`) {
     const repo = this.floorRepo(x.floor);
     const n = Number(x.number);
     const item = this.openDecisions().find((w) => w.repoId === repo.id && w.number === n);
@@ -5300,7 +5633,7 @@ export class Swarm {
     };
     if (!usableBrief(brief)) throw new Error('A brief needs the decision and your recommendation.');
     const by = deadline ? whenLabel(deadline) : null;
-    await this.backend.commentIssue(repo.fullName, n, `${renderBrief(brief, by)}\n\n<sub>Written by ${this.ceo().name}, the cubefarm CEO.</sub>\n${OFFICE_MARK}`);
+    await this.backend.commentIssue(repo.fullName, n, `${renderBrief(brief, by)}\n\n<sub>Written by ${author}.</sub>\n${OFFICE_MARK}`);
     this.briefs.set(decisionKey(item), brief);
     this.decisionTickSoon();
     this.emitDecisions();
@@ -5647,7 +5980,7 @@ export class Swarm {
     for (const req of this.state.requests.filter((r) => r.status === 'pending')) {
       const a = req.agentId ? this.state.agents.find((x) => x.id === req.agentId) : undefined;
       if (req.kind === 'let-go' && a && BUSY.includes(a.status)) continue;
-      if (req.kind === 'let-go' && a && this.state.agents.filter((x) => x.repoId === a.repoId).length <= 1) {
+      if (req.kind === 'let-go' && a && this.state.agents.filter((x) => x.repoId === a.repoId && isWorker(x)).length <= 1) {
         this.decide(req, { status: 'rejected', note: `${a.name} is the floor's last agent.`, decidedBy: 'auto' });
         continue;
       }
@@ -5663,7 +5996,7 @@ export class Swarm {
   private teamNow(repo: PersistedRepo): TeamNow {
     const pending = this.state.requests.filter((q) => q.repoId === repo.id && q.status === 'pending');
     return {
-      agents: this.state.agents.filter((a) => a.repoId === repo.id).map((a) => ({ id: a.id, desk: a.desk, free: this.isFree(a) })),
+      agents: this.state.agents.filter((a) => a.repoId === repo.id && isWorker(a)).map((a) => ({ id: a.id, desk: a.desk, free: this.isFree(a) })),
       pendingHires: pending.filter((q) => q.kind === 'hire').sort((x, y) => x.createdAt - y.createdAt).map((q) => q.id),
       pendingLetGos: pending.filter((q) => q.kind === 'let-go' && q.agentId).map((q) => ({ id: q.id, agentId: q.agentId! })),
     };
@@ -5874,8 +6207,9 @@ export class Swarm {
             }),
           },
           agents: this.state.agents
-            .filter((a) => a.repoId === r.id)
+            .filter((a) => a.repoId === r.id && isWorker(a))
             .map((a) => ({ id: a.id, name: a.name, status: a.status, doing: this.agentDoing(a), ...this.agentSetup(a) })),
+          floorLead: this.leadOf(r)?.name ?? null,
           backlog: rt.issues.map((i) => ({
             number: i.number,
             title: i.title,
@@ -5935,7 +6269,7 @@ export class Swarm {
         id: a.id,
         name: a.name,
         floor: repo?.floor ?? null,
-        ...(a.role === 'ceo' ? { role: 'CEO' } : {}),
+        ...(a.role === 'ceo' ? { role: 'CEO' } : a.role === 'lead' ? { role: 'floor lead (extra to the team: triages stuck PRs)' } : {}),
         status: a.status,
         doing: this.agentDoing(a),
         issue: a.issueNumber ? { number: a.issueNumber, title: a.issueTitle } : null,
