@@ -7,6 +7,7 @@ import { Catalogue, DecorBoxPanel } from './Catalogue';
 import { ControlsSettings } from './ControlsSettings';
 import { ElevatorPanel } from './ElevatorPanel';
 import { FloorList } from './FloorList';
+import { DecisionRoom } from './DecisionRoom';
 import { Key, MoveKeys } from './Key';
 import { Interview } from './Interview';
 import { KanbanView } from './KanbanView';
@@ -421,5 +422,11 @@ export function Overlays() {
       return <DecorBoxPanel repoId={overlay.repoId} />;
     case 'floorList':
       return <FloorList />;
+    case 'decisions':
+      return (
+        <Panel wide title="🧭 Decision room" className="decision-panel">
+          <DecisionRoom focus={overlay.focus} />
+        </Panel>
+      );
   }
 }

@@ -97,7 +97,8 @@ function PrCard({ repo, qa, ready }: { repo: RepoView; qa: QaView; ready?: boole
   );
 }
 
-export function Approvals() {
+export function Approvals({ onDecisions }: { onDecisions?: () => void }) {
+  const decisions = useStore((s) => s.decisions.filter((d) => !d.answeredAt).length);
   const repos = useStore((s) => s.repos);
   const qa = useStore((s) => s.qa);
   const requests = useStore((s) => s.requests);
@@ -106,7 +107,15 @@ export function Approvals() {
   const nothing = w.requests.length + w.emails.length + w.stuck.length + w.ready.length === 0;
   return (
     <div className="pk-page">
-      {nothing && <p className="pk-empty">Nothing waits on you. The team carries on, and your phone hears when that changes.</p>}
+      {decisions > 0 && onDecisions && (
+        <button className="pk-callout" onClick={onDecisions}>
+          <span>
+            🧭 {decisions} decision{decisions === 1 ? '' : 's'} with a brief in the Decision room
+          </span>
+          <span>Decision room →</span>
+        </button>
+      )}
+      {nothing && !decisions && <p className="pk-empty">Nothing waits on you. The team carries on, and your phone hears when that changes.</p>}
       {w.requests.length > 0 && <h3 className="pk-h">👥 Team changes</h3>}
       {w.requests.map((r) => (
         <Resume key={r.id} req={r} />

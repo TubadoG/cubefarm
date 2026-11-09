@@ -27,7 +27,7 @@ export const NOT_ASKED = "Only the manager decides on new work, and they haven't
 export interface CeoJob {
   kind: CeoJobKind;
   repoId?: string; // onboard / plan / triage
-  prNumber?: number; // triage: the stuck pull request
+  prNumber?: number; // triage: the stuck pull request; decision: the issue or PR the question is about
   text?: string; // chat: the manager's message(s)
   at: number;
 }
@@ -76,6 +76,16 @@ export interface MissingBrief {
   kind: 'issue' | 'pr';
   number: number;
   title: string;
+}
+
+/** A decision job's card: the manager asked the CEO about it in the Decision room. */
+export interface DecisionContext {
+  kind: 'issue' | 'pr';
+  number: number;
+  title: string;
+  url: string;
+  reason: string; // why it waits for the manager, in words
+  brief: string | null; // the brief as markdown, or null when there is none
 }
 
 /** What a review job looks at beyond company_status: floors that plan themselves, and decisions without a brief. */
@@ -382,8 +392,22 @@ export function ceoJobPrompt(
   floor: { floor: number; fullName: string; clone: string; mission: string; backlog: number } | null,
   pr?: TriagePr | null,
   review?: ReviewInput | null,
+  decision?: DecisionContext | null,
 ): string {
   switch (job.kind) {
+    case 'decision': {
+      if (!floor || !decision) return `The decision this question was about is no longer open. Reply ${NO_MESSAGE}.`;
+      const what = `${decision.kind === 'pr' ? 'pull request' : 'issue'} #${decision.number}`;
+      return [
+        `The manager has a question about a decision in the Decision room: ${what} "${decision.title}" on floor ${floor.floor} (${floor.fullName}), ${decision.url}. It waits for them because ${decision.reason}. Read-only clone of the default branch at ${floor.clone}.`,
+        decision.brief ? `Its decision brief:\n${decision.brief}` : 'It has no decision brief yet.',
+        '',
+        `The manager's question:\n"""${job.text ?? ''}"""`,
+        '',
+        `Read the ${decision.kind === 'pr' ? 'PR, its diff' : 'issue'} and the code as needed, then answer. If the question shows the brief is unclear or missing something (or there is none), rewrite it with write_brief (floor ${floor.floor}, number ${decision.number}). Do not decide for the manager and file no issues.`,
+        'Your final message is your answer: plain words for an executive who has not read the code, a few sentences, no headings. The office shows it on the card and posts it on GitHub.',
+      ].join('\n');
+    }
     case 'triage':
       if (!floor || !pr) return `Pull request #${job.prNumber ?? '?'} no longer needs triage. Reply ${NO_MESSAGE}.`;
       return [
@@ -470,6 +494,8 @@ export function jobLabel(job: CeoJob, floor: { floor: number; fullName: string }
       return 'Replying to you';
     case 'triage':
       return `Triaging PR #${job.prNumber ?? '?'} · ${where}`;
+    case 'decision':
+      return `Answering your question on #${job.prNumber ?? '?'} · ${where}`;
   }
 }
 
