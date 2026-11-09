@@ -169,7 +169,7 @@ export function HUD() {
   const scope = useRoof((s) => s.telescope); // the telescope's eyepiece has its own crosshair
   const repo = floor === 0 || roof ? null : repoOnFloor(repos, floor);
   const running = useMemo(() => Object.values(agents).filter((a) => a.status === 'working' || a.status === 'preparing').length, [agents]);
-  const floorAgents = repo ? Object.values(agents).filter((a) => a.repoId === repo.id) : [];
+  const floorAgents = repo ? Object.values(agents).filter((a) => a.repoId === repo.id && a.role === 'agent') : []; // the team: not its floor lead
   const qa = useStore((s) => s.qa);
   const prs = useMemo(() => (repo ? floorPrCounts(repo, qa) : null), [repo, qa]);
 

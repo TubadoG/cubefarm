@@ -98,7 +98,8 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
   const openOverlay = useStore((s) => s.openOverlay);
   // The office's own folder isn't fast-forwarded; its update is on the Office row instead.
   const officeFolder = useStore((s) => !!s.officeUpdate) && !!repo.folderSync?.startsWith('update ready');
-  const team = agentsOnRepo(agents, repo.id);
+  const team = agentsOnRepo(agents, repo.id).filter((a) => a.role === 'agent');
+  const lead = agentsOnRepo(agents, repo.id).find((a) => a.role === 'lead');
   const others = all.filter((r) => r.id !== repo.id);
   const patch = (p: Parameters<typeof api.updateRepo>[1]) => void attempt(() => api.updateRepo(repo.id, p));
   return (
@@ -111,7 +112,7 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
           </a>
           {repo.summary && <div className="small">🧠 {repo.summary}</div>}
           <div className="muted small">
-            {team.length} agents · {repo.issues.length} open issues · {repo.pulls.filter((p) => p.state === 'OPEN').length} open PRs · default branch <code>{repo.defaultBranch}</code>
+            {team.length} agents{lead ? ` + ${lead.name}, the floor lead` : ''} · {repo.issues.length} open issues · {repo.pulls.filter((p) => p.state === 'OPEN').length} open PRs · default branch <code>{repo.defaultBranch}</code>
             {repo.cloneStatus !== 'ready' && ` · checkout: ${repo.cloneStatus}`}
           </div>
           <div className="muted small" title={repo.localPath ? 'Your own project folder' : 'A clone the office manages'}>
@@ -493,6 +494,7 @@ function TeamTab() {
       <TeamStats />
       {[...repos].sort((a, b) => a.floor - b.floor).map((repo) => {
         const team = agentsOnRepo(agents, repo.id).filter((a) => a.role === 'agent');
+        const lead = agentsOnRepo(agents, repo.id).find((a) => a.role === 'lead');
         return (
           <div key={repo.id} className="card floor-card" style={{ ['--accent' as string]: repo.color }}>
             <div className="row wrap">
@@ -502,6 +504,11 @@ function TeamTab() {
                 {team.length} of {settings.maxAgents} agents
               </span>
             </div>
+            {lead && (
+              <div className="muted small" title="Extra to the team: triages stuck PRs (docs/floor-lead.md)">
+                🧭 {lead.name}, the floor lead: {lead.status === 'working' ? (lead.issueTitle ?? 'working') : 'waiting for the next stuck PR'}
+              </div>
+            )}
             <AddAgent repo={repo} size={team.length} />
             {team.length === 0 && <div className="muted small">No one works here yet.</div>}
             <table className="team">
