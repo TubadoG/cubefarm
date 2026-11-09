@@ -248,3 +248,23 @@ describe('the office gives up by rebuilding, not by asking the manager', () => {
     expect(closed).toEqual([PR]);
   });
 });
+
+describe("the lead's session", () => {
+  it('starts on a stuck PR, acts through its tools and finishes without errors (demo session)', { timeout: 30_000 }, async () => {
+    const { internals, rec, repo } = await office();
+    const x = internals as unknown as Internals & { startLeadWork(): void; agentRt: Map<string, { log: { text: string }[] }> };
+    const rt = internals.repoRt.get(repo.id) as unknown as { cloneStatus: string; lastSync: number | null };
+    for (let i = 0; i < 50 && (rt.cloneStatus !== 'ready' || rt.lastSync == null); i++) await new Promise((r) => setTimeout(r, 20));
+    internals.stuck(rec, {}, 'it still conflicts with main after 5 fixes');
+    x.startLeadWork();
+    const lead = internals.state.agents.find((a) => a.role === 'lead' && a.repoId === repo.id)! as unknown as { id: string; status: string; lastError: string | null; model: string };
+    expect(lead.status).toBe('working');
+    for (let i = 0; i < 200 && lead.status === 'working'; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(lead).toMatchObject({ status: 'done', lastError: null });
+    const log = x.agentRt.get(lead.id)!.log.map((l) => l.text).join('\n');
+    expect(log).toContain('Triaging PR #46');
+    expect(log).toContain('claude-opus-5-5 · high effort · floor lead'); // the strong model for a diagnosis
+    expect(log).toMatch(/floor_status[\s\S]*send_back PR #46/);
+    expect(internals.state.leads[repo.id].job).toBeNull();
+  });
+});
