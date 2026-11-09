@@ -288,6 +288,7 @@ app.post('/api/email/digest', route(() => swarm.sendDigest()));
 // The Decision room (shared/decisions.ts): the manager's answer on a card, and questions for the CEO.
 app.post('/api/decisions/:repo/:n/answer', route((req) => swarm.answerDecision(repoId(req), num(req.params.n), req.body)));
 app.post('/api/decisions/:repo/:n/ask', route((req) => swarm.askDecision(repoId(req), num(req.params.n), req.body)));
+app.post('/api/board/:id/undo', route((req) => swarm.undoBoardChange(String(req.params.id))));
 app.post('/api/emails/:id/send', route((req) => swarm.approveEmail(String(req.params.id))));
 app.post('/api/emails/:id/decline', route((req) => swarm.declineEmail(String(req.params.id), str(req.body?.note))));
 // The demo office only: the CEO grows (or shrinks) a floor's team on demand.

@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { CEO_ID } from '../../../shared/types';
+import { CEO_ID, type BoardChangeView } from '../../../shared/types';
 import { countdown, decisionHash, MAX_DECISION_TEXT, type DecisionChoice, type DecisionView } from '../../../shared/decisions';
 import { confirmDialog } from './Confirm';
 import { Markdown } from './Markdown';
@@ -159,7 +159,62 @@ export function DecisionCard({ d, focused }: { d: DecisionView; focused?: boolea
   );
 }
 
-/** Every open decision, the focused card (a deep link's) scrolled to. */
+const KIND: Record<BoardChangeView['kind'], string> = { close: '🗂️', merge: '🧷', relabel: '🏷️', reorder: '↕️', split: '✂️', depends: '🔗', release: '↩️' };
+
+/**
+ * The floor leads' board changes of the last week (docs/floor-lead.md), each undone in one tap, no approval needed. The
+ * Monday digest links each one here (#board-<id>).
+ */
+export function BoardLog() {
+  const log = useStore((s) => s.boardLog);
+  const [busy, setBusy] = useState<string | null>(null);
+  const focus = typeof location !== 'undefined' && location.hash.startsWith('#board-') ? location.hash.slice('#board-'.length) : null;
+  useEffect(() => {
+    if (focus) document.getElementById(`board-${focus}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focus, log.length]);
+  if (!log.length) return null;
+  const undo = async (e: BoardChangeView) => {
+    if (!(await confirmDialog({ icon: '↩️', title: 'Undo this board change?', body: `${e.undo}. ${e.by}, the floor lead, made it: ${e.summary}`, confirm: 'Undo' }))) return;
+    setBusy(e.id);
+    try {
+      await api.undoBoardChange(e.id);
+    } catch {
+      // api() already toasted
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section className="board-log" aria-label="Board changes this week">
+      <h3>Board changes this week</h3>
+      <p className="muted small">What the floor leads changed on the boards. Each one can be undone; none needed your approval.</p>
+      <ul>
+        {log.map((e) => (
+          <li key={e.id} id={`board-${e.id}`} className={`board-change ${focus === e.id ? 'decision-focused' : ''}`}>
+            <span aria-hidden>{KIND[e.kind]}</span>{' '}
+            <span className="grow">
+              <span className="floor-badge">{e.floor}</span> {e.summary}
+              <span className="muted small">
+                {' '}
+                · {e.by} · {new Date(e.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}
+                {e.undoError ? ` · undo failed: ${e.undoError}` : ''}
+              </span>
+            </span>
+            {e.undoneAt ? (
+              <span className="muted small">undone</span>
+            ) : (
+              <button className="btn btn-small" disabled={busy === e.id} title={e.undo} onClick={() => void undo(e)}>
+                ↩️ Undo
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Every open decision, the focused card (a deep link's) scrolled to, then the week's board changes. */
 export function DecisionRoom({ focus }: { focus?: string | null }) {
   const decisions = useStore((s) => s.decisions);
   return (
@@ -174,6 +229,7 @@ export function DecisionRoom({ focus }: { focus?: string | null }) {
       {decisions.map((d) => (
         <DecisionCard key={d.key} d={d} focused={focus === d.key} />
       ))}
+      <BoardLog />
     </div>
   );
 }

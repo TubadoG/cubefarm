@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDigest, decisionInfoLines, digestDay, digestDue, excerpt, floorSummary, mergedSince, needsInputIssues, NO_BRIEF, waitingPulls, type DigestFloor } from './digest.ts';
+import { boardChangeLines, buildDigest, decisionInfoLines, digestDay, digestDue, excerpt, floorSummary, mergedSince, needsInputIssues, NO_BRIEF, waitingPulls, type DigestFloor } from './digest.ts';
 import { whenLabel } from './decisionClock.ts';
 import type { Brief } from '../shared/brief.ts';
 import { readyDecision } from './decision.ts';
@@ -274,5 +274,33 @@ describe('Decision room links in the digest', () => {
     expect(d.text).toContain('  Answer in the Decision room: https://office.example.com/decisions#o/rtsm/3');
     expect(d.html).toContain('<a href="https://office.example.com/decisions#o/rtsm/7">Answer in the Decision room</a>');
     expect(buildDigest([floor('o/rtsm', { needsInput: [{ number: 7, title: 'Plan name', url: 'u7', excerpt: '' }] })]).text).not.toContain('Decision room');
+  });
+});
+
+describe('the Monday digest: last week’s board changes', () => {
+  const at = Date.parse('2026-11-04T10:00:00Z');
+  const changes = [
+    { at, by: 'Quinn', summary: 'Closed #7 "Old idea": Superseded by #9.', undo: 'Reopen #7', undone: false, link: 'https://office.example.com/decisions#board-abc' },
+    { at, by: 'Quinn', summary: 'Split #10 "Big thing" into #21, #22', undo: 'Close #21, #22 and reopen #10', undone: true, link: 'https://office.example.com/decisions#board-def' },
+  ];
+
+  it('lists each change with its undo link, and says which were undone', () => {
+    const d = buildDigest([floor('o/web', { boardChanges: changes })]);
+    expect(d.text).toContain('Board changes by the floor lead last week');
+    expect(d.text).toContain('Quinn: Closed #7 "Old idea": Superseded by #9. · Reopen #7: https://office.example.com/decisions#board-abc');
+    expect(d.text).toContain('Split #10 "Big thing" into #21, #22 (undone)');
+    expect(d.html).toContain('<a href="https://office.example.com/decisions#board-abc">Reopen #7</a>');
+  });
+
+  it('shows a floor with only board changes', () => {
+    expect(buildDigest([floor('o/quiet', { boardChanges: [changes[0]] })]).text).toContain('o/quiet');
+  });
+
+  it('points to the Decision room when the office has no public address', () => {
+    expect(boardChangeLines([{ ...changes[0], link: null }])[0]).toContain('Reopen #7 from the Decision room');
+  });
+
+  it('leaves the section out on other days', () => {
+    expect(buildDigest([floor('o/web', { merged: [{ number: 1, title: 'x', url: 'u' }] })]).text).not.toContain('Board changes');
   });
 });

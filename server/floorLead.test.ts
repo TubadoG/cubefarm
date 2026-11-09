@@ -268,3 +268,146 @@ describe("the lead's session", () => {
     expect(internals.state.leads[repo.id].job).toBeNull();
   });
 });
+
+// ---------- the board (PR B) ----------
+
+type BoardInternals = Omit<Internals, 'state' | 'repoRt'> & {
+  state: Internals['state'] & { boardLog: { id: string; change: { kind: string }; undoneAt: number | null }[]; order: Record<string, number[]>; held: { repoId: string; issue: number; pr: number; since?: number; parked?: boolean }[] };
+  repoRt: Map<string, { pulls: PullInfo[]; issues: { number: number; title: string; body: string; labels: string[] }[] }>;
+  syncRepo(id: string): Promise<void>;
+  readyIssues(repo: unknown): { issue: { number: number } }[];
+  issueFailures: Map<string, { count: number; at: number }>;
+  issueFailed(repo: unknown, n: number): void;
+  waitsTick(now?: number): void;
+  holdIssues(repo: unknown, pr: object): void;
+  bootAt: number;
+};
+
+async function board() {
+  const backend = createDemoBackend() as Backend;
+  const swarm = new Swarm(backend);
+  const repo = await swarm.connectRepo('demo-co/pixel-todo');
+  const internals = swarm as unknown as BoardInternals;
+  await internals.syncRepo(repo.id);
+  const issues = () => internals.repoRt.get(repo.id)!.issues;
+  const open = async () => (await backend.listIssues(repo.fullName)).map((i) => i.number);
+  const tools = internals.leadTools(internals.repo(repo.id));
+  const log = () => internals.state.boardLog;
+  const undoLast = () => swarm.undoBoardChange(log()[log().length - 1].id);
+  return { swarm, repo, internals, backend, issues, open, tools, log, undoLast, r: internals.repo(repo.id) };
+}
+
+// The demo's fake GitHub is shared by every office in this file: each test uses issues of its own.
+describe("the lead's board tools, each logged and undone", () => {
+  it('closes a stale issue; undo reopens it', async () => {
+    const b = await board();
+    expect(await b.tools.call('close_issue', { floor: 1, number: 6, note: 'Fixed by #2 already.' })).toMatch(/^Closed #6/);
+    expect(await b.open()).not.toContain(6);
+    expect(b.log().at(-1)!.change.kind).toBe('close');
+    await b.undoLast();
+    expect(await b.open()).toContain(6);
+    expect(b.log().at(-1)!.undoneAt).not.toBeNull();
+    await expect(b.undoLast()).rejects.toThrow(/already undone/);
+  });
+
+  it('merges a duplicate; undo reopens it and removes the note', async () => {
+    const b = await board();
+    const before = (await b.backend.issueDetails('demo-co/pixel-todo', 1)).body;
+    expect(await b.tools.call('merge_duplicates', { floor: 1, keep: 1, duplicate: 4, note: 'Same screen.' })).toMatch(/Merged #4 into #1/);
+    expect(await b.open()).not.toContain(4);
+    expect((await b.backend.issueDetails('demo-co/pixel-todo', 1)).body).toContain('**Also covers #4**');
+    await b.undoLast();
+    expect(await b.open()).toContain(4);
+    expect((await b.backend.issueDetails('demo-co/pixel-todo', 1)).body).toBe(before);
+  });
+
+  it('relabels; undo puts the labels back. The manager’s labels are refused', async () => {
+    const b = await board();
+    expect(await b.tools.call('relabel', { floor: 1, number: 5, add: ['ux'] })).toMatch(/Relabelled #5/);
+    expect((await b.backend.listIssues('demo-co/pixel-todo')).find((i) => i.number === 5)!.labels).toContain('ux');
+    await b.undoLast();
+    expect((await b.backend.listIssues('demo-co/pixel-todo')).find((i) => i.number === 5)!.labels).not.toContain('ux');
+    expect(await b.tools.call('relabel', { floor: 1, number: 5, add: ['swarm:hold'] })).toMatch(/^Refused: swarm:hold is the manager's label/);
+  });
+
+  it('reorders the backlog, which auto-assign follows; undo restores the order', async () => {
+    const b = await board();
+    expect(b.internals.readyIssues(b.r)[0].issue.number).not.toBe(3);
+    await b.tools.call('reorder_backlog', { floor: 1, order: [3, 2] });
+    expect(b.internals.readyIssues(b.r).slice(0, 2).map((x) => x.issue.number)).toEqual([3, 2]);
+    await b.undoLast();
+    expect(b.internals.state.order[b.repo.id]).toEqual([]);
+    expect(await b.tools.call('reorder_backlog', { floor: 1, order: [999] })).toMatch(/^Refused: #999 isn't an open issue/);
+  });
+
+  it('splits an oversize issue into parts; undo closes the parts and reopens it', async () => {
+    const b = await board();
+    const out = await b.tools.call('split_issue', {
+      floor: 1,
+      number: 2,
+      note: 'Two separate pieces.',
+      parts: [
+        { title: 'Due dates: data and picker', body: 'Store an optional due date.' },
+        { title: 'Due dates: overdue highlight', body: 'Highlight overdue items.' },
+      ],
+    });
+    const parts = [...out.matchAll(/#(\d+)/g)].map((m) => Number(m[1])).filter((n) => n !== 2);
+    expect(parts).toHaveLength(2);
+    expect(await b.open()).not.toContain(2);
+    for (const n of parts) expect(await b.open()).toContain(n);
+    await b.undoLast();
+    expect(await b.open()).toContain(2);
+    for (const n of parts) expect(await b.open()).not.toContain(n);
+  });
+
+  it('sets dependencies; undo sets them back', async () => {
+    const b = await board();
+    await b.tools.call('set_dependencies', { floor: 1, number: 3, depends_on: [5] });
+    expect((await b.backend.issueDetails('demo-co/pixel-todo', 3)).body).toMatch(/^Depends on #5/);
+    await b.undoLast();
+    expect((await b.backend.issueDetails('demo-co/pixel-todo', 3)).body).not.toMatch(/Depends on/);
+  });
+
+  it('never closes, merges away or splits an issue held for a business reason, and files no new scope', async () => {
+    const b = await board();
+    const asks = b.issues().find((i) => i.labels.includes('needs-input'))!;
+    expect(await b.tools.call('close_issue', { floor: 1, number: asks.number, note: 'Stale.' })).toMatch(/^Refused: .*business reason/);
+    expect(await b.tools.call('merge_duplicates', { floor: 1, keep: 1, duplicate: asks.number, note: 'x' })).toMatch(/^Refused: .*business reason/);
+    expect(await b.tools.call('split_issue', { floor: 1, number: asks.number, note: 'x', parts: [{ title: 'a', body: 'a' }, { title: 'b', body: 'b' }] })).toMatch(/^Refused: .*business reason/);
+    expect(await b.tools.call('file_issue', { floor: 1, title: 'New idea', body: 'x' }).catch((e: Error) => e.message)).toMatch(/No office tool file_issue/);
+  });
+});
+
+describe('the non-business waits on the board', () => {
+  it('wait 1: an issue held after a person closed its PR goes to the lead, and back in line after a day without one', async () => {
+    const b = await board();
+    b.internals.holdIssues(b.r, { number: 77, headRefName: 'x', closesIssues: [5], state: 'CLOSED', at: Date.now() });
+    expect(b.internals.state.held.map((h) => h.issue)).toEqual([5]);
+    expect(b.internals.state.leads[b.repo.id].queue).toContainEqual(expect.objectContaining({ kind: 'board', reasons: ['held'] }));
+    expect(await b.tools.call('release_issue', { floor: 1, number: 5, note: 'The PR was closed by mistake.' })).toMatch(/back in line/);
+    expect(b.internals.state.held).toEqual([]);
+    expect(b.log().at(-1)!.change.kind).toBe('release');
+    // the office's own fallback
+    b.internals.holdIssues(b.r, { number: 78, headRefName: 'y', closesIssues: [5], state: 'CLOSED', at: Date.now() });
+    b.internals.waitsTick(Date.now() + 25 * 60 * 60_000);
+    expect(b.internals.state.held).toEqual([]);
+  });
+
+  it('waits 2 and 3: an issue that keeps failing goes to the lead, and is retried after a few hours', async () => {
+    const b = await board();
+    b.internals.issueFailed(b.r, 3);
+    b.internals.issueFailed(b.r, 3);
+    expect(b.internals.readyIssues(b.r).map((x) => x.issue.number)).not.toContain(3);
+    expect(b.internals.state.leads[b.repo.id].queue).toContainEqual(expect.objectContaining({ kind: 'board', reasons: ['failing'] }));
+    b.internals.waitsTick(Date.now() + 7 * 60 * 60_000);
+    expect(b.internals.readyIssues(b.r).map((x) => x.issue.number)).toContain(3);
+  });
+
+  it('wait 4: the office clears a desk left in an error before the alarm', async () => {
+    const b = await board();
+    const a = b.internals.state.agents.find((x) => x.role === 'agent')! as unknown as { status: string; endedAt: number; lastError: string | null };
+    Object.assign(a, { status: 'error', endedAt: Date.now() - 9 * 60_000, lastError: 'boom' });
+    b.internals.waitsTick();
+    expect(a.status).toBe('idle');
+  });
+});

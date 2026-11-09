@@ -32,6 +32,8 @@ export interface Backend {
   editIssue(fullName: string, number: number, edit: { body?: string; addLabels?: string[]; removeLabels?: string[] }): Promise<void>;
   /** Close an issue with a comment, as completed unless `reason` says not planned. */
   closeIssue(fullName: string, number: number, comment: string, reason?: 'completed' | 'not planned'): Promise<void>;
+  /** Reopen a closed issue with a comment (the board log's undo). */
+  reopenIssue(fullName: string, number: number, comment: string): Promise<void>;
   mergePull(fullName: string, number: number, method: 'squash' | 'merge' | 'rebase', headSha?: string): Promise<void>;
   updateBranch(fullName: string, number: number): Promise<void>;
   /** The failed steps' log of a GitHub Actions run, for a checks fix. */
@@ -142,6 +144,7 @@ export const realBackend: Backend = {
   issueState: github.issueState,
   editIssue: github.editIssue,
   closeIssue: github.closeIssue,
+  reopenIssue: github.reopenIssue,
   mergePull: github.mergePull,
   updateBranch: github.updateBranch,
   failedRunLog: github.failedRunLog,

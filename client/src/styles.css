@@ -5538,6 +5538,34 @@ html[data-high-contrast] :is(button, a, input, select, textarea, summary, [tabin
 .decision-focused {
   box-shadow: 0 0 0 2px var(--sky);
 }
+/* The floor leads' board changes of the week, under the decisions (DecisionRoom.tsx BoardLog). */
+.board-log h3 {
+  margin: 8px 0 2px;
+}
+.board-log ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.board-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  background: var(--paper);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  scroll-margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.board-change .grow {
+  flex: 1;
+  min-width: 0;
+}
 .decision-head {
   display: flex;
   align-items: flex-start;

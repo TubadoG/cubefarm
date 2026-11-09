@@ -41,6 +41,24 @@ export interface DigestFloor {
   merged: DigestItem[];
   inProgress?: string[]; // titles of the issues agents are building now
   milestone?: { title: string; open: number; closed: number } | null; // the current GitHub milestone, when the repo uses them
+  boardChanges?: BoardChangeLine[]; // Mondays: the floor lead's board changes of the last week (server/boardLog.ts)
+}
+
+/** A board change in the Monday digest, with where to undo it. */
+export interface BoardChangeLine {
+  at: number;
+  by: string;
+  summary: string;
+  undo: string; // what the undo does
+  undone: boolean;
+  link: string | null; // its line in the office's Decision room, when the office has a public address
+}
+
+const day = (at: number) => new Date(at).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
+/** The board changes as digest lines: when, who, what, and how to undo it. */
+export function boardChangeLines(changes: readonly BoardChangeLine[]): string[] {
+  return changes.map((c) => `${day(c.at)} · ${c.by}: ${c.summary}${c.undone ? ' (undone)' : c.link ? ` · ${c.undo}: ${c.link}` : ` · ${c.undo} from the Decision room`}`);
 }
 
 /** An open PR that waits for the manager: why in a few words, and the decision in plain words (server/decision.ts). */
@@ -142,7 +160,7 @@ export function floorSummary(f: DigestFloor, now: number): string[] {
  */
 export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string; now?: number } = {}): Digest {
   const now = opts.now ?? Date.now();
-  const shown = floors.filter((f) => f.waiting.length || f.needsInput.length || f.merged.length || f.inProgress?.length).sort((a, b) => a.name.localeCompare(b.name));
+  const shown = floors.filter((f) => f.waiting.length || f.needsInput.length || f.merged.length || f.inProgress?.length || f.boardChanges?.length).sort((a, b) => a.name.localeCompare(b.name));
   const decisions = shown.reduce((n, f) => n + f.waiting.length + f.needsInput.length, 0);
   const merges = shown.reduce((n, f) => n + f.merged.length, 0);
   const dueCount = shown.reduce((n, f) => n + floorDecisions(f).filter((d) => !d.answered && d.deadline && dueSoon(d.deadline, now)).length, 0);
@@ -194,6 +212,16 @@ export function buildDigest(floors: DigestFloor[], opts: { officeUrl?: string; n
       html.push(
         '<p style="margin:8px 0 2px"><b>Issues that need your input</b></p><ul>',
         ...f.needsInput.map((i) => `<li style="margin-bottom:10px">${link(i)}${i.excerpt && !i.brief ? `<br><span style="color:#555">${escapeHtml(i.excerpt)}</span>` : ''}${infoHtml(i)}${roomHtml(i.number)}</li>`),
+        '</ul>',
+      );
+    }
+    if (f.boardChanges?.length) {
+      text.push('', 'Board changes by the floor lead last week (undo any in the office, no approval needed):', ...boardChangeLines(f.boardChanges).map((l) => `- ${l}`));
+      html.push(
+        '<p style="margin:8px 0 2px"><b>Board changes by the floor lead last week</b> <span style="color:#555">(undo any in the office, no approval needed)</span></p><ul>',
+        ...f.boardChanges.map(
+          (c) => `<li>${escapeHtml(`${day(c.at)} · ${c.by}: ${c.summary}`)}${c.undone ? ' <i>(undone)</i>' : c.link ? ` · <a href="${escapeHtml(c.link)}">${escapeHtml(c.undo)}</a>` : ` · ${escapeHtml(c.undo)} from the Decision room`}</li>`,
+        ),
         '</ul>',
       );
     }
