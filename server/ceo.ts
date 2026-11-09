@@ -108,6 +108,7 @@ export interface OfficeHandlers {
   sendBack(a: { floor: number; pr: number; note: string }): Promise<string>;
   rerunChecks(a: { floor: number; pr: number }): Promise<string>;
   closePull(a: { floor: number; pr: number; comment: string }): Promise<string>;
+  rebuild(a: { floor: number; pr: number }): Promise<string>;
   escalate(a: { floor: number; pr: number; reason: string }): Promise<string>;
   sendEmail(a: { to: string; subject: string; body: string }): Promise<string>;
 }
@@ -261,8 +262,14 @@ export function createOfficeTools(h: OfficeHandlers): OfficeTools {
       (a) => run(() => h.closePull(a)),
     ),
     tool(
+      'rebuild',
+      'Triage only: close a pull request stuck for a technical reason (conflicts, red checks, failing sessions) and have its issue built again from the default branch. The office comments on the PR and the issue; the branch is kept for reference.',
+      { floor: z.number().int(), pr: z.number().int().positive() },
+      (a) => run(() => h.rebuild(a)),
+    ),
+    tool(
       'escalate',
-      'Triage only: hand a stuck pull request to the manager with your one-line diagnosis, when it needs a decision only they can make.',
+      'Triage only: hand a stuck pull request to the manager with your one-line diagnosis, only when it needs a business decision only they can make (never for a technical problem).',
       { floor: z.number().int(), pr: z.number().int().positive(), reason: z.string().min(1).max(300).describe('One line: what is wrong and what the manager has to decide') },
       (a) => run(() => h.escalate(a)),
     ),
@@ -380,7 +387,7 @@ export function ceoSystemPrompt(o: {
     "- Agents run the office's default coding agent, model and effort. Change an agent's (configure_agent), or pick them for new agents (scale_team), only when the manager asks or for a clear reason.",
     '- Issues: the same agents build and test, so PRs queued for QA (capacity.prsAwaitingQa) mean fewer, bigger issues, not more. Most briefs need 1 to 4 issues. Write "Depends on #N" only when an issue truly cannot start until #N\'s code is merged, because it waits until #N is closed. Keep dependency chains to two steps at most. The office starts the issues that hold up others first. Do not duplicate open issues: fix an existing issue\'s dependencies with set_dependencies. File at most 12 issues per job, or per message from the manager.',
     '- Close an issue that is superseded or no longer wanted with close_issue, not by making it wait for another issue.',
-    '- Triage jobs: a pull request got stuck (needs-human). Look before the manager does, and bring them only real decisions. Read the facts in the job and the code, then call exactly one of retry_qa (a flaky QA session, or it has been fixed since), send_back (a developer can fix it; your note says how), rerun_checks (a red check that looks flaky or like an outage), close_pull (the approach is wrong: its issue stays open to be built again) or escalate (only the manager can decide: a product call, credentials, a broken setup).',
+    '- Triage jobs: a pull request got stuck (needs-human). Look before the manager does, and bring them only real decisions. Read the facts in the job and the code, then call exactly one of retry_qa (a flaky QA session, or it has been fixed since), send_back (a developer can fix it; your note says how), rerun_checks (a red check that looks flaky or like an outage), close_pull (the approach is wrong: its issue stays open to be built again), rebuild (a technical tangle, e.g. it keeps conflicting with main: closed and built again from main) or escalate (only for a business decision: a product call, scope, spend, credentials). Technical problems never go to the manager.',
     ...(o.email ? ['- send_email only to people in email.canEmail. A long report goes by email; your phone text stays one line.'] : []),
     "- When company.usage in company_status says pacing or paused, Claude's usage is running low and the office is finishing open work first: file only what is needed next, not a whole milestone.",
     `- Your final message is a text to the manager's phone, like a chat between friends: 1 to 3 short sentences, at most one question they can answer in a few words. No headings, lists, tables or recaps. Write only when they must decide something or asked you something; otherwise reply exactly ${NO_MESSAGE} and the office sends nothing. Do not ask again about a decision you already asked about (keep them in your notes) unless something changed.`,
@@ -418,9 +425,9 @@ export function ceoJobPrompt(
         pr.fixInstructions ? `QA's fix instructions:\n${pr.fixInstructions}` : '',
         pr.mergeNote ? `Merge note: ${pr.mergeNote}` : '',
         `GitHub checks: ${pr.checks}${pr.failedChecks.length ? ` (failed: ${pr.failedChecks.join(', ')})` : ''}${pr.pendingChecks.length ? ` (running: ${pr.pendingChecks.join(', ')})` : ''} · mergeable: ${pr.mergeable} (${pr.mergeState})`,
-        `This is triage ${pr.triage} of ${MAX_TRIAGES} for this PR; after that it goes straight to the manager.`,
+        `This is triage ${pr.triage} of ${MAX_TRIAGES} for this PR; after that a technical problem is rebuilt from main.`,
         '',
-        `Work out why it is stuck, then call exactly one of retry_qa, send_back, rerun_checks, close_pull or escalate with floor ${floor.floor} and pr ${pr.number}. If you end without one, the manager is alerted. Your final message: ${NO_MESSAGE}, unless you escalated; then one sentence on what the manager must decide.`,
+        `Work out why it is stuck, then call exactly one of retry_qa, send_back, rerun_checks, close_pull, rebuild or escalate with floor ${floor.floor} and pr ${pr.number}. If you end without one, the office rebuilds a technical problem and alerts the manager about anything else. Your final message: ${NO_MESSAGE}, unless you escalated; then one sentence on what the manager must decide.`,
       ]
         .filter((l) => l !== '')
         .join('\n');

@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import { api } from '../api';
 import { fmtDuration, fmtPct, fmtUsd, usageMeter } from '../ops';
 import { useStore } from '../store';
-import type { DoctorFinding, DoctorFix, OpsAlarm, OpsNumbers, RepoView } from '../../../shared/types';
+import type { DoctorFinding, DoctorFix, OpsAlarm, OpsNumbers, RepoView, StuckAction } from '../../../shared/types';
 import { confirmDialog } from './Confirm';
+import { STUCK_LABEL, stuckButtons, stuckPickLine } from './stuckActions';
 
 // The manager's console → Mission control: Claude's usage with "Resume full speed", what needs you (the alarms the
 // lobby wall's beacon rings for), the office doctor's findings with their one-click fixes, and every floor's numbers
@@ -93,6 +94,18 @@ function AlarmCard({ alarm, repo, hot }: { alarm: OpsAlarm; repo: RepoView | und
   const openOverlay = useStore((s) => s.openOverlay);
   const goToFloor = useStore((s) => s.goToFloor);
   const pr = alarm.prNumber !== null ? repo?.pulls.find((p) => p.number === alarm.prNumber) : undefined;
+  const pick = useStore((s) => (alarm.prNumber !== null ? s.qa[`${alarm.repoId}#${alarm.prNumber}`]?.stuckPick : null));
+  const stuckAct = async (action: StuckAction, n: number) => {
+    if (action === 'retry-qa') return void (await attempt(() => api.sendToQa(alarm.repoId, n)));
+    if (action === 'send-back') return void (await attempt(() => api.sendBack(alarm.repoId, n)));
+    const merge = action === 'merge';
+    const ok = await confirmDialog(
+      merge
+        ? { tone: 'warn', title: `Merge PR #${n} without QA?`, body: 'It has not passed QA. Merge it anyway?', confirm: 'Merge anyway' }
+        : { tone: 'danger', title: `Close PR #${n}?`, body: 'It is closed without merging. Its issue stays open and waits for you to assign it again. The branch stays on GitHub.', confirm: 'Close PR' },
+    );
+    if (ok) await attempt(() => (merge ? api.mergePull(alarm.repoId, n) : api.closePull(alarm.repoId, n)));
+  };
   return (
     <div id={`ops-card-${alarm.id}`} className={`card floor-card alarm-card ${hot ? 'ops-card-hot' : ''}`} style={{ ['--accent' as string]: repo?.color ?? '#C25B54' }}>
       <div className="row">
@@ -111,17 +124,17 @@ function AlarmCard({ alarm, repo, hot }: { alarm: OpsAlarm; repo: RepoView | und
             <button className="btn btn-small" onClick={() => openOverlay({ kind: 'kanban', repoId: alarm.repoId })}>
               📋 Open the Kanban
             </button>
-            <button className="btn btn-small btn-good" onClick={() => void attempt(() => api.sendToQa(alarm.repoId, alarm.prNumber!))}>
-              Retry QA
-            </button>
-            <button className="btn btn-small" title="Hand it to its author, or any free agent, with QA's findings" onClick={() => void attempt(() => api.sendBack(alarm.repoId, alarm.prNumber!))}>
-              Send back for a fix
-            </button>
+            {stuckButtons(pick).map(({ action, primary }) => (
+              <button key={action} className={`btn btn-small ${primary ? 'btn-good' : action === 'close' || action === 'merge' ? 'btn-ghost' : ''}`} onClick={() => void stuckAct(action, alarm.prNumber!)}>
+                {STUCK_LABEL[action]}
+              </button>
+            ))}
             {pr && (
               <a className="small" href={pr.url} target="_blank" rel="noreferrer">
                 PR on GitHub ↗
               </a>
             )}
+            {stuckPickLine(pick) && <div className="muted small" style={{ flexBasis: '100%' }}>{stuckPickLine(pick)}</div>}
           </>
         ) : (
           alarm.agentId && (

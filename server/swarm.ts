@@ -52,7 +52,8 @@ import { clip, DECISION_MAX, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
 import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
 import { Mailer } from './email.ts';
-import { briefAlert, decisionNote, stuckPrDecision } from './decision.ts';
+import { briefAlert, decisionNote, stuckPickView, stuckPrDecision } from './decision.ts';
+import { businessHold, closeComment, MAX_REBUILDS, giveUpStep, issueComment, parkBrief, parkDue, parkedComment, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
 import { answerPlan } from './decisionAnswer.ts';
 import { decisionKeyOf, decisionLink, MAX_DECISION_TEXT, parseDecisionChoice, type DecisionMessage, type DecisionReason, type DecisionView } from '../shared/decisions.ts';
 import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DecisionInfo, type DigestFloor } from './digest.ts';
@@ -166,7 +167,7 @@ interface PersistedAgent {
 }
 
 /** A pull request's trip through QA. */
-interface QaRecord extends Omit<QaView, 'ceoLooking'> {
+interface QaRecord extends Omit<QaView, 'ceoLooking' | 'stuckPick'> {
   issueNumber: number | null;
   devSessionId: string | null; // the dev's Claude Code session, resumed to fix QA findings
   fixInstructions: string | null;
@@ -187,6 +188,18 @@ interface QaRecord extends Omit<QaView, 'ceoLooking'> {
   stuckWhy: string | null; // why it last became needs-human, for the CEO's triage and the manager's alert
   triages: number; // CEO triage jobs it has had (triage.ts caps them)
   escalated: boolean; // needs-human and the manager has been told; cleared when it leaves needs-human
+  parkBy: number | null; // a rebuild stuck again went to the manager with a park brief (rebuild.ts): closed at this time if nobody answers; null: no deadline
+  parked: boolean; // it went to the manager with that brief
+}
+
+/** An issue whose stuck PR the office closed and built again (rebuild.ts). */
+interface RebuildRecord {
+  repoId: string;
+  issue: number;
+  count: number; // times it was rebuilt
+  pr: number; // the PR closed last
+  branch: string; // that PR's branch, kept for reference
+  at: number;
 }
 
 /** The PR work a desk is being set up for. author: the PR's author before a fix was handed out (restored if it can't start). */
@@ -226,6 +239,7 @@ interface Persisted {
   prLimits: number; // the PR budgets (PR_LIMITS_VERSION) needs-human records were judged by
   ops: OpsHistory; // mission control's rolling week of merges, QA verdicts, check runs and costs
   held: HeldIssue[];
+  rebuilds: RebuildRecord[];
   progress: LedgerState; // coins, decorations, achievements and careers (ledger.ts)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard, by repo id
   digestSentDay: string | null; // the local day (YYYY-MM-DD) the daily digest last went out (or was refused)
@@ -520,6 +534,7 @@ export class Swarm {
     prLimits: PR_LIMITS_VERSION,
     ops: emptyHistory(),
     held: [],
+    rebuilds: [],
     progress: emptyLedger(),
     pong: {},
     digestSentDay: null,
@@ -545,6 +560,7 @@ export class Swarm {
       sendBack: (a) => this.triageSendBack(a),
       rerunChecks: (a) => this.triageRerunChecks(a),
       closePull: (a) => this.triageClosePull(a),
+      rebuild: (a) => this.triageRebuild(a),
       escalate: (a) => this.triageEscalate(a),
       sendEmail: (a) => this.ceoEmail(a),
     });
@@ -714,6 +730,8 @@ export class Swarm {
           stuckWhy: q.stuckWhy ?? null,
           triages: q.triages ?? 0,
           escalated: q.escalated ?? q.status === 'needs-human', // stuck before triage existed: the manager was told
+          parkBy: q.parkBy ?? null,
+          parked: q.parked ?? false,
           mergeNote: null,
         })),
         requests: (loaded.requests ?? []).map((raw) => legacyRequest<HireRequestView>(raw)),
@@ -724,6 +742,7 @@ export class Swarm {
         prLimits: loaded.prLimits ?? 1,
         ops: loadHistory(loaded.ops, Date.now()),
         held: loaded.held ?? [],
+        rebuilds: Array.isArray(loaded.rebuilds) ? loaded.rebuilds : [],
         progress: loadLedger(loaded.progress),
         pong: loaded.pong && typeof loaded.pong === 'object' ? loaded.pong : {},
         digestSentDay: typeof loaded.digestSentDay === 'string' ? loaded.digestSentDay : null,
@@ -1095,6 +1114,7 @@ export class Swarm {
       mergeNote: q.mergeNote,
       heldFor: q.heldFor ?? null,
       ceoLooking: q.status === 'needs-human' && !q.escalated && this.triageJob(q) != null,
+      stuckPick: q.status === 'needs-human' ? stuckPickView(q.stuckWhy, q.parked) : null,
       updatedAt: q.updatedAt,
       shots: q.shots ?? [],
     };
@@ -1227,7 +1247,7 @@ export class Swarm {
     Object.assign(rec, patch, { updatedAt: Date.now() });
     if (rec.status !== 'passed') rec.heldFor = null; // a new pass weighs the hold again
     if (!this.state.qa.includes(rec)) return; // it left QA (its PR closed) while a session on it was still wrapping up
-    if (rec.status !== 'needs-human') rec.escalated = false;
+    if (rec.status !== 'needs-human') Object.assign(rec, { escalated: false, parkBy: null, parked: false });
     else this.ledger({ kind: 'needs-human', repoId: rec.repoId, pr: rec.prNumber });
     this.broadcast({ type: 'qa', qa: this.qaView(rec) });
     this.save();
@@ -2107,6 +2127,7 @@ export class Swarm {
     const rt = this.repoRt.get(repo.id);
     if (!rt) return [];
     rt.closedIssues.set(n, Date.now());
+    this.state.rebuilds = this.state.rebuilds.filter((r) => !(r.repoId === repo.id && r.issue === n));
     if (rt.issues.some((i) => i.number === n)) {
       rt.issues = rt.issues.filter((i) => i.number !== n);
       this.emitRepo(repo);
@@ -2531,18 +2552,20 @@ export class Swarm {
     const step = prepFailure(this.prepStrikes.get(key), rec.sessionFailures, task === 'fix' ? MAX_FIX_FAILURES : MAX_QA_FAILURES, Date.now());
     this.prepStrikes.set(key, step.strikes);
     const needsHuman = step.next === 'needs-human';
-    this.setQa(rec, {
+    const patch: Partial<QaRecord> = {
       ...(task === 'fix' ? { status: needsHuman ? 'needs-human' : 'failed', devAgentId: job.author } : { status: needsHuman ? 'needs-human' : 'queued', qaAgentId: null }),
       sessionFailures: step.sessionFailures,
-      ...(needsHuman ? { mergeNote: "its desk couldn't be set up", stuckWhy: "its desk couldn't be set up", escalated: true } : {}), // no CEO tool fixes a desk: straight to the manager
-    });
+    };
+    // A desk that won't set up is technical: the CEO triages it (often a retry clears it), then the office rebuilds.
+    if (needsHuman) this.stuck(rec, { ...patch, mergeNote: "its desk couldn't be set up" }, "its desk couldn't be set up");
+    else this.setQa(rec, patch);
     if (step.next === 'retry') return;
     const what = task === 'fix' ? 'fix' : 'QA run';
     const why = `desks couldn't be set up for its ${what} twice in a row: ${error.slice(0, 240)}`;
     this.postMessage(
       'office',
       needsHuman
-        ? `⚠️ PR #${rec.prNumber} on ${repo.fullName} needs you: ${why}`
+        ? `⚠️ PR #${rec.prNumber} on ${repo.fullName} is stuck: ${why}. The office handles it: the CEO looks first, then it is rebuilt if need be.`
         : `⚠️ PR #${rec.prNumber} on ${repo.fullName} waits ${Math.round(PREP_HOLD_MS / 60_000)} minutes before anyone tries its ${what} again: ${why}`,
     );
   }
@@ -2572,7 +2595,8 @@ export class Swarm {
   }
 
   private async runTask(a: PersistedAgent, repo: PersistedRepo, issue: IssueInfo, note?: string) {
-    const branch = devBranch(issue.number, slugify(a.name));
+    const rebuilt = this.state.rebuilds.find((r) => r.repoId === repo.id && r.issue === issue.number);
+    const branch = devBranch(issue.number, rebuildSlug(slugify(a.name), rebuilt?.count ?? 0));
     this.beginTask(
       a,
       { task: 'issue', issueNumber: issue.number, issueTitle: issue.title, branch, prNumber: null, prUrl: null, sessionId: null },
@@ -2599,6 +2623,7 @@ export class Swarm {
       issue.labels.length ? `Labels: ${issue.labels.join(', ')}` : '',
       '',
       issue.body?.trim() || '(The issue has no description.)',
+      rebuilt ? `\n${rebuildNote({ pr: rebuilt.pr, branch: rebuilt.branch, base: repo.defaultBranch })}` : '',
       note ? `\nNote from the manager: ${note}` : '',
     ]
       .filter(Boolean)
@@ -2833,6 +2858,8 @@ export class Swarm {
         stuckWhy: null,
         triages: 0,
         escalated: false,
+        parkBy: null,
+        parked: false,
       };
       this.state.qa.push(rec);
       this.setQa(rec, {});
@@ -4145,7 +4172,7 @@ export class Swarm {
     this.setQa(rec, { ...patch, status: 'needs-human', stuckWhy: why });
     const step = triageStep({ kind: 'stuck', triages: rec.triages });
     if (step.do !== 'triage') {
-      this.escalate(rec, step.do === 'escalate' ? step.note : null);
+      void this.giveUp(rec, step.do === 'escalate' ? step.note : null);
       return false;
     }
     rec.triages += 1;
@@ -4160,6 +4187,116 @@ export class Swarm {
     this.setQa(rec, { escalated: true });
     const repo = this.state.repos.find((r) => r.id === rec.repoId);
     if (repo) this.postMessage('office', `⚠️ PR #${rec.prNumber} on ${repo.fullName} needs you: ${rec.stuckWhy ?? 'it is stuck'}.${note ? ` ${note}` : ''}`);
+  }
+
+  // ---------- rebuilds ----------
+
+  private givingUp = new Set<string>(); // repoId#pr: a giveUp in flight
+
+  /** How often a PR's issues were rebuilt already (the most of them), and those issues. */
+  private rebuildsOf(repoId: string, pull: Pick<PullInfo, 'headRefName' | 'closesIssues'> | undefined) {
+    const issues = pull ? issuesResolvedBy(pull) : [];
+    const count = Math.max(0, ...issues.map((n) => this.state.rebuilds.find((r) => r.repoId === repoId && r.issue === n)?.count ?? 0));
+    return { issues, count };
+  }
+
+  /**
+   * The office can't move a stuck PR any further (the CEO's triage budget is spent, or a triage changed nothing). A
+   * technical one is closed and built again from main (rebuild.ts); a rebuild that gets stuck again, or a PR held for a
+   * business reason, goes to the manager, the former with a brief whose default is to park it. note: for the manager.
+   */
+  private async giveUp(rec: QaRecord, note: string | null) {
+    const key = `${rec.repoId}#${rec.prNumber}`;
+    const repo = this.state.repos.find((r) => r.id === rec.repoId);
+    if (!repo || rec.status !== 'needs-human' || rec.escalated || this.givingUp.has(key)) return;
+    this.givingUp.add(key);
+    try {
+      const pull = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === rec.prNumber);
+      const [hold, talk] = pull ? await Promise.all([this.holdFor(repo, pull).catch(() => null), this.backend.discussion(repo.fullName, rec.prNumber).catch(() => null)]) : [null, null];
+      const business = businessHold({ labels: pull?.labels, heldFor: rec.heldFor ?? null, hold, brief: !!talk && !!findBrief(talk.body, talk.comments) });
+      const { issues, count } = this.rebuildsOf(repo.id, pull);
+      const step = giveUpStep({ why: rec.stuckWhy, business, rebuilds: count });
+      if (!pull || rec.status !== 'needs-human' || rec.escalated || !this.state.qa.includes(rec)) return; // moved on meanwhile
+      if (step.do === 'rebuild') return void (await this.rebuildPull(repo, rec, pull, `${this.ceo().name}'s triage could not move it`));
+      if (step.brief) {
+        const hours = repo.decisionTimeoutHours;
+        const deadline = deadlineOf({ firstSeen: Date.now() }, hours);
+        const brief = parkBrief({ pr: rec.prNumber, title: pull.title, issues, why: rec.stuckWhy, hours });
+        await this.backend.commentIssue(repo.fullName, rec.prNumber, `${renderBrief(brief, deadline ? whenLabel(deadline) : null)}\n\n<sub>Written by cubefarm: this change was already rebuilt once.</sub>\n${OFFICE_MARK}`);
+        this.briefs.set(decisionKey({ repoId: repo.id, kind: 'pr', number: rec.prNumber }), brief);
+        Object.assign(rec, { parkBy: deadline, parked: true });
+      }
+      this.escalate(rec, step.brief ? 'It was already rebuilt once: see the decision brief.' : note);
+      if (step.brief) this.emitDecisions();
+    } catch (err) {
+      // The rebuild couldn't be done (GitHub refused): the manager hears rather than the PR sitting unseen.
+      this.escalate(rec, `The office couldn't rebuild it: ${oneLine(err)}.`);
+    } finally {
+      this.givingUp.delete(key);
+    }
+  }
+
+  /**
+   * Close a stuck PR and build its change again: a plain-words comment on the PR (the branch stays), a note for the
+   * next developer on its issues (or a new issue when it linked none), and the issues back in auto-assign's line.
+   */
+  private async rebuildPull(repo: PersistedRepo, rec: QaRecord, pull: PullInfo, by: string) {
+    const base = repo.defaultBranch;
+    const pr = { number: pull.number, title: pull.title, branch: pull.headRefName };
+    const rt = this.repoRt.get(repo.id);
+    const open = issuesResolvedBy(pull).filter((n) => !rt || issueOpen(n, this.floorState(rt)) !== false);
+    let issues = open;
+    let filed: number | null = null;
+    if (!issues.length) {
+      const details = await this.backend.prDetails(repo.fullName, pull.number).catch(() => null);
+      const draft = rebuildIssue(pr, details?.body ?? '', rec.stuckWhy, base);
+      filed = await this.backend.createIssue(repo.fullName, draft.title, draft.body);
+      issues = [filed];
+    }
+    await this.backend.commentPull(repo.fullName, pull.number, closeComment(pr, rec.stuckWhy, base, open, filed));
+    await this.backend.closePull(repo.fullName, pull.number);
+    for (const n of open) await this.backend.commentIssue(repo.fullName, n, issueComment(pr, rec.stuckWhy, base)).catch((err) => console.warn(`rebuild: could not comment on #${n}`, err));
+    const now = Date.now();
+    for (const n of issues) {
+      const r = this.state.rebuilds.find((x) => x.repoId === repo.id && x.issue === n);
+      if (r) Object.assign(r, { count: r.count + 1, pr: pull.number, branch: pull.headRefName, at: now });
+      else this.state.rebuilds.push({ repoId: repo.id, issue: n, count: 1, pr: pull.number, branch: pull.headRefName, at: now });
+    }
+    // Back in auto-assign's line: not held for the manager, and the closed PR no longer claims them.
+    this.state.held = this.state.held.filter((h) => !(h.repoId === repo.id && issues.includes(h.issue)));
+    this.dropRecord(repo, pull.number);
+    this.learnPull(repo, { number: pull.number, headRefName: pull.headRefName, closesIssues: pull.closesIssues }, 'CLOSED', true);
+    this.postMessage('office', `♻️ PR #${pull.number} on floor ${repo.floor} kept getting stuck (${rec.stuckWhy ?? 'no reason given'}), and ${by}. The office closed it and builds ${issues.map((n) => `#${n}`).join(', ')} again from ${base}; the old branch is kept.`);
+    this.save();
+    await this.syncRepo(repo.id);
+    setTimeout(() => this.schedule(), 200);
+  }
+
+  /** The decision clock's part for park briefs: nobody answered in time, so the PR closes and its issues wait. */
+  private async parkDueTick(now: number) {
+    for (const rec of this.state.qa.filter((q) => q.parked && q.status === 'needs-human' && q.escalated)) {
+      const repo = this.state.repos.find((r) => r.id === rec.repoId);
+      const pull = repo && this.repoRt.get(repo.id)?.pulls.find((p) => p.number === rec.prNumber && p.state === 'OPEN');
+      if (!repo || !pull || rec.parkBy === null || now < rec.parkBy) continue;
+      const talk = await this.backend.discussion(repo.fullName, rec.prNumber).catch(() => null);
+      if (!talk) continue;
+      const since = rec.parkBy - repo.decisionTimeoutHours * 3_600_000;
+      if (!parkDue({ deadline: rec.parkBy, now, replied: managerReply(talk.comments, since) !== null })) {
+        rec.parkBy = null; // the manager answered: theirs now
+        continue;
+      }
+      try {
+        const issues = issuesResolvedBy(pull);
+        await this.backend.commentPull(repo.fullName, pull.number, parkedComment(repo.decisionTimeoutHours, issues));
+        await this.backend.closePull(repo.fullName, pull.number);
+        this.dropRecord(repo, pull.number);
+        this.learnPull(repo, { number: pull.number, headRefName: pull.headRefName, closesIssues: pull.closesIssues }, 'CLOSED'); // its issues wait for the manager
+        this.postMessage('office', `⏱️ No reply on PR #${pull.number} on ${repo.fullName} within ${repo.decisionTimeoutHours} h, so the office closed it and parked ${issues.length ? issues.map((n) => `#${n}`).join(', ') : 'its work'} for later, as its brief recommends.`);
+      } catch (err) {
+        rec.parkBy = null; // once only: it stays with the manager
+        this.postMessage('office', `⚠️ No reply on PR #${pull.number} on ${repo.fullName}, but the office couldn't close it: ${oneLine(err)}. It waits for you.`);
+      }
+    }
   }
 
   /** The CEO's triage job for this PR, queued or running. */
@@ -4204,7 +4341,7 @@ export class Swarm {
     const rec = this.stuckRecord(job);
     const pull = rec && this.repoRt.get(rec.repoId)?.pulls.find((p) => p.number === rec.prNumber);
     const step = triageStep({ kind: 'ended', acted: !rec || (pull != null && pull.state !== 'OPEN') }); // a closed PR leaves QA on the next sync
-    if (rec && step.do === 'escalate') this.escalate(rec, step.note);
+    if (rec && step.do === 'escalate') void this.giveUp(rec, step.note);
   }
 
   /** The stuck PR a triage tool names; refused unless it is on the current triage job's floor (see checkTriageTarget). */
@@ -4267,6 +4404,18 @@ export class Swarm {
     this.learnPull(repo, { number: rec.prNumber, headRefName: listed?.headRefName ?? '', closesIssues: listed?.closesIssues ?? [] }, 'CLOSED', true); // built again
     void this.syncRepo(repo.id);
     return `Closed PR #${rec.prNumber}.${issues.length ? ` ${issues.map((n) => `#${n}`).join(', ')} stay${issues.length === 1 ? 's' : ''} open, so a developer builds it again.` : ''}`;
+  }
+
+  private async triageRebuild(x: { floor: number; pr: number }) {
+    const { repo, rec, listed } = await this.triageTarget(x);
+    if (!listed) throw new HttpError(409, `PR #${rec.prNumber} isn't in the floor's last sync yet; try again in a minute.`);
+    const [hold, talk] = await Promise.all([this.holdFor(repo, listed).catch(() => null), this.backend.discussion(repo.fullName, rec.prNumber).catch(() => null)]);
+    const business = businessHold({ labels: listed.labels, heldFor: rec.heldFor ?? null, hold, brief: !!talk && !!findBrief(talk.body, talk.comments) });
+    if (business) throw new HttpError(409, `PR #${rec.prNumber} waits for the manager for a business reason (${business}), so it isn't rebuilt. Escalate it if it needs them.`);
+    const { count } = this.rebuildsOf(repo.id, listed);
+    if (count >= MAX_REBUILDS) throw new HttpError(409, `PR #${rec.prNumber} is already a rebuild. End the triage without acting: the office brings the manager a brief to park it.`);
+    await this.rebuildPull(repo, rec, listed, `${this.ceo().name} chose to rebuild it`);
+    return `Closed PR #${rec.prNumber}; its issue is built again from ${repo.defaultBranch}, and the old branch is kept.`;
   }
 
   private async triageEscalate(x: { floor: number; pr: number; reason: string }) {
@@ -4766,7 +4915,15 @@ export class Swarm {
     const pull = this.repoRt.get(rec.repoId)?.pulls.find((p) => p.number === rec.prNumber);
     const name = repo?.fullName.split('/')[1] ?? rec.repoId;
     const url = pull?.url ?? (repo ? `${repo.url}/pull/${rec.prNumber}` : '');
-    const d = decisionNote(stuckPrDecision(name, { number: rec.prNumber, title: pull?.title ?? `PR #${rec.prNumber}`, url }, rec.stuckWhy));
+    const title = pull?.title ?? `PR #${rec.prNumber}`;
+    if (rec.parked && repo) {
+      // A rebuild stuck again: the phone gets its brief, like the decision clock's alerts.
+      const brief = parkBrief({ pr: rec.prNumber, title, issues: pull ? issuesResolvedBy(pull) : [], why: rec.stuckWhy, hours: repo.decisionTimeoutHours });
+      const n = briefAlert({ kind: 'pr', number: rec.prNumber, title, floor: name }, brief, rec.parkBy ? whenLabel(rec.parkBy) : null, DECISION_MAX);
+      const office = this.state.settings.notify.officeUrl;
+      return this.notifier.notify('needsHuman', n.title, n.body, n.title, office ? decisionLink(office, repo.id, rec.prNumber) : url || undefined);
+    }
+    const d = decisionNote(stuckPrDecision(name, { number: rec.prNumber, title, url }, rec.stuckWhy));
     this.notifier.notify('needsHuman', d.title, d.body, d.line, url || undefined);
   }
 
@@ -5056,6 +5213,7 @@ export class Swarm {
         }
         await this.applyDefault(repo, d, item, brief, now);
       }
+      await this.parkDueTick(now);
       // Stuck PRs the CEO handed on aren't on the clock, but their cards show a brief too.
       for (const item of this.openDecisions().filter((o) => o.reason === 'stuck')) {
         const repo = this.state.repos.find((r) => r.id === item.repoId);

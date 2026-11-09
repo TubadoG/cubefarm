@@ -4,6 +4,7 @@
 import { briefLines, type Brief } from '../shared/brief.ts';
 import { HOLD_LABEL } from '../shared/issues.ts';
 import { NOT_ROUTINE } from '../shared/holds.ts';
+import type { StuckAction } from '../shared/types.ts';
 
 export interface Decision {
   question: string; // "Merge PR #12 on openRTSM?"
@@ -49,8 +50,9 @@ export function readyDecision(floor: string, pr: Pr, held: string | null): Decis
   };
 }
 
-/** The office's pick for a stuck PR, from why it got stuck (swarm.ts stuck()). */
-export function stuckPrPick(stuckWhy: string | null): { pick: string | null; why: string } {
+/** The office's pick for a stuck PR, from why it got stuck (swarm.ts stuck()). parked: a rebuild that got stuck again (rebuild.ts). */
+export function stuckPrPick(stuckWhy: string | null, parked = false): { pick: string | null; why: string } {
+  if (parked) return { pick: 'close it', why: 'It was already rebuilt once and got stuck again; closing it keeps its issue open for later.' };
   const w = stuckWhy ?? '';
   if (/desk couldn't be set up|session got stuck|without a usable report/.test(w)) return { pick: 'retry QA', why: 'The sessions failed, not the code, so another QA run usually clears it.' };
   if (/fix sessions/.test(w)) return { pick: 'send it back with a note', why: 'The fix sessions failed, not the code, so another fix usually goes through.' };
@@ -58,9 +60,18 @@ export function stuckPrPick(stuckWhy: string | null): { pick: string | null; why
   return { pick: null, why: "The office can't tell what went wrong; the QA report has the details." };
 }
 
+/** The button each stuck-PR pick is carried out with (shared/types.ts StuckAction). */
+const PICK_ACTION: Record<string, StuckAction> = { 'retry QA': 'retry-qa', 'send it back with a note': 'send-back', 'merge it anyway': 'merge', 'close it': 'close' };
+
+/** The pick as the card shows it: which button is highlighted, and the one-line why under it. */
+export function stuckPickView(stuckWhy: string | null, parked = false): { action: StuckAction | null; why: string } {
+  const { pick, why } = stuckPrPick(stuckWhy, parked);
+  return { action: pick ? (PICK_ACTION[pick] ?? null) : null, why };
+}
+
 /** A PR the office can't move on its own (needs-human). */
-export function stuckPrDecision(floor: string, pr: Pr, stuckWhy: string | null): Decision {
-  const { pick, why } = stuckPrPick(stuckWhy);
+export function stuckPrDecision(floor: string, pr: Pr, stuckWhy: string | null, parked = false): Decision {
+  const { pick, why } = stuckPrPick(stuckWhy, parked);
   return {
     question: `PR #${pr.number} on ${floor} is stuck${stuckWhy ? `: ${stuckWhy}` : ''}. What next?`,
     title: pr.title,
