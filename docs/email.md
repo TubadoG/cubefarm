@@ -27,16 +27,24 @@ list without **Ask me**: it goes out on its own) and the hour (the office's loca
 first check at or after that hour the office builds it from what it already knows, with no CEO session and no model
 tokens (`server/digest.ts`), and lists per floor:
 
+- a summary first: the titles of the PRs merged in the last 24 hours, the issues in progress, the open decisions with
+  the time the office applies their recommendation (and how many are due within 24 hours), and the current GitHub
+  milestone's progress when the repo uses milestones;
 - open PRs waiting for you: QA passed and the office holds them for you (the floor's **Hold for my review** paths,
   the `swarm:hold` label, or work that isn't routine), QA passed and auto-merge is off, or they're stuck and the CEO
   handed them to you. Each reads as a decision in plain words (`server/decision.ts`): what is being decided, the
   options, the office's recommendation and why in one line, the button in **Approvals** that approves it, and the PR's
   link;
-- open issues labelled `needs-input`, with the first 300 characters of the latest comment (or the body). Agents
-  don't pick these up on their own while the label is on;
+- open issues labelled `needs-input`. Agents don't pick these up on their own while the label is on.
+
+A `needs-input` issue or a held PR shows its decision brief (docs/how-it-works.md, "Decisions and their briefs")
+section by section in plain text: background, the decision, the options, the recommendation, risk and mitigation,
+and what the office does if you don't reply by its deadline. Decisions due within 24 hours are flagged. Without a
+brief, the digest says so and that the CEO is writing it (an issue then also shows the first 300 characters of its
+latest comment, or its body). Once you reply on GitHub, it says no default applies;
 - PRs merged in the last 24 hours.
 
-The subject is "Office: N decisions waiting", or "Office: nothing waits for you". A quiet day still sends it: it is
+The subject is "Office: N decisions waiting" (with "(M due within 24 hours)" when some are), or "Office: nothing waits for you". A quiet day still sends it: it is
 the all-clear, and a missing one says the office is down. It goes through the same path as the CEO's email (the switch, the sender, the list and the daily cap) and
 the day it went out is saved, so a restart doesn't send it twice. **Send digest now** (`POST /api/email/digest`)
 sends one straight away for testing. In the demo, pixel-todo has a `needs-input` issue, so it always has something.

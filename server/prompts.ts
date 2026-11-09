@@ -3,6 +3,8 @@
 // task decides which one (build an issue, test a pull request, fix one), and they carry the office's workflow and
 // safety rules.
 
+import { BRIEF_TEMPLATE, DECIDED_DEFAULT, NEEDS_INPUT } from '../shared/brief.ts';
+import { HOLD_LABEL } from '../shared/issues.ts';
 import type { AgentPromptView } from '../shared/types.ts';
 
 export interface PromptAgent {
@@ -90,11 +92,19 @@ export function devSystemPrompt({ agent: a, repo, port, cwd, branch, linked, fix
     fixing ? '' : '7. End your final message with the pull request URL on its own line.',
     '',
     'Rules: never push to the default branch, never force-push, never merge pull requests yourself (the office merges them once QA and the checks pass), and never edit files outside your worktree. If you cannot finish, open a draft PR (gh pr create --draft) explaining what is left and why.',
+    DECISIONS_RULE,
     ONE_TURN,
   ]
     .filter((l) => l !== '')
     .join('\n');
 }
+
+/** In every build and fix prompt: who decides what, and the brief a business decision needs (shared/brief.ts). */
+export const DECISIONS_RULE = [
+  `Decisions: make technical and code-quality choices yourself and record each one in an ADR (docs/adr/NNNN-short-title.md). Label an issue ${NEEDS_INPUT}, or a PR ${HOLD_LABEL}, only for a business decision the issue and brief do not settle (scope, product behaviour, licensing, naming, spend). Then the issue or PR body must contain this brief, written for an executive who has not read the code:`,
+  BRIEF_TEMPLATE,
+  `If the issue has the ${DECIDED_DEFAULT} label, nobody answered its brief in time and the office chose the recommendation: build that, and record the decision in an ADR.`,
+].join('\n');
 
 export function qaSystemPrompt({ agent: a, repo, port, cwd, branch, pr, depsLine, testStep }: QaPromptInput) {
   return [

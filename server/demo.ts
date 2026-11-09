@@ -115,12 +115,30 @@ seed('demo-co/pixel-todo', 'A cheerful todo app', [
   ['Fix: completed count off by one', 'The footer shows one more completed item than there is.'],
 ]);
 // An issue that asks the manager a question, for the daily digest (docs/email.md); swarm:skip keeps agents off it.
-const issueComments = new Map<string, string[]>(); // `${fullName}#${n}` -> its comments, oldest first
+const issueComments = new Map<string, { body: string; createdAt: string; author: string }[]>(); // `${fullName}#${n}` -> its comments, oldest first
 {
   const r = repos.get('demo-co/pixel-todo')!;
   const n = r.nextNumber++;
-  r.issues.push(issue(n, 'Which colour palette for v2?', 'We need to pick the v2 palette before the theme work starts.', r.fullName, ['needs-input', 'swarm:skip']));
-  issueComments.set(`${r.fullName}#${n}`, ['Two options in the mockups: "Sunrise" (warm oranges) or "Harbour" (blues and greys). Harbour tests better for contrast; Sunrise matches the logo. Which one should we build?']);
+  const brief = [
+    'We need to pick the v2 palette before the theme work starts.',
+    '',
+    '## Decision brief',
+    '### Background',
+    'The v2 redesign needs one colour palette; the theme work waits for it.',
+    '### The decision',
+    'Which palette does v2 ship with?',
+    '### Options',
+    '- Sunrise (warm oranges): matches the logo, but weaker contrast for text.',
+    '- Harbour (blues and greys): passes contrast checks, but looks less like the brand.',
+    '### Recommendation',
+    'Harbour: it passes the accessibility contrast checks without extra work.',
+    '### Risk and mitigation',
+    'It looks less on-brand; the logo keeps its own colours, and the palette is one file to change later.',
+    '### If no reply by the deadline',
+    'The office builds Harbour.',
+  ].join('\n');
+  r.issues.push(issue(n, 'Which colour palette for v2?', brief, r.fullName, ['needs-input', 'swarm:skip']));
+  issueComments.set(`${r.fullName}#${n}`, [{ body: 'Two options in the mockups: "Sunrise" (warm oranges) or "Harbour" (blues and greys). Harbour tests better for contrast; Sunrise matches the logo. Which one should we build?', createdAt: now(), author: 'demo-agent' }]);
 }
 seed('demo-co/weather-api', 'Tiny weather REST API', [
   ['Add /forecast endpoint', 'Return a 5-day forecast for a city.'],
@@ -822,7 +840,17 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
       const i = repos.get(fullName)?.issues.find((x) => x.number === number);
       return { title: i?.title ?? `Issue #${number}`, body: i?.body ?? '', createdAt: i?.createdAt };
     },
-    latestIssueComment: async (fullName, number) => issueComments.get(`${fullName}#${number}`)?.at(-1) ?? null,
+    latestIssueComment: async (fullName, number) => issueComments.get(`${fullName}#${number}`)?.at(-1)?.body ?? null,
+    discussion: async (fullName, number) => {
+      const r = repos.get(fullName);
+      const body = r?.issues.find((x) => x.number === number)?.body ?? (r?.pulls.some((p) => p.number === number) ? 'Implements the change.' : '');
+      return { body, comments: [...(issueComments.get(`${fullName}#${number}`) ?? [])] };
+    },
+    commentIssue: async (fullName, number, body) => {
+      const key = `${fullName}#${number}`;
+      issueComments.set(key, [...(issueComments.get(key) ?? []), { body, createdAt: now(), author: 'demo-manager' }]);
+    },
+    milestones: async (fullName) => (fullName === 'demo-co/pixel-todo' ? [{ title: 'v2', open: repos.get(fullName)?.issues.length ?? 0, closed: 4, dueOn: null }] : []),
     mergedPullsSince: async (fullName, since) =>
       (repos.get(fullName)?.pulls ?? [])
         .filter((p) => p.state === 'MERGED' && p.mergedAt && Date.parse(p.mergedAt) >= Date.parse(since))

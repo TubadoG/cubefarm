@@ -25,7 +25,7 @@ The details behind the office: how an issue becomes a merged pull request, who d
    - It squash-merges (falling back to a merge commit if the repo doesn't allow squash), deletes the remote branch, and updates the branch first if the repo only merges up-to-date branches.
    - If GitHub refuses the merge (say, branch protection wants an approving review), your phone gets a message and the office retries every 10 minutes. Checks still running after 30 minutes also get a message.
    - Only `swarm/` branches merge themselves. PRs people opened are left for you.
-   - **Hold for my review** (in the floor's settings in the manager's console): one path pattern per line (`migrations/`, `.github/**`, `*.sql`; `**` crosses folders, `*` doesn't, a name without a slash matches at any depth). A PR that changes a matching file, or carries the `swarm:hold` label, still goes through QA and fixes as usual, but never merges itself: once it passes, its card says **held for you** and your phone gets one message naming the file or the label.
+   - **Hold for my review** (in the floor's settings in the manager's console): one path pattern per line (`migrations/`, `.github/**`, `*.sql`; `**` crosses folders, `*` doesn't, a name without a slash matches at any depth). A PR that changes a matching file, or carries the `swarm:hold` label, still goes through QA and fixes as usual, but never merges itself: once it passes, its card says **held for you**, the phone's message names the file or the label, and the push alert follows with its decision brief (see [Decisions and their briefs](#decisions-and-their-briefs)).
    - **Routine work only** (on by default, next to **Auto-merge** in the manager's console): only small, everyday work merges itself. A PR is held for you, as above, when it changes database migrations or schema (`migrations/`, `*.sql`, `schema.*`, `*.prisma`), sign-in or permissions (`auth/`, `*auth.*`, `*permission*`), secrets or keys (`.env*`, `*secret*`, `*.pem`), deploys, CI or infrastructure (`.github/workflows/`, `Dockerfile`, `docker-compose*`, `*.tf`, `infra/`, `deploy/`, `k8s/`), or dependencies (`package.json`, lockfiles, `requirements*.txt`, `pyproject.toml`, `go.mod`, `Cargo.toml`, …), or when it changes more than 400 lines. The full list is `ROUTINE_RULES` in `shared/holds.ts`. To let every passing PR merge itself again, untick **Routine work only**; to stop all merging, untick **Auto-merge**.
 
    A stuck PR (3 failed QA rounds, 3 merge fixes, or fix sessions that keep failing) goes to the CEO first: its card says **🧭 CEO is looking** while the CEO reads the QA report and the checks, then retries QA, sends it back for a fix with a note, re-runs a flaky check, or closes it (its issue stays open, to be built again). It only shows **needs you**, with a phone message, when the CEO escalates it with a one-line diagnosis, ends without acting, or the PR gets stuck a third time.
@@ -40,6 +40,59 @@ The details behind the office: how an issue becomes a merged pull request, who d
 PRs opened by people, not agents, show up under **In QA** as "not tested yet", with a **Send to QA** button.
 
 You can message an agent at any time. While they're working, the message is injected into their live session. After they've built or fixed something, the message resumes their session, e.g. "the CI failed, please fix the lint errors".
+
+## Running a floor on its own
+
+Two floor settings, next to **Auto-merge** in the manager's console (or `PATCH /api/repos/:owner/:name`), let a floor
+keep going without you.
+
+**🗺️ Plan itself** (`autoPlan`, off by default) and **keep N ready** (`minReady`, default 5). Normally the CEO files
+issues only when you ask (a plan from your brief, or a message). With **Plan itself** on, the CEO may also file issues
+for that floor in its periodic reviews, from the floor's brief and the roadmap docs in its repo (`docs/roadmap.md`,
+`ROADMAP.md` or similar): it keeps at least `minReady` issues ready to start for the current milestone, and when a
+milestone's issues are all closed it plans the next one. The 12-issues-per-job cap still applies. A review runs even
+when nothing else changed if such a floor has fewer than `minReady` issues ready; if that review files nothing for it
+(say, the roadmap is done), the office waits for something to change before it asks again. Other floors keep the old
+rule: the CEO only suggests work.
+
+**⏱️ decide after N h** (`decisionTimeoutHours`, default 48, 0 = never). See decisions below.
+
+### Decisions and their briefs
+
+Agents decide technical and code-quality questions themselves and record them in an ADR (`docs/adr/`). They label an
+issue `needs-input`, or a PR `swarm:hold`, only for a business decision the issue and brief don't settle (scope,
+product behaviour, licensing, naming, spend), and then put a **decision brief** in the issue or PR body
+(`shared/brief.ts`):
+
+```
+## Decision brief
+### Background
+### The decision
+### Options          (a bullet per option, with its trade-offs)
+### Recommendation   (and why)
+### Risk and mitigation
+### If no reply by <date>
+```
+
+The office reads the brief from the body, or from the latest comment that has one. A `needs-input` issue or a held PR
+without one gets one from the CEO in its next review (its `write_brief` tool posts it as a comment, with the
+deadline). Your phone hears about each decision once, with the brief's sections in plain text, or, after an hour
+without a brief, that the CEO is writing it. The daily digest shows the same (docs/email.md).
+
+**The deadline** (`server/decisionClock.ts`). The office notes when it first sees each `needs-input` issue and each
+held PR (kept in `state.json`); the deadline is that time plus the floor's `decisionTimeoutHours`. You answer by
+commenting on the issue or PR, removing the label, or merging or closing the PR; then nothing happens by default. If
+the deadline passes with no answer, the office applies the recommendation, once:
+
+- an issue: it comments "No reply within 48 h, so the office proceeds with the recommendation: …", swaps
+  `needs-input` for `decided:default`, and the issue goes back on the board (unless it also has `swarm:skip`). The
+  agent who builds it records the decision in an ADR.
+- a held PR, on a floor with auto-merge on: when the brief recommends merging as it is, QA passed and the checks are
+  green with no conflicts, the office merges it and comments why; otherwise it goes back to a developer with the
+  recommendation as the note.
+
+No brief with a recommendation, no default: it waits for you. Everything it does is reversible: reply, re-label,
+or revert the merge. To turn it off for a floor, set **decide after** to 0.
 
 ## QA
 

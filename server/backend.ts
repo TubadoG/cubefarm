@@ -50,6 +50,12 @@ export interface Backend {
   /** PRs merged at or after `since` (ISO time), for the daily digest. */
   mergedPullsSince(fullName: string, since: string): Promise<{ number: number; title: string; url: string; mergedAt: string | null }[]>;
   commentPull(fullName: string, number: number, body: string): Promise<string>;
+  /** An issue's or PR's body and comments, oldest first (decision briefs and the manager's replies). */
+  discussion(fullName: string, number: number): Promise<{ body: string; comments: { body: string; createdAt: string; author: string }[] }>;
+  /** Comment on an issue or a PR. */
+  commentIssue(fullName: string, number: number, body: string): Promise<void>;
+  /** Open milestones and their issue counts, for the digest. */
+  milestones(fullName: string): Promise<{ title: string; open: number; closed: number; dueOn: string | null }[]>;
   uploadEvidence(fullName: string, filePath: string, data: Buffer): Promise<string>;
   ensureClone(fullName: string): Promise<void>;
   /** Fast-forward the floor's main checkout to GitHub when that is safe; returns how it stands. */
@@ -148,6 +154,9 @@ export const realBackend: Backend = {
   latestIssueComment: github.latestIssueComment,
   mergedPullsSince: github.mergedPullsSince,
   commentPull: github.commentPull,
+  discussion: github.discussion,
+  commentIssue: github.commentIssue,
+  milestones: github.milestones,
   uploadEvidence: github.uploadEvidence,
   ensureClone: workspace.ensureClone,
   syncMain: workspace.syncMain,

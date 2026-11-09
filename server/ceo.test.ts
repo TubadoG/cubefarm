@@ -101,6 +101,7 @@ describe('office tools', () => {
       scaleTeam: () => '',
       configureAgent: () => '',
       fileIssue: async () => '',
+      writeBrief: async () => '',
       setDependencies: async () => '',
       closeIssue: async () => '',
       retryQa: async () => '',
@@ -135,6 +136,7 @@ describe('office tools', () => {
       'send_email',
       'set_dependencies',
       'set_floor_profile',
+      'write_brief',
     ]);
   });
 

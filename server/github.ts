@@ -312,6 +312,31 @@ export async function latestIssueComment(fullName: string, number: number): Prom
   return raw.comments?.at(-1)?.body ?? null;
 }
 
+/** An issue's or PR's body and its comments, oldest first, with their authors and times (decision briefs and replies). */
+export async function discussion(fullName: string, number: number): Promise<{ body: string; comments: { body: string; createdAt: string; author: string }[] }> {
+  const [item, lines] = await Promise.all([
+    ghJson<{ body: string | null }>(['api', `repos/${fullName}/issues/${number}`], SYNC_READ),
+    gh(['api', '--paginate', `repos/${fullName}/issues/${number}/comments?per_page=100`, '--jq', '.[] | {body, created_at, author: (.user.login // "")}'], SYNC_READ),
+  ]);
+  const comments = lines
+    .split('\n')
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as { body: string | null; created_at: string; author: string })
+    .map((c) => ({ body: c.body ?? '', createdAt: c.created_at, author: c.author }));
+  return { body: item.body ?? '', comments };
+}
+
+/** Comment on an issue or a PR (they share GitHub's issue comments). */
+export async function commentIssue(fullName: string, number: number, body: string): Promise<void> {
+  await gh(['api', '-X', 'POST', `repos/${fullName}/issues/${number}/comments`, '-F', 'body=@-'], { input: body });
+}
+
+/** The repo's open milestones with their issue counts, earliest due first (the digest's milestone progress). */
+export async function milestones(fullName: string): Promise<{ title: string; open: number; closed: number; dueOn: string | null }[]> {
+  const raw = await ghJson<{ title: string; open_issues: number; closed_issues: number; due_on: string | null }[]>(['api', `repos/${fullName}/milestones?state=open&sort=due_on&per_page=20`], SYNC_READ);
+  return raw.map((m) => ({ title: m.title, open: m.open_issues, closed: m.closed_issues, dueOn: m.due_on }));
+}
+
 /** PRs merged at or after `since` (ISO time), newest first as GitHub lists them. */
 export async function mergedPullsSince(fullName: string, since: string): Promise<{ number: number; title: string; url: string; mergedAt: string | null }[]> {
   const day = since.slice(0, 10); // the search's date; the exact time is checked below
