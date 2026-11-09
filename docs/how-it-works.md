@@ -80,9 +80,13 @@ deadline). Your phone hears about each decision once, with the brief's sections 
 without a brief, that the CEO is writing it. The daily digest shows the same (docs/email.md).
 
 **The deadline** (`server/decisionClock.ts`). The office notes when it first sees each `needs-input` issue and each
-held PR (kept in `state.json`); the deadline is that time plus the floor's `decisionTimeoutHours`. You answer by
-commenting on the issue or PR, removing the label, or merging or closing the PR; then nothing happens by default. If
-the deadline passes with no answer, the office applies the recommendation, once:
+held PR (kept in `state.json`); the deadline is that time plus the floor's `decisionTimeoutHours`. A brief that
+appears later doesn't restart the clock, but you always get at least 24 hours with a real brief before the default.
+Only an explicit answer stops the clock: one recorded through the office (Approvals: merge, close, send back), a
+GitHub comment whose first line starts with `Decision:` (any case, e.g. `Decision: option 2`), or a person removing
+`needs-input` / `swarm:hold` or merging or closing the PR. Ordinary comments never do: the office, the agents and you
+all post under the same GitHub login, so QA reports, developers' notes and briefs can't be told from yours. If the
+deadline passes with no answer, the office applies the recommendation, once:
 
 - an issue: it comments "No reply within 48 h, so the office proceeds with the recommendation: …", swaps
   `needs-input` for `decided:default`, and the issue goes back on the board (unless it also has `swarm:skip`). The

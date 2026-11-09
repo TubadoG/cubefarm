@@ -11,6 +11,9 @@ export const DECIDED_DEFAULT = 'decided:default';
 /** Hidden in every comment the office posts, so the decision clock can tell them from the manager's replies. */
 export const OFFICE_MARK = '<!-- cubefarm -->';
 
+/** How the manager answers a decision, under every brief's deadline. */
+export const HOW_TO_ANSWER = "Reply on the Decision room card or comment starting with 'Decision:' to answer.";
+
 export interface Brief {
   background: string;
   decision: string;
@@ -27,7 +30,7 @@ export const BRIEF_SECTIONS: { key: keyof Brief; heading: string; what: string }
   { key: 'options', heading: 'Options', what: 'a bullet per option, each with its trade-offs' },
   { key: 'recommendation', heading: 'Recommendation', what: 'the option you would pick, and why' },
   { key: 'risk', heading: 'Risk and mitigation', what: 'what could go wrong with it, and how that is limited' },
-  { key: 'ifNoReply', heading: 'If no reply by', what: 'what the office does if nobody answers in time (it applies the recommendation)' },
+  { key: 'ifNoReply', heading: 'If no reply by', what: `what the office does if nobody answers in time (it applies the recommendation). ${HOW_TO_ANSWER}` },
 ];
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
@@ -84,7 +87,11 @@ export function parseBrief(text: string | null | undefined): Brief | null {
     }
     if (current) parts[current]!.push(line);
   }
-  const text_ = (k: keyof Brief) => (parts[k] ?? []).join('\n').trim();
+  const text_ = (k: keyof Brief) =>
+    (parts[k] ?? [])
+      .filter((l) => !l.includes(HOW_TO_ANSWER))
+      .join('\n')
+      .trim();
   return {
     background: text_('background'),
     decision: text_('decision'),
@@ -119,6 +126,7 @@ export function renderBrief(b: Brief, by?: string | null): string {
     const heading = s.key === 'ifNoReply' ? (by ? `If no reply by ${by}` : 'If no reply') : s.heading;
     const body = s.key === 'options' ? b.options.map((o) => `- ${o}`).join('\n') : b[s.key];
     out.push('', `### ${heading}`, body || '_(not given)_');
+    if (s.key === 'ifNoReply') out.push('', `_${HOW_TO_ANSWER}_`);
   }
   return out.join('\n');
 }

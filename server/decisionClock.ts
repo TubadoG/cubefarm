@@ -2,7 +2,7 @@
 // held for them), its deadline (first seen + the floor's decisionTimeoutHours), whether the manager replied, and what
 // the office does once the deadline passes with no reply: apply the brief's recommendation. Pure; swarm.ts keeps the
 // records (state.json) and does the GitHub side.
-import { recommendsMerge, usableBrief, OFFICE_MARK, BRIEF_HEADING, type Brief } from '../shared/brief.ts';
+import { recommendsMerge, usableBrief, OFFICE_MARK, type Brief } from '../shared/brief.ts';
 
 /** The floor setting's default: two days, then the office goes with the recommendation. 0 = never. */
 export const DEFAULT_DECISION_TIMEOUT_HOURS = 48;
@@ -10,6 +10,8 @@ export const DEFAULT_DECISION_TIMEOUT_HOURS = 48;
 export const MAX_DECISION_TIMEOUT_HOURS = 720;
 /** The digest flags decisions due within this long. */
 export const DUE_SOON_MS = 24 * 60 * 60 * 1000;
+/** A brief that appeared after the clock started still gets at least this long before the default applies. */
+export const BRIEF_MIN_MS = 24 * 60 * 60 * 1000;
 /** How long the phone alert waits for a brief before it goes out without one. */
 export const BRIEF_GRACE_MS = 60 * 60 * 1000;
 
@@ -24,7 +26,8 @@ export interface DecisionRecord {
   kind: DecisionKind;
   number: number;
   firstSeen: number; // ms: when the office first saw it waiting
-  answeredAt: number | null; // the manager replied: the clock stops
+  answeredAt: number | null; // the manager answered (through the office, or a "Decision:" comment): the clock stops
+  briefAt?: number | null; // when the office first saw a usable brief (absent in records from before it was kept)
   appliedAt: number | null; // the office applied the recommendation
   alerted: 'brief' | 'no-brief' | null; // the phone heard about it (with or without its brief)
 }
@@ -38,8 +41,15 @@ export function parseTimeoutHours(value: unknown): number {
   return Math.round(n);
 }
 
-/** When the office applies the recommendation, or null when it never does (timeout 0). */
-export const deadlineOf = (firstSeen: number, hours: number): number | null => (hours > 0 ? firstSeen + hours * 3_600_000 : null);
+/**
+ * When the office applies the recommendation, or null when it never does (timeout 0): first seen plus the timeout.
+ * A brief that appeared later doesn't restart the clock, but the manager always gets BRIEF_MIN_MS with a real brief.
+ */
+export function deadlineOf(r: Pick<DecisionRecord, 'firstSeen' | 'briefAt'>, hours: number): number | null {
+  if (hours <= 0) return null;
+  const base = r.firstSeen + hours * 3_600_000;
+  return r.briefAt != null && r.briefAt > r.firstSeen ? Math.max(base, r.briefAt + BRIEF_MIN_MS) : base;
+}
 
 /** Due within DUE_SOON_MS (or already past it). */
 export const dueSoon = (deadline: number | null, now: number) => deadline !== null && deadline - now <= DUE_SOON_MS;
@@ -64,14 +74,14 @@ export function trackDecisions(
     seen.add(key);
     if (waits.has(key)) {
       // needs-input came back on an issue the office decided: a new question, a new clock.
-      out.push(r.appliedAt !== null && r.kind === 'issue' && now - r.appliedAt > REOPEN_GRACE_MS ? { ...r, firstSeen: now, answeredAt: null, appliedAt: null, alerted: null } : r);
+      out.push(r.appliedAt !== null && r.kind === 'issue' && now - r.appliedAt > REOPEN_GRACE_MS ? { ...r, firstSeen: now, answeredAt: null, appliedAt: null, alerted: null, briefAt: null } : r);
     } else if (r.appliedAt !== null) out.push(r);
   }
   for (const w of waiting) {
     const key = decisionKey(w);
     if (seen.has(key) || !open(w)) continue;
     seen.add(key);
-    out.push({ repoId: w.repoId, kind: w.kind, number: w.number, firstSeen: now, answeredAt: null, appliedAt: null, alerted: null });
+    out.push({ repoId: w.repoId, kind: w.kind, number: w.number, firstSeen: now, answeredAt: null, appliedAt: null, alerted: null, briefAt: null });
   }
   return out;
 }
@@ -82,17 +92,19 @@ export interface Comment {
   author: string;
 }
 
+/** A comment that answers a decision: its first line starts with "Decision:" (any case). */
+export const isAnswer = (body: string) => /^\s*decision\s*:/i.test(body.split('\n').find((l) => l.trim()) ?? '');
+
 /**
- * When the manager first replied after `since`: a comment that is not the office's (OFFICE_MARK), not a brief and not
- * a bot's. The office posts under the manager's own GitHub login, so the mark, not the author, tells them apart.
+ * When the manager first answered on GitHub after `since`: a comment whose first line starts with "Decision:". The
+ * office, the agents and the manager all post under one GitHub login, so ordinary comments (QA reports, developers'
+ * notes, briefs) never count; only an explicit answer does. Answers recorded through the office set answeredAt directly.
  */
 export function managerReply(comments: readonly Comment[], since: number): number | null {
   for (const c of comments) {
     const at = Date.parse(c.createdAt);
-    if (!Number.isFinite(at) || at <= since) continue;
-    if (c.body.includes(OFFICE_MARK) || /\[bot\]$/i.test(c.author)) continue;
-    if (new RegExp(`^\\s{0,3}#{2,6}\\s+${BRIEF_HEADING}`, 'im').test(c.body)) continue;
-    return at;
+    if (!Number.isFinite(at) || at <= since || /\[bot\]$/i.test(c.author)) continue;
+    if (isAnswer(c.body)) return at;
   }
   return null;
 }
@@ -118,7 +130,7 @@ export function clockStep(x: {
   const r = x.record;
   if (r.appliedAt !== null) return { do: 'wait', why: 'already decided by the office' };
   if (r.answeredAt !== null) return { do: 'wait', why: 'the manager replied' };
-  const deadline = deadlineOf(r.firstSeen, x.hours);
+  const deadline = deadlineOf(r, x.hours);
   if (deadline === null) return { do: 'wait', why: 'this floor never decides by default' };
   if (x.now < deadline) return { do: 'wait', why: 'not due yet' };
   if (!usableBrief(x.brief)) return { do: 'wait', why: 'no brief with a recommendation yet' };
@@ -150,5 +162,5 @@ export function whenLabel(ms: number): string {
 export function defaultComment(hours: number, recommendation: string, what: 'proceeds' | 'merges' | 'sends it back'): string {
   const rec = recommendation.replace(/\s+/g, ' ').trim();
   const verb = what === 'proceeds' ? 'proceeds with the recommendation' : what === 'merges' ? 'merges it, as recommended' : 'sends it back to a developer with the recommendation';
-  return `No reply within ${hours} h, so the office ${verb}: ${rec}\n\nThis is reversible: reply here, or change it later.\n${OFFICE_MARK}`;
+  return `No reply within ${hours} h, so the office ${verb}: ${rec}\n\nThis is reversible: comment starting with "Decision:" to change it.\n${OFFICE_MARK}`;
 }

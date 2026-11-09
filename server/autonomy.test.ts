@@ -67,13 +67,16 @@ describe('the decision clock', () => {
     expect(record(internals, n).appliedAt).toBe(t0 + 2 * H);
   });
 
-  it('stops when the manager replies after it started', async () => {
+  it('stops only for an explicit "Decision:" answer', async () => {
     const { backend, swarm, internals } = await office();
     swarm.updateRepo(REPO, { decisionTimeoutHours: 1 });
     const n = await ask(backend, swarm);
     const t0 = Date.now() - 60_000;
     await swarm.decisionTick(t0);
-    await backend.commentIssue(REPO, n, 'Go with Sunrise.');
+    await backend.commentIssue(REPO, n, 'Go with Sunrise.'); // an ordinary comment: the clock runs on
+    await swarm.decisionTick(t0 + 30 * 60_000);
+    expect(record(internals, n).answeredAt).toBeNull();
+    await backend.commentIssue(REPO, n, 'Decision: Sunrise, it matches the logo.');
     await swarm.decisionTick(t0 + 2 * H);
     expect(record(internals, n).answeredAt).not.toBeNull();
     expect(await labels(backend, n)).toContain(NEEDS_INPUT);
@@ -95,15 +98,20 @@ describe('the decision clock', () => {
 
   it('asks the CEO for a missing brief, which write_brief posts with the deadline', async () => {
     const { backend, swarm, internals } = await office();
+    swarm.updateRepo(REPO, { decisionTimeoutHours: 1 });
     const n = await ask(backend, swarm, 'Pricing is not in the spec.');
-    await swarm.decisionTick(Date.now());
+    await swarm.decisionTick(Date.now() - 1000);
     const status = JSON.parse(internals.companyStatus()).floors[0].decisionsForManager;
     expect(status.find((d: { number: number }) => d.number === n)).toMatchObject({ brief: 'missing: write_brief' });
     await expect(internals.writeBrief({ floor: 1, number: 1, background: 'b', decision: 'd?', options: ['a', 'b'], recommendation: 'a', risk: 'r' })).rejects.toThrow(/isn't waiting/);
+    const late = Date.now();
     const out = await internals.writeBrief({ floor: 1, number: n, background: 'Pricing decides sign-ups.', decision: 'Free tier or 14-day trial?', options: ['Free tier: more sign-ups', 'Trial: more paid'], recommendation: 'Trial.', risk: 'Fewer sign-ups; revisit after a month.' });
     expect(out).toMatch(/^Posted the brief on #\d+ on floor 1\. If the manager doesn't reply by /);
     const { comments } = await backend.discussion(REPO, n);
     expect(comments.at(-1)?.body).toMatch(/^## Decision brief\n\n### Background\nPricing decides sign-ups\./);
-    expect(JSON.parse(internals.companyStatus()).floors[0].decisionsForManager.find((d: { number: number }) => d.number === n)).toMatchObject({ brief: 'written' });
+    const after = JSON.parse(internals.companyStatus()).floors[0].decisionsForManager.find((d: { number: number }) => d.number === n);
+    expect(after).toMatchObject({ brief: 'written' });
+    // A late brief keeps first-seen but leaves at least 24 hours to answer it.
+    expect(Date.parse(after.defaultAppliesAt)).toBeGreaterThanOrEqual(late + 24 * H - 1000);
   });
 });

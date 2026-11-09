@@ -41,7 +41,8 @@ A `needs-input` issue or a held PR shows its decision brief (docs/how-it-works.m
 section by section in plain text: background, the decision, the options, the recommendation, risk and mitigation,
 and what the office does if you don't reply by its deadline. Decisions due within 24 hours are flagged. Without a
 brief, the digest says so and that the CEO is writing it (an issue then also shows the first 300 characters of its
-latest comment, or its body). Once you reply on GitHub, it says no default applies;
+latest comment, or its body). Once you answer (a comment starting with `Decision:`, or Approvals), it says no default
+applies;
 - PRs merged in the last 24 hours.
 
 The subject is "Office: N decisions waiting" (with "(M due within 24 hours)" when some are), or "Office: nothing waits for you". A quiet day still sends it: it is

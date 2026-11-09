@@ -1936,6 +1936,7 @@ export class Swarm {
     const repo = this.repo(repoId);
     const pr = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === number) ?? (await this.backend.prDetails(repo.fullName, number));
     await this.backend.mergePull(repo.fullName, number, method);
+    this.answered(repo.id, 'pr', number);
     this.toast('success', `Merged PR #${number} into ${repo.defaultBranch}`);
     this.notifyMerge(repo, number, pr.title);
     await this.closeResolvedIssues(repo, number, pr);
@@ -1948,6 +1949,7 @@ export class Swarm {
     const repo = this.repo(repoId);
     const pr = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === number) ?? (await this.backend.prDetails(repo.fullName, number).catch(() => null));
     await this.backend.closePull(repo.fullName, number);
+    this.answered(repo.id, 'pr', number);
     this.learnPull(repo, { number, headRefName: pr?.headRefName ?? '', closesIssues: pr?.closesIssues ?? [] }, 'CLOSED');
     await this.syncRepo(repo.id);
   }
@@ -2863,6 +2865,7 @@ export class Swarm {
     const rec = find();
     const patch = sendBackPatch(prNumber, pr, rec, repo.defaultBranch, note, from);
     this.clearPrepStrikes(repo.id, prNumber);
+    if (!from) this.answered(repo.id, 'pr', prNumber); // the manager's own send-back
     this.setQa(rec!, { ...patch, preQa: null });
     setTimeout(() => this.schedule(), 200);
     this.toast('info', `PR #${prNumber} goes back to a developer${patch.fixReason === 'conflict' ? ' to resolve its conflicts' : ''}`);
@@ -4977,7 +4980,16 @@ export class Swarm {
   /** The deadline of a decision in words, or null when the floor never decides by default. */
   private decisionDeadline(d: DecisionRecord): number | null {
     const repo = this.state.repos.find((r) => r.id === d.repoId);
-    return repo ? deadlineOf(d.firstSeen, repo.decisionTimeoutHours) : null;
+    return repo ? deadlineOf(d, repo.decisionTimeoutHours) : null;
+  }
+
+  /** The manager answered a decision through the office (Approvals, a close): its clock stops. */
+  private answered(repoId: string, kind: 'issue' | 'pr', number: number) {
+    const d = this.state.decisions.find((r) => r.repoId === repoId && r.kind === kind && r.number === number);
+    if (d && d.appliedAt === null && d.answeredAt === null) {
+      d.answeredAt = Date.now();
+      this.save();
+    }
   }
 
   /** Run the decision clock soon (a PR was just held), not on every call. */
@@ -5016,6 +5028,7 @@ export class Swarm {
         }
         const brief = findBrief(talk.body, talk.comments);
         this.briefs.set(decisionKey(d), brief);
+        if (usableBrief(brief) && (d.briefAt ?? null) === null) d.briefAt = now;
         if (d.answeredAt === null) d.answeredAt = managerReply(talk.comments, d.firstSeen);
         const alert = alertStep(d, usableBrief(brief), now);
         if (alert) {
@@ -5098,7 +5111,8 @@ export class Swarm {
     const item = this.waitingDecisions().find((w) => w.repoId === repo.id && w.number === n);
     if (!item) throw new Error(`#${n} on floor ${repo.floor} isn't waiting for the manager: only needs-input issues and held PRs get a brief.`);
     const d = this.state.decisions.find((r) => decisionKey(r) === decisionKey(item));
-    const deadline = d ? this.decisionDeadline(d) : deadlineOf(Date.now(), repo.decisionTimeoutHours);
+    if (d && (d.briefAt ?? null) === null) d.briefAt = Date.now(); // the manager gets a day with it (deadlineOf)
+    const deadline = d ? this.decisionDeadline(d) : deadlineOf({ firstSeen: Date.now() }, repo.decisionTimeoutHours);
     const brief: Brief = {
       background: String(x.background ?? '').trim(),
       decision: String(x.decision ?? '').trim(),

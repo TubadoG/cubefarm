@@ -7,6 +7,7 @@ import {
   deadlineOf,
   defaultComment,
   dueSoon,
+  isAnswer,
   managerReply,
   parseTimeoutHours,
   REOPEN_GRACE_MS,
@@ -22,8 +23,17 @@ const brief = (recommendation = 'Build Harbour.'): Brief => ({ background: 'b', 
 
 describe('deadlines', () => {
   it('is first seen plus the timeout, or never at 0', () => {
-    expect(deadlineOf(T0, 48)).toBe(T0 + 48 * H);
-    expect(deadlineOf(T0, 0)).toBeNull();
+    expect(deadlineOf({ firstSeen: T0 }, 48)).toBe(T0 + 48 * H);
+    expect(deadlineOf({ firstSeen: T0, briefAt: T0 }, 48)).toBe(T0 + 48 * H);
+    expect(deadlineOf({ firstSeen: T0 }, 0)).toBeNull();
+  });
+
+  it('does not restart for a brief that came later, but gives it at least 24 hours', () => {
+    expect(deadlineOf({ firstSeen: T0, briefAt: T0 + 10 * H }, 48)).toBe(T0 + 48 * H); // 38 h left with the brief
+    expect(deadlineOf({ firstSeen: T0, briefAt: T0 + 40 * H }, 48)).toBe(T0 + 64 * H);
+    expect(deadlineOf({ firstSeen: T0, briefAt: T0 + 100 * H }, 48)).toBe(T0 + 124 * H);
+    expect(clockStep({ record: rec({ briefAt: T0 + 40 * H }), hours: 48, brief: brief(), now: T0 + 50 * H }).do).toBe('wait');
+    expect(clockStep({ record: rec({ briefAt: T0 + 40 * H }), hours: 48, brief: brief(), now: T0 + 64 * H }).do).toBe('proceed-issue');
   });
 
   it('flags decisions due within 24 hours, and overdue ones', () => {
@@ -51,8 +61,8 @@ describe('trackDecisions', () => {
 
   it('starts the clock on new decisions and keeps the first sighting', () => {
     const first = trackDecisions([], [{ repoId: 'o/r', kind: 'issue', number: 7 }], open, T0);
-    expect(first).toEqual([rec()]);
-    expect(trackDecisions(first, [{ repoId: 'o/r', kind: 'issue', number: 7 }], open, T0 + 5 * H)).toEqual([rec()]);
+    expect(first).toEqual([rec({ briefAt: null })]);
+    expect(trackDecisions(first, [{ repoId: 'o/r', kind: 'issue', number: 7 }], open, T0 + 5 * H)).toEqual([rec({ briefAt: null })]);
   });
 
   it('drops a decision that no longer waits (a human removed the label) or closed', () => {
@@ -65,7 +75,7 @@ describe('trackDecisions', () => {
     expect(trackDecisions([applied], [], open, T0 + 49 * H)).toEqual([applied]);
     const w = [{ repoId: 'o/r', kind: 'issue' as const, number: 7 }];
     expect(trackDecisions([applied], w, open, T0 + 48 * H + REOPEN_GRACE_MS / 2)).toEqual([applied]); // the stale listing
-    expect(trackDecisions([applied], w, open, T0 + 60 * H)).toEqual([rec({ firstSeen: T0 + 60 * H })]);
+    expect(trackDecisions([applied], w, open, T0 + 60 * H)).toEqual([rec({ firstSeen: T0 + 60 * H, briefAt: null })]);
   });
 
   it('never restarts a PR the office already acted on', () => {
@@ -76,16 +86,30 @@ describe('trackDecisions', () => {
 
 describe('managerReply', () => {
   const at = (h: number) => new Date(T0 + h * H).toISOString();
-  it("finds the manager's first comment after the clock started", () => {
+  const c = (body: string, h: number, author = 'sam') => ({ body, createdAt: at(h), author });
+
+  it('does not stop the clock for a QA report, a developer note or a brief from the same login', () => {
     const comments = [
-      { body: 'Old question', createdAt: at(-1), author: 'sam' },
-      { body: `QA report ${OFFICE_MARK}`, createdAt: at(1), author: 'sam' },
-      { body: renderBrief(brief()), createdAt: at(2), author: 'sam' },
-      { body: 'Looks good', createdAt: at(3), author: 'renovate[bot]' },
-      { body: 'Go with Sunrise.', createdAt: at(4), author: 'sam' },
+      c('## QA report\nVerdict: pass', 1),
+      c(`QA report ${OFFICE_MARK}`, 1.5),
+      c('Pushed the fix for the toolbar.', 2),
+      c(renderBrief(brief()), 3),
+      c('Pricing page body\n\n## Decision brief\n### The decision\nWhich plan?', 3.5),
+      c('Go with Sunrise.', 4),
+      c('The decision: unclear to me', 4.5),
     ];
-    expect(managerReply(comments, T0)).toBe(T0 + 4 * H);
-    expect(managerReply(comments.slice(0, 4), T0)).toBeNull();
+    expect(managerReply(comments, T0)).toBeNull();
+  });
+
+  it('stops it for a comment whose first line starts with "Decision:"', () => {
+    expect(managerReply([c('Thanks', 1), c('Decision: option 2', 2)], T0)).toBe(T0 + 2 * H);
+    expect(managerReply([c('\n  decision: go with Harbour\nbecause contrast', 2)], T0)).toBe(T0 + 2 * H);
+    expect(managerReply([c('DECISION:Sunrise', 2)], T0)).toBe(T0 + 2 * H);
+  });
+
+  it('ignores answers from before the clock started and from bots', () => {
+    expect(managerReply([c('Decision: old', -1), c('Decision: merge', 2, 'renovate[bot]')], T0)).toBeNull();
+    expect(isAnswer('Some text\nDecision: later line')).toBe(false);
   });
 });
 
