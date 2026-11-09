@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countdown, decisionHash, decisionKeyOf, decisionLink, isDecisionsPath, parseDecisionChoice, parseDecisionHash } from './decisions.ts';
+import { countdown, decisionHash, decisionKeyOf, decisionLink, isDecisionsPath, officePath, parseDecisionChoice, parseDecisionHash } from './decisions.ts';
 
 const H = 3_600_000;
 
@@ -12,8 +12,13 @@ describe('deep links', () => {
     expect(parseDecisionHash(u.hash)).toEqual({ repoId: 'acme/open-rtsm', number: 30 });
   });
 
-  it('ignore the office address path and survive URL-encoding', () => {
-    expect(decisionLink('https://office.example.com/some/where?x=1', 'o/r', 2)).toBe('https://office.example.com/decisions#o/r/2');
+  it('keep the office address path (an office behind a proxy) and survive URL-encoding', () => {
+    expect(decisionLink('https://foundry.example.com', 'o/r', 2)).toBe('https://foundry.example.com/decisions#o/r/2');
+    expect(decisionLink('https://example.com/office?x=1#y', 'o/r', 2)).toBe('https://example.com/office/decisions#o/r/2');
+    expect(decisionLink('https://example.com/office/', 'o/r', 2)).toBe('https://example.com/office/decisions#o/r/2');
+    expect(isDecisionsPath('/office/decisions')).toBe(true);
+    expect(officePath('/office/decisions')).toBe('/office/');
+    expect(officePath('/decisions')).toBe('/');
     expect(parseDecisionHash('#o%2Fr%2F12')).toEqual({ repoId: 'o/r', number: 12 });
     expect(decisionHash('o/r', 7)).toBe('o/r/7');
     expect(decisionKeyOf('o/r', 7)).toBe('o/r#7');
@@ -24,6 +29,7 @@ describe('deep links', () => {
     expect(isDecisionsPath('/decisions/')).toBe(true);
     expect(isDecisionsPath('/')).toBe(false);
     expect(isDecisionsPath('/decisions/x')).toBe(false);
+    expect(isDecisionsPath('/nodecisions')).toBe(false);
   });
 });
 

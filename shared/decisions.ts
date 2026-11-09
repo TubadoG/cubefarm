@@ -51,9 +51,16 @@ export const decisionKeyOf = (repoId: string, number: number) => `${repoId}#${nu
 /** A card's hash in the Decision room: "owner/repo/12". */
 export const decisionHash = (repoId: string, number: number) => `${repoId}/${number}`;
 
-/** The deep link to a card, on the office's address (Settings → Notifications → office address). */
+/**
+ * The deep link to a card, on the office's public address (Settings → Notifications → Office address for links, e.g.
+ * https://foundry.example.com). An address with a path (an office behind a proxy at /office/) keeps it.
+ */
 export function decisionLink(officeUrl: string, repoId: string, number: number): string {
-  const u = new URL(DECISIONS_PATH, officeUrl);
+  const base = new URL(officeUrl);
+  base.search = '';
+  base.hash = '';
+  if (!base.pathname.endsWith('/')) base.pathname += '/';
+  const u = new URL(DECISIONS_PATH.slice(1), base);
   u.hash = decisionHash(repoId, number);
   return u.toString();
 }
@@ -70,8 +77,11 @@ export function parseDecisionHash(hash: string | null | undefined): { repoId: st
   return m ? { repoId: m[1], number: Number(m[2]) } : null;
 }
 
-/** Whether a location is the Decision room ("/decisions", with or without a trailing slash). */
-export const isDecisionsPath = (pathname: string) => /^\/decisions\/?$/.test(pathname);
+/** Whether a location is the Decision room ("/decisions", or ".../decisions" behind a proxy's path). */
+export const isDecisionsPath = (pathname: string) => /(^|\/)decisions\/?$/.test(pathname);
+
+/** The office's own path for a Decision room location: what's left when the room is closed. */
+export const officePath = (pathname: string) => pathname.replace(/decisions\/?$/, '') || '/';
 
 /** The time left before the office applies the recommendation, in words: "1 d 4 h left", "35 min left", "overdue". */
 export function countdown(deadline: number | null, now: number): { label: string; due: boolean; overdue: boolean } | null {

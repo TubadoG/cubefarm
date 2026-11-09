@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { AgentCard } from './AgentCard';
 import { floorPrCounts, repoOnFloor, usePhoneBadge, useStore } from '../store';
 import { CEO_ID } from '../../../shared/types';
-import { decisionKeyOf, isDecisionsPath, parseDecisionHash } from '../../../shared/decisions';
+import { decisionKeyOf, isDecisionsPath, officePath, parseDecisionHash } from '../../../shared/decisions';
 import { HeldHint } from './HeldHint';
 import { CareerPeek } from './CareerCard';
 import { CoinChip } from './CoinChip';
@@ -97,7 +97,7 @@ function DecisionsButton() {
     if (!started || !isDecisionsPath(location.pathname)) return;
     const p = parseDecisionHash(location.hash);
     openOverlay({ kind: 'decisions', focus: p ? decisionKeyOf(p.repoId, p.number) : undefined });
-    history.replaceState(null, '', `/${location.search}`); // closing the room leaves the office, not the link
+    history.replaceState(null, '', `${officePath(location.pathname)}${location.search}`); // closing the room leaves the office, not the link
   }, [started, openOverlay]);
   if (!started || overlay?.kind === 'decisions') return null;
   return (

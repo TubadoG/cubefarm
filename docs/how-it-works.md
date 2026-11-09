@@ -103,7 +103,7 @@ or revert the merge. To turn it off for a floor, set **decide after** to 0.
 Every open decision on every floor, as a card: `needs-input` issues, held PRs, and stuck PRs the CEO escalated to you.
 Open it with **🧭 Decisions** above the phone button in the office, the **Decisions** tab in pocket mode, the callout
 at the top of **Approvals**, or a link: the digest and the push alerts link each decision to its card
-(`/decisions#owner/repo/number`, on the office address from Settings → Notifications).
+(`/decisions#owner/repo/number` on Settings → Notifications → **Office address for links**, the office's public URL such as `https://foundry.example.com`; an address with a path, for an office behind a proxy, keeps it). Without that address set, the digest and alerts carry no card links.
 
 A card shows the brief (background, the decision, the options, the recommendation, risk and mitigation) and the time
 left before the office applies the recommendation. Its buttons record your answer:
