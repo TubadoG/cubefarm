@@ -39,7 +39,7 @@ describe('qaCardNote', () => {
   });
 
   it('a needs-human PR the CEO is triaging is amber and says so, until it is escalated', () => {
-    expect(qaCardNote(rec('needs-human', STALE, 3, true), pr, true)).toEqual({ note: '🧭 CEO is looking', tone: 'warn' });
+    expect(qaCardNote(rec('needs-human', STALE, 3, true), pr, true)).toEqual({ note: '🧭 Floor lead is on it', tone: 'warn' });
     expect(qaCardNote(rec('needs-human', STALE, 3, false), pr, true)).toEqual({ note: `⚠️ needs you · ${STALE}`, tone: 'bad' });
   });
 

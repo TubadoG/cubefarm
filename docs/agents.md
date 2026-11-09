@@ -22,7 +22,7 @@ Most people have one subscription, so the default is every agent on the same pro
 
 Each floor (one repository) has its own team, up to **10 agents** by default (Settings → *Most agents per floor*, at most 15: the room has 15 desks). Agents stay on their floor and take that board's work.
 
-The CEO never decides on new work: it files GitHub issues only when you ask (a brief when the project moves in, **Plan**, or a message), and the office refuses its `file_issue` in any other job. Its own reviews, onboarding and triage suggest work in its message to you instead.
+The CEO never decides on new work: it files GitHub issues only when you ask (a brief when the project moves in, **Plan**, or a message), and the office refuses its `file_issue` in any other job. Its own reviews and onboarding suggest work in its message to you instead.
 
 The **CEO** watches each floor's throughput (issues ready to start, pull requests waiting for QA or being fixed, idle agents, merges per hour) and sets the team's size with its `scale_team` tool, saying why. Settings → *Team changes* decides what happens next:
 

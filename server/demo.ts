@@ -910,7 +910,7 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
     startSession: (opts, cb) => {
       // The big company is for measuring the office at full speed, so it never paces.
       if (++sessionsStarted === USAGE_WARNING_AT && !scale) fakeUsageWarning(cb);
-      return inTerminal(opts, cb, (c) => (opts.role === 'ceo' ? ceoSession(opts, c) : fakeSession(opts, c, deskRepo.get(opts.cwd) ?? [...repos.keys()][0])));
+      return inTerminal(opts, cb, (c) => (opts.role === 'ceo' ? ceoSession(opts, c) : opts.role === 'lead' ? leadSession(opts, c) : fakeSession(opts, c, deskRepo.get(opts.cwd) ?? [...repos.keys()][0])));
     },
     terminals: true,
     reconnectClis: async () => [], // fake sessions end with the office
@@ -1312,25 +1312,6 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
       const prs = s.floors.reduce((n, f) => n + f.pullRequests.length, 0);
       return `All ${s.floors.length} floors look healthy: ${issues} open issues and ${prs} pull requests in flight. No changes needed.`;
     },
-    // A stuck PR: read what QA and GitHub say, then act through the real triage tools, as the real CEO would.
-    async triage(floor: number, pr: number, facts: string) {
-      await step([{ kind: 'tool', tool: 'Read', text: `⏺ Read PR #${pr}'s QA report` }, { kind: 'result', text: '  ⎿ Read 38 lines' }]);
-      const conflict = /mergeable: CONFLICTING/.test(facts);
-      const red = /GitHub checks: failing/.test(facts);
-      const again = !/triage 1 of/.test(facts);
-      await think(conflict ? 'It only conflicts with main; the change itself is fine.' : red ? 'A red check that looks like a flake.' : again ? 'Stuck a second time. This needs a call from the manager.' : 'The fix sessions stalled, not the code. Another QA round should settle it.');
-      const [tool, args, done] = conflict
-        ? ['send_back', { note: 'Merge main and keep both changes working; QA already liked the rest.' }, 'went back for a fix: merging main']
-        : red
-          ? ['rerun_checks', {}, 'had its failed checks re-run']
-          : again
-            ? ['escalate', { reason: 'It got stuck twice for the same reason; worth a look at the issue itself.' }, 'is with you now']
-            : ['retry_qa', {}, 'is back in the QA queue'];
-      const out = await use(tool, { floor, pr, ...args });
-      if (!out.startsWith('Refused')) return `PR #${pr} on floor ${floor} was stuck. It ${done}.`;
-      await use('escalate', { floor, pr, reason: `I tried ${tool}, but the office refused: ${refused(out)}` });
-      return `PR #${pr} on floor ${floor} is stuck and I couldn't move it, so it's with you now.`;
-    },
     async chat(text: string) {
       const s = await status();
       await think('Reading your message.');
@@ -1402,11 +1383,8 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
 
   const prompt = opts.prompt;
   const where = prompt.match(/[Ff]loor (\d+) \(([^,)]+)/);
-  const triage = prompt.match(/^Triage: pull request #(\d+) on floor (\d+)/);
   const asked = prompt.match(/^The manager has a question about a decision in the Decision room: (?:pull request|issue) #(\d+) "([^"]*)" on floor (\d+)/);
-  const run = triage
-    ? () => scripts.triage(Number(triage[2]), Number(triage[1]), prompt)
-    : asked
+  const run = asked
       ? async () => {
           // A question from a Decision room card: read the issue, write a brief if it has none, then answer.
           const [, num, title, floor] = asked;
@@ -1426,7 +1404,7 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
           await think('Answering in plain words.');
           return `Good question. ${question ? `On "${short(question, 80)}": ` : ''}the recommendation is the lower-risk path: it ships sooner and can be changed later in one place. I'm the demo CEO, so this answer is made up, but the real one reads the code first.`;
         }
-    : /no longer needs triage/.test(prompt)
+    : /no longer needs triage|floor lead's to triage/.test(prompt)
       ? async () => 'NO_MESSAGE'
       : /just joined the company/.test(prompt)
         ? () => scripts.onboard(Number(where?.[1]), where?.[2] ?? '')
@@ -1468,6 +1446,76 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
         }, 1500),
       );
     },
+    stop() {
+      stopped = true;
+      timers.forEach(clearTimeout);
+      finish(false, '', 'Stopped by manager');
+    },
+  };
+}
+
+// ---------- the floor lead ----------
+
+/** A demo floor lead: reads what QA and GitHub say about a stuck PR, then acts through its real tools, as a real lead would. */
+function leadSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
+  const office = opts.office!;
+  const timers: NodeJS.Timeout[] = [];
+  let stopped = false;
+  let done = false;
+  const wait = (ms: number) => new Promise<void>((resolve) => timers.push(setTimeout(resolve, ms)));
+  const step = async (entries: LogEntry[], ms = 800 + Math.random() * 1200) => {
+    if (stopped) throw new Error('Stopped by manager');
+    cb.tool(entries.find((e) => e.tool)?.tool ?? null);
+    cb.log(entries);
+    await wait(ms);
+  };
+  const use = async (name: string, args: Record<string, unknown>) => {
+    await step([{ kind: 'tool', tool: `mcp__office__${name}`, text: `⏺ ${describeOfficeTool(name, args)}` }]);
+    const out = await office.call(name, args);
+    cb.log([{ kind: out.startsWith('Refused') ? 'error' : 'result', text: `  ⎿ ${out.split('\n')[0].slice(0, 170)}` }]);
+    return out;
+  };
+  const think = (text: string) => step([{ kind: 'thinking', text: '✻ Thinking…' }, { kind: 'text', text: `● ${text}` }], 1500);
+
+  const triage = async (floor: number, pr: number, facts: string) => {
+    await use('floor_status', {});
+    await step([{ kind: 'tool', tool: 'Read', text: `⏺ Read PR #${pr}'s QA report` }, { kind: 'result', text: '  ⎿ Read 38 lines' }]);
+    const conflict = /mergeable: CONFLICTING/.test(facts);
+    const red = /GitHub checks: failing/.test(facts);
+    const again = !/triage 1 of/.test(facts);
+    await think(conflict ? 'It only conflicts with main; the change itself is fine.' : red ? 'A red check that looks like a flake.' : again ? 'Stuck a second time: a fresh start from main is cheaper than another round.' : 'The fix sessions stalled, not the code. Another QA round should settle it.');
+    const [tool, args, did] = conflict
+      ? ['send_back', { note: 'Merge main and keep both changes working; QA already liked the rest.' }, 'went back for a fix: merging main']
+      : red
+        ? ['rerun_checks', {}, 'had its failed checks re-run']
+        : again
+          ? ['rebuild', {}, 'is being built again from main']
+          : ['retry_qa', {}, 'is back in the QA queue'];
+    const out = await use(tool as string, { floor, pr, ...(args as object) });
+    return out.startsWith('Refused') ? `PR #${pr}: ${tool} was refused, so the office's rebuild takes over.` : `PR #${pr} ${did}.`;
+  };
+
+  const finish = (ok: boolean, text: string, error?: string) => {
+    if (done) return;
+    done = true;
+    cb.tool(null);
+    cb.finished({ ok, text, costUsd: ok ? 0.1 + Math.random() * 0.3 : 0.02, turns: 4 + Math.floor(Math.random() * 6), errors: error ? [error] : [] });
+  };
+  const m = opts.prompt.match(/^Triage: pull request #(\d+) on floor (\d+)/);
+  timers.push(
+    setTimeout(async () => {
+      try {
+        cb.log([{ kind: 'system', text: `✻ Claude Code (demo) · ${opts.model} · ${opts.effort} effort · floor lead` }]);
+        const reply = m ? await triage(Number(m[2]), Number(m[1]), opts.prompt) : 'Nothing to do.';
+        cb.log([{ kind: 'text', text: `● ${reply}` }]);
+        finish(true, reply);
+      } catch (err) {
+        finish(false, '', stopped ? 'Stopped by manager' : (err as Error).message);
+      }
+    }, 500),
+  );
+  return {
+    send: () => undefined,
     stop() {
       stopped = true;
       timers.forEach(clearTimeout);

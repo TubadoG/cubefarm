@@ -18,7 +18,8 @@ async function office() {
   (swarm as unknown as Internals).ensureCeo([]);
   swarm.hireAgent(repo.id, {});
   swarm.hireAgent(repo.id, {});
-  return { swarm, repo, team: () => swarm.snapshot().agents.filter((a) => a.repoId === repo.id) };
+  // the floor's team: its floor lead is extra to it (docs/floor-lead.md)
+  return { swarm, repo, team: () => swarm.snapshot().agents.filter((a) => a.repoId === repo.id && a.role === 'agent') };
 }
 
 describe('team changes waiting for the manager', () => {

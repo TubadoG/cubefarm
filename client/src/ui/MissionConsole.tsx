@@ -259,7 +259,7 @@ const COLUMNS: [string, (n: OpsNumbers) => string, string?][] = [
   ['In QA', (n) => String(n.inQa)],
   ['Fixing', (n) => String(n.fixing), 'Back with an agent: QA findings, checks or a conflict'],
   ['To merge', (n) => String(n.toMerge)],
-  ['Needs you', (n) => `${n.needsYou}${n.triage ? ` (+${n.triage} 🧭)` : ''}`, '🧭: the CEO is looking first'],
+  ['Needs you', (n) => `${n.needsYou}${n.triage ? ` (+${n.triage} 🧭)` : ''}`, '🧭: the floor lead is on it first'],
   ['Merged today', (n) => `${n.mergedToday} (${n.mergedHour} last hour)`],
   ['Lead time', (n) => fmtDuration(n.leadMs), 'Median issue → merge over the last 24 hours'],
   ['QA wait', (n) => fmtDuration(n.qaWaitMs), 'Median wait for a free agent over the last 24 hours'],

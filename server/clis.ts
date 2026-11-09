@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { run } from './exec.ts';
-import type { AgentCli, CliView, EffortLevel } from '../shared/types.ts';
+import type { AgentCli, AgentRole, CliView, EffortLevel } from '../shared/types.ts';
+
+/** The CEO and the floor leads read repositories and act through the office tools only: no shell, so no git push. */
+export const NO_SHELL = ['Bash', 'PowerShell', 'NotebookEdit'];
+export const noShell = (role: AgentRole) => role !== 'agent';
 
 // The coding-agent CLIs an agent can run in its terminal, how to find them on this machine, and how to start one on
 // a task. Claude Code is fully wired in: its hooks report every tool call to the office.
@@ -138,7 +142,7 @@ export interface LaunchContext {
   resumeId?: string;
   sessionId: string; // the id the office gives a new Claude Code session
   name: string; // shown in Claude Code's prompt box and the terminal title
-  role: 'agent' | 'ceo';
+  role: AgentRole;
   additionalDirectories: string[];
   /** Files the office wrote for this session (settings, MCP config, instructions). */
   files: { settings: string; mcp: string | null; system: string };
@@ -196,7 +200,7 @@ export function projectMcpServers(mcpJson: string, ours: readonly string[] = [])
 export function launchArgs(id: AgentCli, ctx: LaunchContext): Launch {
   switch (id) {
     case 'claude': {
-      const disallowed = ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ...CROSS_TURN_TOOLS, ...(ctx.role === 'ceo' ? ['Bash', 'PowerShell', 'NotebookEdit'] : [])];
+      const disallowed = ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ...CROSS_TURN_TOOLS, ...(noShell(ctx.role) ? NO_SHELL : [])];
       const args = [
         ...(ctx.resumeId ? ['--resume', ctx.resumeId] : ['--session-id', ctx.sessionId]),
         ...(ctx.model ? ['--model', ctx.model] : []),

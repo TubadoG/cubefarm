@@ -237,6 +237,7 @@ export const useStore = create<State>((set, get) => ({
     listen: { provider: 'off', autoSend: false, handsFree: false },
     notify: DEFAULT_NOTIFY,
     email: DEFAULT_EMAIL,
+    lead: { triageModel: 'claude-opus-5-5', triageEffort: 'high', cleanupModel: 'claude-sonnet-5', cleanupEffort: 'low' },
   },
   clis: [],
   repos: [],
@@ -670,7 +671,7 @@ export interface KanbanColumns {
 export function kanbanFor(repo: RepoView, agents: Agent[], qaRecords: Record<string, QaView>, usage?: Pick<UsageView, 'state'>): KanbanColumns {
   const openPulls = repo.pulls.filter((p) => p.state === 'OPEN');
   const byId = new Map(agents.map((a) => [a.id, a]));
-  const workers = agents.filter((a) => a.role !== 'ceo');
+  const workers = agents.filter((a) => a.role === 'agent');
   // While testing, an agent's prNumber is the PR under test, not one of theirs.
   const authors = workers.filter((a) => a.task !== 'qa');
   const authorOf = (n: number, head: string) => authors.find((a) => a.prNumber === n) ?? authors.find((a) => a.branch && a.branch === head);

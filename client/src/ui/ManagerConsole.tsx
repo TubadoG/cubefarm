@@ -98,7 +98,8 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
   const openOverlay = useStore((s) => s.openOverlay);
   // The office's own folder isn't fast-forwarded; its update is on the Office row instead.
   const officeFolder = useStore((s) => !!s.officeUpdate) && !!repo.folderSync?.startsWith('update ready');
-  const team = agentsOnRepo(agents, repo.id);
+  const team = agentsOnRepo(agents, repo.id).filter((a) => a.role === 'agent');
+  const lead = agentsOnRepo(agents, repo.id).find((a) => a.role === 'lead');
   const others = all.filter((r) => r.id !== repo.id);
   const patch = (p: Parameters<typeof api.updateRepo>[1]) => void attempt(() => api.updateRepo(repo.id, p));
   return (
@@ -111,7 +112,7 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
           </a>
           {repo.summary && <div className="small">🧠 {repo.summary}</div>}
           <div className="muted small">
-            {team.length} agents · {repo.issues.length} open issues · {repo.pulls.filter((p) => p.state === 'OPEN').length} open PRs · default branch <code>{repo.defaultBranch}</code>
+            {team.length} agents{lead ? ` + ${lead.name}, the floor lead` : ''} · {repo.issues.length} open issues · {repo.pulls.filter((p) => p.state === 'OPEN').length} open PRs · default branch <code>{repo.defaultBranch}</code>
             {repo.cloneStatus !== 'ready' && ` · checkout: ${repo.cloneStatus}`}
           </div>
           <div className="muted small" title={repo.localPath ? 'Your own project folder' : 'A clone the office manages'}>
@@ -141,6 +142,9 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
           title="With auto-merge on, only small everyday work merges itself. Database, sign-in, secrets, deploy/CI and dependency changes, and anything over 400 changed lines, wait for you."
         >
           <input type="checkbox" checked={repo.routineOnly ?? true} disabled={!repo.autoMerge} onChange={(e) => patch({ routineOnly: e.target.checked })} /> 🧹 Routine work only
+        </label>
+        <label className="toggle" title="A standing floor lead, extra to the team, triages this floor's stuck pull requests so technical problems never wait for you. Off: the office rebuilds them itself.">
+          <input type="checkbox" checked={repo.floorLead ?? true} onChange={(e) => patch({ floorLead: e.target.checked })} /> 🧭 Floor lead
         </label>
         <label className="toggle" title="The CEO files issues for this floor in its reviews, from your brief and the roadmap docs in the repo, so the backlog never runs dry">
           <input type="checkbox" checked={repo.autoPlan ?? false} onChange={(e) => patch({ autoPlan: e.target.checked })} /> 🗺️ Plan itself
@@ -489,7 +493,8 @@ function TeamTab() {
     <div>
       <TeamStats />
       {[...repos].sort((a, b) => a.floor - b.floor).map((repo) => {
-        const team = agentsOnRepo(agents, repo.id).filter((a) => a.role !== 'ceo');
+        const team = agentsOnRepo(agents, repo.id).filter((a) => a.role === 'agent');
+        const lead = agentsOnRepo(agents, repo.id).find((a) => a.role === 'lead');
         return (
           <div key={repo.id} className="card floor-card" style={{ ['--accent' as string]: repo.color }}>
             <div className="row wrap">
@@ -499,6 +504,11 @@ function TeamTab() {
                 {team.length} of {settings.maxAgents} agents
               </span>
             </div>
+            {lead && (
+              <div className="muted small" title="Extra to the team: triages stuck PRs (docs/floor-lead.md)">
+                🧭 {lead.name}, the floor lead: {lead.status === 'working' ? (lead.issueTitle ?? 'working') : 'waiting for the next stuck PR'}
+              </div>
+            )}
             <AddAgent repo={repo} size={team.length} />
             {team.length === 0 && <div className="muted small">No one works here yet.</div>}
             <table className="team">
@@ -618,7 +628,7 @@ function IssuesTab({ initialRepo }: { initialRepo?: string }) {
                     <select value="" onChange={(e) => e.target.value && void attempt(() => api.assign(e.target.value, i.number))} aria-label={`Assign issue #${i.number}`}>
                       <option value="">Assign…</option>
                       {agents
-                        .filter((a) => a.role !== 'ceo' && a.status !== 'working' && a.status !== 'preparing')
+                        .filter((a) => a.role === 'agent' && a.status !== 'working' && a.status !== 'preparing')
                         .map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.name}
@@ -764,6 +774,40 @@ function SettingsTab() {
           <input type="number" min={0} max={1440} defaultValue={settings.ceoHeartbeatMin} onBlur={(e) => set({ ceoHeartbeatMin: Number(e.target.value) })} />
         </label>
         <p className="muted small">A review checks team sizes, stuck PRs and floor profiles, and is skipped when nothing changed since the last one. It never files issues: new work only comes from you. The CEO's own model and effort are on the CEO tab.</p>
+      </div>
+      <div className="card">
+        <h3>🧭 Floor leads</h3>
+        <p className="muted small">
+          Each floor with “Floor lead” on has a standing lead, extra to its team, who triages its stuck pull requests. A strong model diagnoses a stuck PR (a lead's own model, set on their card, wins); a cheap one runs board clean-ups.
+        </p>
+        {(
+          [
+            ['triage', 'Stuck-PR diagnosis'],
+            ['cleanup', 'Board clean-up'],
+          ] as const
+        ).map(([k, label]) => (
+          <div key={k} className="row" style={{ gap: 8 }}>
+            <label className="field">
+              <span>{label}: model</span>
+              <input
+                key={settings.lead[`${k}Model`]}
+                list="models-s"
+                defaultValue={settings.lead[`${k}Model`]}
+                onBlur={(e) => e.target.value !== settings.lead[`${k}Model`] && set({ lead: { ...settings.lead, [`${k}Model`]: e.target.value } })}
+              />
+            </label>
+            <label className="field">
+              <span>effort</span>
+              <select value={settings.lead[`${k}Effort`]} onChange={(e) => set({ lead: { ...settings.lead, [`${k}Effort`]: e.target.value as EffortLevel } })}>
+                {EFFORTS.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ))}
       </div>
       <div className="card">
         <h3>⌨️ How agents run</h3>

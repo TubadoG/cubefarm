@@ -4,7 +4,6 @@ import { blockers, holdUps, setDependsOn } from '../shared/issues.ts';
 import { FLOOR_SEATS, type AgentCli, type CeoJobKind, type QaStatus } from '../shared/types.ts';
 import { HttpError } from './httpError.ts';
 import { ONE_TURN } from './prompts.ts';
-import { MAX_TRIAGES, type TriagePr } from './triage.ts';
 
 // The CEO: a Claude Code session in the lobby that runs the company instead of writing code.
 // It studies each floor's repo, sizes its team of interchangeable agents from its throughput (team changes the
@@ -104,12 +103,6 @@ export interface OfficeHandlers {
   writeBrief(a: { floor: number; number: number; background: string; decision: string; options: string[]; recommendation: string; risk: string; if_no_reply?: string }): Promise<string>;
   setDependencies(a: { floor: number; number: number; depends_on: number[] }): Promise<string>;
   closeIssue(a: { floor: number; number: number; reason: string }): Promise<string>;
-  retryQa(a: { floor: number; pr: number }): Promise<string>;
-  sendBack(a: { floor: number; pr: number; note: string }): Promise<string>;
-  rerunChecks(a: { floor: number; pr: number }): Promise<string>;
-  closePull(a: { floor: number; pr: number; comment: string }): Promise<string>;
-  rebuild(a: { floor: number; pr: number }): Promise<string>;
-  escalate(a: { floor: number; pr: number; reason: string }): Promise<string>;
   sendEmail(a: { to: string; subject: string; body: string }): Promise<string>;
 }
 
@@ -238,42 +231,6 @@ export function createOfficeTools(h: OfficeHandlers): OfficeTools {
       (a) => run(() => h.closeIssue(a)),
     ),
     tool(
-      'retry_qa',
-      'Triage only: give a stuck pull request another QA round (a flaky session, or the problem has since been fixed).',
-      { floor: z.number().int(), pr: z.number().int().positive().describe('The pull request number') },
-      (a) => run(() => h.retryQa(a)),
-    ),
-    tool(
-      'send_back',
-      "Triage only: send a stuck pull request back to a developer with QA's findings plus your note, without another QA round first.",
-      { floor: z.number().int(), pr: z.number().int().positive(), note: z.string().min(1).max(1000).describe('What the developer should do, e.g. "Merge main and keep both toolbar changes."') },
-      (a) => run(() => h.sendBack(a)),
-    ),
-    tool(
-      'rerun_checks',
-      "Triage only: re-run the failed GitHub Actions runs on a stuck pull request's head commit (a flaky check or an outage), then hand it back to the office.",
-      { floor: z.number().int(), pr: z.number().int().positive() },
-      (a) => run(() => h.rerunChecks(a)),
-    ),
-    tool(
-      'close_pull',
-      'Triage only: close a stuck pull request that is the wrong approach, with your comment on it. Its issue stays open so it is built again. No branch is deleted.',
-      { floor: z.number().int(), pr: z.number().int().positive(), comment: z.string().min(1).max(1000).describe('Posted on the PR: why it is closed') },
-      (a) => run(() => h.closePull(a)),
-    ),
-    tool(
-      'rebuild',
-      'Triage only: close a pull request stuck for a technical reason (conflicts, red checks, failing sessions) and have its issue built again from the default branch. The office comments on the PR and the issue; the branch is kept for reference.',
-      { floor: z.number().int(), pr: z.number().int().positive() },
-      (a) => run(() => h.rebuild(a)),
-    ),
-    tool(
-      'escalate',
-      'Triage only: hand a stuck pull request to the manager with your one-line diagnosis, only when it needs a business decision only they can make (never for a technical problem).',
-      { floor: z.number().int(), pr: z.number().int().positive(), reason: z.string().min(1).max(300).describe('One line: what is wrong and what the manager has to decide') },
-      (a) => run(() => h.escalate(a)),
-    ),
-    tool(
       'send_email',
       "Email someone on the manager's approved list (company_status → email.canEmail), from the company's mailbox. Some recipients need the manager's OK first: then it waits for them. Plain text; the office adds a footer.",
       {
@@ -377,7 +334,7 @@ export function ceoSystemPrompt(o: {
     `- ${ONE_TURN}`,
     '',
     'Rules:',
-    '- Never decide on new work yourself. Only the manager asks for changes to their projects: file issues only when they asked in this job. In reviews, onboarding and triage, suggest work in your final message instead, and they decide.',
+    '- Never decide on new work yourself. Only the manager asks for changes to their projects: file issues only when they asked in this job. In reviews and onboarding, suggest work in your final message instead, and they decide.',
     ...(o.autoPlan
       ? ["- Exception: floors with autoPlan on (company_status) plan themselves. In reviews, keep their ready issues at minReady for the current milestone of their brief and roadmap docs, and plan the next milestone when one is done. Only the manager's brief and roadmap decide what gets built."]
       : []),
@@ -387,7 +344,7 @@ export function ceoSystemPrompt(o: {
     "- Agents run the office's default coding agent, model and effort. Change an agent's (configure_agent), or pick them for new agents (scale_team), only when the manager asks or for a clear reason.",
     '- Issues: the same agents build and test, so PRs queued for QA (capacity.prsAwaitingQa) mean fewer, bigger issues, not more. Most briefs need 1 to 4 issues. Write "Depends on #N" only when an issue truly cannot start until #N\'s code is merged, because it waits until #N is closed. Keep dependency chains to two steps at most. The office starts the issues that hold up others first. Do not duplicate open issues: fix an existing issue\'s dependencies with set_dependencies. File at most 12 issues per job, or per message from the manager.',
     '- Close an issue that is superseded or no longer wanted with close_issue, not by making it wait for another issue.',
-    '- Triage jobs: a pull request got stuck (needs-human). Look before the manager does, and bring them only real decisions. Read the facts in the job and the code, then call exactly one of retry_qa (a flaky QA session, or it has been fixed since), send_back (a developer can fix it; your note says how), rerun_checks (a red check that looks flaky or like an outage), close_pull (the approach is wrong: its issue stays open to be built again), rebuild (a technical tangle, e.g. it keeps conflicting with main: closed and built again from main) or escalate (only for a business decision: a product call, scope, spend, credentials). Technical problems never go to the manager.',
+    "- Stuck pull requests are each floor lead's job, not yours: the lead triages them and the office rebuilds what it can't move. Technical problems never go to the manager.",
     ...(o.email ? ['- send_email only to people in email.canEmail. A long report goes by email; your phone text stays one line.'] : []),
     "- When company.usage in company_status says pacing or paused, Claude's usage is running low and the office is finishing open work first: file only what is needed next, not a whole milestone.",
     `- Your final message is a text to the manager's phone, like a chat between friends: 1 to 3 short sentences, at most one question they can answer in a few words. No headings, lists, tables or recaps. Write only when they must decide something or asked you something; otherwise reply exactly ${NO_MESSAGE} and the office sends nothing. Do not ask again about a decision you already asked about (keep them in your notes) unless something changed.`,
@@ -397,7 +354,6 @@ export function ceoSystemPrompt(o: {
 export function ceoJobPrompt(
   job: CeoJob,
   floor: { floor: number; fullName: string; clone: string; mission: string; backlog: number } | null,
-  pr?: TriagePr | null,
   review?: ReviewInput | null,
   decision?: DecisionContext | null,
 ): string {
@@ -416,21 +372,8 @@ export function ceoJobPrompt(
       ].join('\n');
     }
     case 'triage':
-      if (!floor || !pr) return `Pull request #${job.prNumber ?? '?'} no longer needs triage. Reply ${NO_MESSAGE}.`;
-      return [
-        `Triage: pull request #${pr.number} on floor ${floor.floor} (${floor.fullName}) is stuck and needs a decision before it reaches the manager.`,
-        `"${pr.title}" · ${pr.url} · read-only clone of the default branch at ${floor.clone}`,
-        `Why it stopped: ${pr.why ?? 'unknown'}`,
-        `QA round ${pr.round}. QA summary: ${pr.summary ?? 'none yet'}`,
-        pr.fixInstructions ? `QA's fix instructions:\n${pr.fixInstructions}` : '',
-        pr.mergeNote ? `Merge note: ${pr.mergeNote}` : '',
-        `GitHub checks: ${pr.checks}${pr.failedChecks.length ? ` (failed: ${pr.failedChecks.join(', ')})` : ''}${pr.pendingChecks.length ? ` (running: ${pr.pendingChecks.join(', ')})` : ''} · mergeable: ${pr.mergeable} (${pr.mergeState})`,
-        `This is triage ${pr.triage} of ${MAX_TRIAGES} for this PR; after that a technical problem is rebuilt from main.`,
-        '',
-        `Work out why it is stuck, then call exactly one of retry_qa, send_back, rerun_checks, close_pull, rebuild or escalate with floor ${floor.floor} and pr ${pr.number}. If you end without one, the office rebuilds a technical problem and alerts the manager about anything else. Your final message: ${NO_MESSAGE}, unless you escalated; then one sentence on what the manager must decide.`,
-      ]
-        .filter((l) => l !== '')
-        .join('\n');
+      // From before floor leads: stuck PRs are theirs now.
+      return `Pull request #${job.prNumber ?? '?'} is the floor lead's to triage now. Reply ${NO_MESSAGE}.`;
     case 'onboard':
       if (!floor) return `A floor was added but has since been removed. Reply ${NO_MESSAGE}.`;
       return [

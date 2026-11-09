@@ -1,19 +1,15 @@
-// Stuck PRs are rebuilt, not escalated. A PR stuck for a technical reason (conflicts with main, red checks, failed
-// sessions, too many QA rounds) that the CEO's triage couldn't move is closed and its issue built again from current
-// main, so technical problems never wait for the manager. A PR held for a business reason keeps going to the manager.
+// Stuck PRs are rebuilt, not escalated. A PR stuck for any reason but a business hold (conflicts with main, red checks,
+// failed sessions, too many QA rounds, or no known reason) that the floor lead's triage couldn't move is closed and its
+// issue built again from current main, so technical problems never wait for the manager. Only a business hold
+// (swarm:hold, the manager's hold paths, a decision brief) keeps going to the manager.
 // Loop guard: an issue is rebuilt at most MAX_REBUILDS times; when a rebuild gets stuck too, the manager gets a
 // decision brief whose default is to park the work. Pure: the wording and the decisions; swarm.ts does the GitHub calls.
 import { OFFICE_MARK, type Brief } from '../shared/brief.ts';
+import { NOT_ROUTINE } from '../shared/holds.ts';
 import { HOLD_LABEL } from '../shared/issues.ts';
 
 /** Rebuilds one issue gets; the next stuck PR for it goes to the manager with a brief. */
 export const MAX_REBUILDS = 1;
-
-/** Why a PR got stuck (swarm.ts stuck()), when it is about the code or the sessions rather than a business call. */
-const TECHNICAL = /conflicts with|fails its checks|failed QA|fix sessions|session got stuck|without a usable report|desk(?:s)? couldn't be set up/;
-
-/** True when a stuck PR's reason is technical: the office fixes those itself. */
-export const technicalStuck = (why: string | null | undefined) => TECHNICAL.test(why ?? '');
 
 /** What the office knows about a PR's business holds. */
 export interface HoldFacts {
@@ -23,23 +19,33 @@ export interface HoldFacts {
   brief: boolean; // a decision brief is on the PR (body or comment)
 }
 
-/** Why a PR waits for the manager on business grounds, or null. Those keep today's escalation. */
+/** A hold that is a business call: the label or a hold path. "Not routine" (size, dependencies, CI) is not one. */
+const business = (hold: string | null) => (hold && !hold.startsWith(NOT_ROUTINE) ? hold : null);
+
+/**
+ * Why a PR waits for the manager on business grounds, or null: swarm:hold, a hold path, or a decision brief. Only these
+ * keep a stuck PR from being rebuilt or closed by the office.
+ */
 export function businessHold(f: HoldFacts): string | null {
   if (f.labels?.some((l) => l.toLowerCase() === HOLD_LABEL)) return `label ${HOLD_LABEL}`;
   if (f.brief) return 'it has a decision brief';
-  return f.heldFor ?? f.hold ?? null;
+  return business(f.heldFor) ?? business(f.hold);
 }
 
 export type GiveUpStep = { do: 'rebuild' } | { do: 'escalate'; brief: boolean };
 
 /**
- * The office can't move a stuck PR any further (the CEO's triage budget is spent, or a triage changed nothing): rebuild
- * it, or hand it to the manager. rebuilds: how often its issues were already rebuilt (the most of them).
+ * The office can't move a stuck PR any further (the floor lead's tries are spent, a triage changed nothing, or the floor
+ * has no lead): rebuild it, or hand it to the manager. Only a business hold goes to the manager as it is; any other
+ * reason, an unknown one included, is the office's to fix. rebuilds: how often its issues were already rebuilt.
  */
 export function giveUpStep(x: { why: string | null; business: string | null; rebuilds: number }): GiveUpStep {
-  if (x.business || !technicalStuck(x.why)) return { do: 'escalate', brief: false };
+  if (x.business) return { do: 'escalate', brief: false };
   return x.rebuilds < MAX_REBUILDS ? { do: 'rebuild' } : { do: 'escalate', brief: true };
 }
+
+/** A rebuild GitHub refused (a close or a comment failed) is tried again after this, instead of going to the manager. */
+export const REBUILD_RETRY_MS = 30 * 60_000;
 
 /** The reason in words for someone who hasn't read the code. */
 export function plainWhy(why: string | null): string {
@@ -64,7 +70,7 @@ export function closeComment(pr: Pr, why: string | null, base: string, issues: n
   return [
     `The office is closing this pull request and building the change again from the current \`${base}\`: ${why ?? 'it got stuck'}.`,
     '',
-    `The agents and the CEO tried to fix it in place several times. Starting again from \`${base}\` is cheaper than another round. ${where} stays open and goes back to the team.`,
+    `The agents and the floor lead tried to fix it in place several times. Starting again from \`${base}\` is cheaper than another round. ${where} stays open and goes back to the team.`,
     `The branch \`${pr.branch}\` is kept for reference: the next developer can reuse what still fits.`,
     OFFICE_MARK,
   ].join('\n');
@@ -109,7 +115,7 @@ export const rebuildSlug = (slug: string, count: number) => (count > 0 ? `${slug
 export function parkBrief(x: { pr: number; title: string; issues: number[]; why: string | null; hours: number }): Brief {
   const issue = x.issues.length ? x.issues.map((n) => `#${n}`).join(', ') : 'its issue';
   return {
-    background: `PR #${x.pr} ("${x.title}") is the second attempt at ${issue}. The first attempt got stuck, so the office closed it and started again from scratch. This one got stuck too: ${plainWhy(x.why)}. The team and the CEO already tried to fix it in place.`,
+    background: `PR #${x.pr} ("${x.title}") is the second attempt at ${issue}. The first attempt got stuck, so the office closed it and started again from scratch. This one got stuck too: ${plainWhy(x.why)}. The team and the floor lead already tried to fix it in place.`,
     decision: `Keep working on ${issue} now, or park it for later?`,
     options: [
       `Park it: close this PR and leave ${issue} open but off the team's queue until you hand it out again. Costs nothing more now; the change waits.`,

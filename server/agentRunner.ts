@@ -6,7 +6,7 @@ import type { OfficeTools } from './ceo.ts';
 import type { UsageWarning } from './pacing.ts';
 import type { AgentTerminal } from './terminal.ts';
 import { browserProblem, playwrightMcp } from './browser.ts';
-import { CROSS_TURN_TOOLS } from './clis.ts';
+import { CROSS_TURN_TOOLS, NO_SHELL, noShell } from './clis.ts';
 import { VERSION } from './config.ts';
 
 // One Claude Code instance (via the Claude Agent SDK) on one task (building an issue, testing or fixing a PR) in its own git worktree.
@@ -260,6 +260,12 @@ export function describeOfficeTool(action: string, input: Record<string, unknown
       return `📧 send_email to ${String(input.to ?? '?')}${input.subject ? `: ${clip(String(input.subject), 90)}` : ''}`;
     case 'escalate':
       return `📣 escalate PR #${String(input.pr ?? '?')}${floor}${input.reason ? `: ${clip(String(input.reason), 90)}` : ''}`;
+    case 'floor_status':
+      return '🧭 floor_status';
+    case 'rebuild':
+      return `♻️ rebuild PR #${String(input.pr ?? '?')}${floor}`;
+    case 'write_brief':
+      return `📋 write_brief #${String(input.number ?? '?')}${floor}`;
   }
   return `🏢 ${action}(${clip(JSON.stringify(input), 120)})`;
 }
@@ -340,9 +346,9 @@ export function startSession(opts: SessionOptions, callbacks: SessionCallbacks):
     if (problem) cb.log([{ kind: 'error', text: problem }]);
   }
   if (opts.office) mcpServers.office = opts.office.server;
-  // The CEO reads repositories and acts through the office tools; it never runs commands.
+  // The CEO and the floor leads read repositories and act through the office tools; they never run commands.
   const disallowedTools = ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ...CROSS_TURN_TOOLS];
-  if (opts.role === 'ceo') disallowedTools.push('Bash', 'PowerShell', 'NotebookEdit');
+  if (noShell(opts.role)) disallowedTools.push(...NO_SHELL);
 
   const options: Options = {
     cwd: opts.cwd,

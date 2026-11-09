@@ -452,7 +452,7 @@ function useCompany() {
   const settings = useStore((s) => s.settings);
   const info = useStore((s) => s.ceo);
   return useMemo(() => {
-    const staff = Object.values(agents).filter((a) => a.role !== 'ceo');
+    const staff = Object.values(agents).filter((a) => a.role === 'agent');
     const ceo = agents[CEO_ID];
     const running = Object.values(agents).filter(isBusy).length;
     const floors = repos.map((r) => {

@@ -7,7 +7,7 @@ import type { Agent, KanbanColumns } from '../store';
 export interface Pipeline {
   backlog: number;
   building: number; // agents on an issue, before their PR
-  qa: number; // PRs waiting for or being tested (and stuck ones the CEO is looking at)
+  qa: number; // PRs waiting for or being tested (and stuck ones the floor lead is on)
   fixing: number; // failed QA, waiting for or being fixed by an agent
   ready: number; // passed QA, waiting to merge
   needsYou: number; // stuck: the manager decides

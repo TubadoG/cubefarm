@@ -83,7 +83,10 @@ Server (`server/`, Node + Express 5 + ws, run by tsx in development; esbuild bun
 - `terminal.ts`: `AgentTerminal`, a headless xterm mirror per agent (replay for late viewers, saved to disk), its
   `/ws/term` viewers, and keystrokes/resizes to the running CLI.
 - `ceo.ts`: the CEO's office MCP tools (`createOfficeTools`, zod-validated: `scale_team`, `configure_agent`, issues,
-  triage), `scalePlan` (team-size arithmetic), `ceoSystemPrompt`, `ceoJobPrompt`.
+  briefs), `scalePlan` (team-size arithmetic), `ceoSystemPrompt`, `ceoJobPrompt`.
+- `lead.ts`: the floor lead (docs/floor-lead.md): one standing agent per floor, extra to its team, that triages stuck PRs
+  through its own office tools (no merge, no new issues, no shell; escalate only with a complete brief), its wake
+  rules, models and prompts. `rebuild.ts`: the office's safety net when the lead's tries are spent or it is off.
 - `backend.ts`: the `Backend` interface (everything touching GitHub, git, disk and sessions) and `realBackend`.
 - `machines.ts`: agents' machines, `MachineProvider`: each agent's own clone, worktree and temp folder (the local
   provider is folders under `<SWARM_HOME>/machines/<machine>/`, in `workspace.ts`; containers and cloud VMs come later).

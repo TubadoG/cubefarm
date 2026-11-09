@@ -33,7 +33,7 @@ export function StartScreen() {
     );
   };
   const ceo = agents[CEO_ID];
-  const staff = Object.values(agents).filter((a) => a.role !== 'ceo').length;
+  const staff = Object.values(agents).filter((a) => a.role === 'agent').length;
 
   return (
     <div className="start">
