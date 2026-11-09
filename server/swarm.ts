@@ -6,7 +6,9 @@ import type { Backend } from './backend.ts';
 import type { LogEntry, SessionHandle, SessionResult } from './agentRunner.ts';
 import type { PrDetails } from './github.ts';
 import { defaultProjectsDir, DESK_SWEEP_INTERVAL_MS, HOME_DIR, LOG_BUFFER, SCHEDULER_INTERVAL_MS, STATE_FILE, SYNC_INTERVAL_MS, VERSION } from './config.ts';
-import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, NOT_ASKED, planDependencies, plannedSize, scalePlan, type CeoJob, type OfficeTools, type TeamNow } from './ceo.ts';
+import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
+import { alertStep, clockStep, decisionKey, deadlineOf, defaultComment, DEFAULT_DECISION_TIMEOUT_HOURS, managerReply, parseTimeoutHours, trackDecisions, whenLabel, type DecisionRecord } from './decisionClock.ts';
+import { DECIDED_DEFAULT, findBrief, NEEDS_INPUT, OFFICE_MARK, renderBrief, usableBrief, type Brief } from '../shared/brief.ts';
 import { afterClose, ASK_AGAIN_MS, closedWhy, closuresHeld, forgettable, issueOpen, nameList, pullNow, stillOpen, stoppedMessage, toAsk, toHold, type Closure, type FloorState, type KnownPull, type LearnedPull } from './closeCleanup.ts';
 import { depsPromptLine, type DepsOutcome } from './deps.ts';
 import { setUpDesk } from './deskSetup.ts';
@@ -46,12 +48,12 @@ import { Ticker } from './ticker.ts';
 import { Outbox } from './outbox.ts';
 import { DEFAULT_LISTEN, DEFAULT_VOICE, listenSettings, speaks, Voice, voiceSettings } from './voice.ts';
 import { Notifier } from './notifier.ts';
-import { clip, plainText, stuckAgents } from './notify.ts';
+import { clip, DECISION_MAX, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
 import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
 import { Mailer } from './email.ts';
-import { decisionNote, readyDecision, stuckPrDecision } from './decision.ts';
-import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DigestFloor } from './digest.ts';
+import { briefAlert, decisionNote, stuckPrDecision } from './decision.ts';
+import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DecisionInfo, type DigestFloor } from './digest.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
 import { WeatherService } from './weather.ts';
 import { blockers, holdUps, waitsMessage } from '../shared/issues.ts';
@@ -116,6 +118,9 @@ interface PersistedRepo {
   autoMerge: boolean; // PRs merge themselves once QA passes and GitHub's checks are green
   holdPaths: string[]; // PRs changing these (shared/holds.ts), or labelled swarm:hold, wait for the manager anyway
   routineOnly: boolean; // only routine work merges itself (shared/holds.ts notRoutine); the rest waits for the manager
+  autoPlan: boolean; // the CEO files issues for this floor in its reviews, from the brief and roadmap (ceo.ts mayFileIssue)
+  minReady: number; // with autoPlan: the issues ready to start the CEO keeps in stock
+  decisionTimeoutHours: number; // a decision the manager doesn't answer in this long gets the brief's recommendation (0 = never)
   browserTesting: boolean;
   links: string[]; // other connected repos this floor's agents may read
   localPath: string | null; // the manager's own project folder (null: a clone under WORKSPACE_ROOT)
@@ -222,6 +227,7 @@ interface Persisted {
   progress: LedgerState; // coins, decorations, achievements and careers (ledger.ts)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard, by repo id
   digestSentDay: string | null; // the local day (YYYY-MM-DD) the daily digest last went out (or was refused)
+  decisions: DecisionRecord[]; // decisions waiting for the manager, and when the office first saw them (decisionClock.ts)
 }
 
 interface Shot {
@@ -343,6 +349,7 @@ const FULL_HOUSE = 4;
 const OPS_EVENTS = new Set<ServerEvent['type']>(['repo', 'repoRemoved', 'agent', 'agentRemoved', 'qa', 'qaRemoved', 'ceo']);
 const OPS_TICK_MS = 30_000;
 const DIGEST_TICK_MS = 60_000; // the daily digest checks whether it is due (server/digest.ts digestDue)
+const DECISION_TICK_MS = 5 * 60_000; // the decision clock reads briefs and replies, and applies defaults (decisionClock.ts)
 // How often the watchdog looks for stuck work (watchdog.ts).
 const WATCHDOG_MS = 60_000;
 const oneLine = (err: unknown) => (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0].slice(0, 200);
@@ -506,6 +513,7 @@ export class Swarm {
     progress: emptyLedger(),
     pong: {},
     digestSentDay: null,
+    decisions: [],
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -519,6 +527,7 @@ export class Swarm {
       scaleTeam: (a) => this.scaleTeam(a),
       configureAgent: (a) => this.configureAgent(a),
       fileIssue: (a) => this.fileIssue(a),
+      writeBrief: (a) => this.writeBrief(a),
       setDependencies: (a) => this.setDependencies(a),
       closeIssue: (a) => this.closeIssue(a),
       retryQa: (a) => this.triageRetryQa(a),
@@ -531,6 +540,11 @@ export class Swarm {
   }
   private ceoIssues = new IssueCap(MAX_ISSUES_PER_JOB); // issues filed during the current CEO job
   private ceoAsked = false; // the manager asked for work in the current CEO job (a plan, or a message): only then are issues filed
+  private planIdle = new Set<string>(); // autoPlan floors a review left without new issues: no forced review until something changes
+  private reviewPlanning: string[] = []; // autoPlan floors the running review was asked to stock
+  private briefs = new Map<string, Brief | null>(); // decisionKey -> its brief at the last look (decision clock)
+  private deciding = false;
+  private decisionTimer: ReturnType<typeof setTimeout> | null = null;
   private messageSeq = 1;
   private agentRt = new Map<string, AgentRuntime>();
   private seenActivity = new Map<string, SeenActivity>(); // agent id -> their latest action in the log
@@ -650,6 +664,9 @@ export class Swarm {
           autoMerge: r.autoMerge ?? true,
           holdPaths: r.holdPaths ?? [],
           routineOnly: r.routineOnly ?? true,
+          autoPlan: r.autoPlan ?? false,
+          minReady: r.minReady ?? DEFAULT_MIN_READY,
+          decisionTimeoutHours: r.decisionTimeoutHours ?? DEFAULT_DECISION_TIMEOUT_HOURS,
           links: r.links ?? [],
           mission: r.mission ?? '',
           summary: r.summary ?? '',
@@ -699,6 +716,7 @@ export class Swarm {
         progress: loadLedger(loaded.progress),
         pong: loaded.pong && typeof loaded.pong === 'object' ? loaded.pong : {},
         digestSentDay: typeof loaded.digestSentDay === 'string' ? loaded.digestSentDay : null,
+        decisions: Array.isArray(loaded.decisions) ? loaded.decisions : [],
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -841,6 +859,7 @@ export class Swarm {
     setInterval(() => this.watchdogTick(), WATCHDOG_MS);
     setInterval(() => this.screenTick(), SCREEN_TICK_MS);
     setInterval(() => void this.digestTick(), DIGEST_TICK_MS);
+    setInterval(() => void this.decisionTick(), DECISION_TICK_MS);
     void this.backend
       .detectClis()
       .then((clis) => {
@@ -980,6 +999,9 @@ export class Swarm {
       autoMerge: r.autoMerge,
       holdPaths: r.holdPaths,
       routineOnly: r.routineOnly,
+      autoPlan: r.autoPlan,
+      minReady: r.minReady,
+      decisionTimeoutHours: r.decisionTimeoutHours,
       folderSync: rt.folderSync,
       browserTesting: r.browserTesting,
       links: r.links,
@@ -1357,6 +1379,9 @@ export class Swarm {
       autoMerge: true,
       holdPaths: [],
       routineOnly: true,
+      autoPlan: false,
+      minReady: DEFAULT_MIN_READY,
+      decisionTimeoutHours: DEFAULT_DECISION_TIMEOUT_HOURS,
       browserTesting: true,
       links: [],
       localPath: folder,
@@ -1464,12 +1489,22 @@ export class Swarm {
 
   updateRepo(
     id: string,
-    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'routineOnly' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & { previewCommand?: unknown; previewEnv?: unknown; holdPaths?: unknown },
+    patch: Partial<Pick<PersistedRepo, 'autoAssign' | 'autoMerge' | 'routineOnly' | 'autoPlan' | 'browserTesting' | 'color' | 'links' | 'mission' | 'summary' | 'qaBrief'>> & {
+      previewCommand?: unknown;
+      previewEnv?: unknown;
+      holdPaths?: unknown;
+      minReady?: unknown;
+      decisionTimeoutHours?: unknown;
+    },
   ) {
     const repo = this.repo(id);
     let holdPaths: string[] | undefined;
+    let minReady: number | undefined;
+    let timeout: number | undefined;
     try {
       if (patch.holdPaths !== undefined) holdPaths = parseHoldPaths(patch.holdPaths);
+      if (patch.minReady !== undefined) minReady = parseMinReady(patch.minReady);
+      if (patch.decisionTimeoutHours !== undefined) timeout = parseTimeoutHours(patch.decisionTimeoutHours);
     } catch (err) {
       throw new HttpError(400, (err as Error).message);
     }
@@ -1489,6 +1524,9 @@ export class Swarm {
       repo.routineOnly = !!patch.routineOnly;
       if (repo.autoMerge) void this.syncRepo(repo.id);
     }
+    if (patch.autoPlan !== undefined) repo.autoPlan = !!patch.autoPlan;
+    if (minReady !== undefined) repo.minReady = minReady;
+    if (timeout !== undefined) repo.decisionTimeoutHours = timeout;
     if (patch.browserTesting !== undefined) repo.browserTesting = !!patch.browserTesting;
     if (patch.color && /^#[0-9a-f]{6}$/i.test(patch.color)) repo.color = patch.color;
     if (Array.isArray(patch.links)) repo.links = patch.links.filter((l) => l !== id && this.state.repos.some((r) => r.id === l));
@@ -1552,15 +1590,13 @@ export class Swarm {
     return holdReason(pr.labels, seen.files, repo.holdPaths) ?? (repo.routineOnly ? notRoutine(seen.files, pr.additions + pr.deletions) : null);
   }
 
-  /** Mark a passed PR held (or no longer held); the manager hears once when it first waits for them. */
+  /** Mark a passed PR held (or no longer held); the manager hears once when it first waits for them, with its brief. */
   private setHeld(repo: PersistedRepo, rec: QaRecord, pr: PullInfo, held: string | null) {
     const first = !!held && !rec.heldFor;
     this.setQa(rec, { heldFor: held, mergeNote: null });
     if (!first) return;
-    const name = repo.fullName.split('/')[1] ?? repo.fullName;
     this.postMessage('office', `✋ PR #${pr.number} on ${repo.fullName} passed QA and is held for you: ${pr.title} (${held}).`);
-    const d = decisionNote(readyDecision(name, pr, held));
-    this.notifier.notify('needsHuman', d.title, d.body, d.line, pr.url);
+    this.decisionTickSoon(); // the phone hears from the decision clock, with the brief (decisionAlert)
   }
 
   /** One step toward merging a QA-passed PR. Returns true when it merged. */
@@ -1900,6 +1936,7 @@ export class Swarm {
     const repo = this.repo(repoId);
     const pr = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === number) ?? (await this.backend.prDetails(repo.fullName, number));
     await this.backend.mergePull(repo.fullName, number, method);
+    this.answered(repo.id, 'pr', number);
     this.toast('success', `Merged PR #${number} into ${repo.defaultBranch}`);
     this.notifyMerge(repo, number, pr.title);
     await this.closeResolvedIssues(repo, number, pr);
@@ -1912,6 +1949,7 @@ export class Swarm {
     const repo = this.repo(repoId);
     const pr = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === number) ?? (await this.backend.prDetails(repo.fullName, number).catch(() => null));
     await this.backend.closePull(repo.fullName, number);
+    this.answered(repo.id, 'pr', number);
     this.learnPull(repo, { number, headRefName: pr?.headRefName ?? '', closesIssues: pr?.closesIssues ?? [] }, 'CLOSED');
     await this.syncRepo(repo.id);
   }
@@ -2827,6 +2865,7 @@ export class Swarm {
     const rec = find();
     const patch = sendBackPatch(prNumber, pr, rec, repo.defaultBranch, note, from);
     this.clearPrepStrikes(repo.id, prNumber);
+    if (!from) this.answered(repo.id, 'pr', prNumber); // the manager's own send-back
     this.setQa(rec!, { ...patch, preQa: null });
     setTimeout(() => this.schedule(), 200);
     this.toast('info', `PR #${prNumber} goes back to a developer${patch.fixReason === 'conflict' ? ' to resolve its conflicts' : ''}`);
@@ -2996,7 +3035,7 @@ export class Swarm {
       try {
         this.appendLog(a, [{ kind: 'system', text: '📎 Uploading evidence and posting the QA report on the PR…' }]);
         const body = await this.renderQaComment(a, repo, rec, report, rt.shots, next);
-        commentUrl = (await this.backend.commentPull(repo.fullName, rec.prNumber, body)) || null;
+        commentUrl = (await this.backend.commentPull(repo.fullName, rec.prNumber, `${body}\n${OFFICE_MARK}`)) || null;
         this.appendLog(a, [{ kind: 'system', text: `  ⎿ ${commentUrl ?? 'comment posted'}` }]);
       } catch (err) {
         this.appendLog(a, [{ kind: 'error', text: `  ⎿ Could not post the QA report: ${(err as Error).message}` }]);
@@ -3889,7 +3928,17 @@ export class Swarm {
 
   private ceoPromptInput(a: PersistedAgent): Parameters<typeof ceoSystemPrompt>[0] {
     const s = this.state.settings;
-    return { name: a.name, company: s.companyName, manager: s.managerName, notesFile: path.join(CEO_DIR, 'NOTES.md'), sessionLimit: s.sessionLimit, maxAgents: s.maxAgents, scaling: s.scaling, email: s.email.enabled };
+    return {
+      name: a.name,
+      company: s.companyName,
+      manager: s.managerName,
+      notesFile: path.join(CEO_DIR, 'NOTES.md'),
+      sessionLimit: s.sessionLimit,
+      maxAgents: s.maxAgents,
+      scaling: s.scaling,
+      email: s.email.enabled,
+      autoPlan: this.state.repos.some((r) => r.autoPlan),
+    };
   }
 
   private async runCeoJob(a: PersistedAgent, job: CeoJob) {
@@ -3906,7 +3955,8 @@ export class Swarm {
     if (job.kind === 'review') {
       this.state.ceo.lastReviewAt = Date.now();
       this.state.ceo.lastFingerprint = this.fingerprint();
-    }
+      this.reviewPlanning = planReviewDue(this.planFloors(), new Set());
+    } else this.reviewPlanning = [];
     this.ceoIssues = new IssueCap(MAX_ISSUES_PER_JOB);
     this.ceoAsked = askedFor(job);
     this.emitAgent(a);
@@ -3926,7 +3976,7 @@ export class Swarm {
     rt.session = this.backend.startSession(
       {
         cwd: CEO_DIR,
-        prompt: ceoJobPrompt(job, floor, triage),
+        prompt: ceoJobPrompt(job, floor, triage, job.kind === 'review' ? this.reviewInput() : null),
         systemAppend: ceoSystemPrompt(this.ceoPromptInput(a)),
         model: a.model || CEO_MODEL,
         effort: a.effort || CEO_EFFORT,
@@ -3987,6 +4037,9 @@ export class Swarm {
       this.appendLog(a, [{ kind: 'done', text: `✔ Done in ${this.minutes(a)}m · ${a.turns} turns${filed}` }]);
     }
     for (const id of this.ceoIssues.repos) void this.syncRepo(id);
+    // A floor that plans itself and got nothing from this review (its roadmap may be done) waits for a change first.
+    for (const id of this.reviewPlanning) if (!this.ceoIssues.repos.has(id)) this.planIdle.add(id);
+    this.reviewPlanning = [];
     this.emitAgent(a);
     this.emitCeo();
     this.save();
@@ -4041,6 +4094,8 @@ export class Swarm {
       agents: this.state.agents.filter((a) => a.role !== 'ceo').map((a) => [a.id, FREE.includes(a.status) ? 'free' : a.status]),
       qa: this.state.qa.map((q) => [q.repoId, q.prNumber, q.status]),
       requests: this.state.requests.filter((r) => r.status === 'pending').map((r) => r.id),
+      autoPlan: this.state.repos.map((r) => [r.autoPlan, r.minReady]),
+      missingBriefs: this.missingBriefs().map((m) => `${m.floor}#${m.kind}#${m.number}`),
     };
     return crypto.createHash('sha1').update(JSON.stringify(data)).digest('hex');
   }
@@ -4051,11 +4106,14 @@ export class Swarm {
     if (!min || this.state.repos.length === 0 || c.job?.kind === 'review' || c.queue.some((j) => j.kind === 'review')) return;
     if (Date.now() < (c.lastReviewAt ?? 0) + min * 60_000) return;
     if (this.fingerprint() === c.lastFingerprint) {
-      c.lastReviewAt = Date.now(); // nothing changed since the last review
-      this.emitCeo();
-      this.save();
-      return;
-    }
+      // Nothing changed since the last review, unless a floor that plans itself runs low on ready work.
+      if (!planReviewDue(this.planFloors(), this.planIdle).length) {
+        c.lastReviewAt = Date.now();
+        this.emitCeo();
+        this.save();
+        return;
+      }
+    } else this.planIdle.clear();
     this.enqueueCeo({ kind: 'review', at: Date.now() });
   }
 
@@ -4184,7 +4242,7 @@ export class Swarm {
     if (!comment) throw new HttpError(400, 'Say why the pull request is closing: the comment is posted on it.');
     const issues = listed ? issuesResolvedBy(listed) : [];
     const ceo = this.ceo().name;
-    await this.backend.commentPull(repo.fullName, rec.prNumber, `${comment}\n\n<sub>Closed by ${ceo}, the cubefarm CEO, after triage.${issues.length ? ' Its issue stays open, so it is built again.' : ''}</sub>`);
+    await this.backend.commentPull(repo.fullName, rec.prNumber, `${comment}\n\n<sub>Closed by ${ceo}, the cubefarm CEO, after triage.${issues.length ? ' Its issue stays open, so it is built again.' : ''}</sub>\n${OFFICE_MARK}`);
     // Closing deletes no branch and leaves the issue open, so the scheduler hands it out again.
     await this.backend.closePull(repo.fullName, rec.prNumber);
     this.postMessage('office', `🗂️ ${ceo} closed PR #${rec.prNumber} on floor ${repo.floor}: ${comment.split('\n')[0].slice(0, 200)}`);
@@ -4867,6 +4925,210 @@ export class Swarm {
     return { ok: true, to: s.copyTo };
   }
 
+  // ---------- decisions (decisionClock.ts) ----------
+
+  /** Floors as autoPlan sees them: how many issues are ready to start against the stock the floor keeps. */
+  private planFloors() {
+    return this.state.repos
+      .filter((r) => r.autoPlan && this.repoRt.get(r.id)?.lastSync)
+      .map((r) => ({ id: r.id, autoPlan: r.autoPlan, ready: this.readyIssues(r).length, minReady: r.minReady }));
+  }
+
+  /** What a review job is told beyond company_status: floors to stock, and decisions that need a brief. */
+  private reviewInput(): ReviewInput {
+    return {
+      autoPlan: this.state.repos
+        .filter((r) => r.autoPlan && this.repoRt.get(r.id)?.lastSync)
+        .sort((x, y) => x.floor - y.floor)
+        .map((r) => ({ floor: r.floor, fullName: r.fullName, clone: this.backend.mainDir(r.fullName), ready: this.readyIssues(r).length, minReady: r.minReady })),
+      missingBriefs: this.missingBriefs(),
+    };
+  }
+
+  /** Decisions that wait for the manager right now: needs-input issues and PRs held for them, on synced floors. */
+  private waitingDecisions() {
+    const out: { repoId: string; kind: 'issue' | 'pr'; number: number; title: string; url: string }[] = [];
+    for (const repo of this.state.repos) {
+      const rt = this.repoRt.get(repo.id);
+      if (!rt?.lastSync) continue;
+      for (const i of rt.issues) if (i.labels.some((l) => l.toLowerCase() === NEEDS_INPUT)) out.push({ repoId: repo.id, kind: 'issue', number: i.number, title: i.title, url: i.url });
+      for (const q of this.state.qa) {
+        if (q.repoId !== repo.id || q.status !== 'passed' || !q.heldFor) continue;
+        const pr = rt.pulls.find((p) => p.number === q.prNumber && p.state === 'OPEN');
+        if (pr) out.push({ repoId: repo.id, kind: 'pr', number: pr.number, title: pr.title, url: pr.url });
+      }
+    }
+    return out;
+  }
+
+  /** Whether a decision's issue or PR is still open, as far as the office knows (an unsynced floor counts as open). */
+  private decisionOpen(r: Pick<DecisionRecord, 'repoId' | 'kind' | 'number'>) {
+    const rt = this.repoRt.get(r.repoId);
+    if (!rt) return false;
+    if (!rt.lastSync) return true;
+    return r.kind === 'issue' ? rt.issues.some((i) => i.number === r.number) : rt.pulls.some((p) => p.number === r.number && p.state === 'OPEN');
+  }
+
+  /** Waiting decisions whose brief the office looked for and didn't find: the CEO writes them (write_brief). */
+  private missingBriefs() {
+    const waiting = new Map(this.waitingDecisions().map((w) => [decisionKey(w), w]));
+    return this.state.decisions
+      .filter((d) => d.appliedAt === null && waiting.has(decisionKey(d)) && this.briefs.has(decisionKey(d)) && !usableBrief(this.briefs.get(decisionKey(d)) ?? null))
+      .map((d) => ({ floor: this.state.repos.find((r) => r.id === d.repoId)?.floor ?? 0, kind: d.kind, number: d.number, title: waiting.get(decisionKey(d))!.title }));
+  }
+
+  /** The deadline of a decision in words, or null when the floor never decides by default. */
+  private decisionDeadline(d: DecisionRecord): number | null {
+    const repo = this.state.repos.find((r) => r.id === d.repoId);
+    return repo ? deadlineOf(d, repo.decisionTimeoutHours) : null;
+  }
+
+  /** The manager answered a decision through the office (Approvals, a close): its clock stops. */
+  private answered(repoId: string, kind: 'issue' | 'pr', number: number) {
+    const d = this.state.decisions.find((r) => r.repoId === repoId && r.kind === kind && r.number === number);
+    if (d && d.appliedAt === null && d.answeredAt === null) {
+      d.answeredAt = Date.now();
+      this.save();
+    }
+  }
+
+  /** Run the decision clock soon (a PR was just held), not on every call. */
+  private decisionTickSoon() {
+    if (this.decisionTimer) return;
+    this.decisionTimer = setTimeout(() => {
+      this.decisionTimer = null;
+      void this.decisionTick();
+    }, 5_000);
+    this.decisionTimer.unref?.();
+  }
+
+  /**
+   * The decision clock: start the clock on new decisions, read their briefs and the manager's replies, tell the phone
+   * (with the brief), and once a deadline passes with no reply apply the brief's recommendation.
+   */
+  async decisionTick(now = Date.now()) {
+    if (this.deciding) return;
+    this.deciding = true;
+    try {
+      const waiting = this.waitingDecisions();
+      const titles = new Map(waiting.map((w) => [decisionKey(w), w]));
+      this.state.decisions = trackDecisions(this.state.decisions, waiting, (r) => this.decisionOpen(r), now);
+      const keep = new Set(this.state.decisions.map(decisionKey));
+      for (const k of [...this.briefs.keys()]) if (!keep.has(k)) this.briefs.delete(k);
+      for (const d of this.state.decisions) {
+        const repo = this.state.repos.find((r) => r.id === d.repoId);
+        const item = titles.get(decisionKey(d));
+        if (!repo || !item || d.appliedAt !== null) continue;
+        let talk: Awaited<ReturnType<Backend['discussion']>>;
+        try {
+          talk = await this.backend.discussion(repo.fullName, d.number);
+        } catch (err) {
+          console.warn(`decision clock: could not read ${repo.fullName}#${d.number}: ${oneLine(err)}`);
+          continue;
+        }
+        const brief = findBrief(talk.body, talk.comments);
+        this.briefs.set(decisionKey(d), brief);
+        if (usableBrief(brief) && (d.briefAt ?? null) === null) d.briefAt = now;
+        if (d.answeredAt === null) d.answeredAt = managerReply(talk.comments, d.firstSeen);
+        const alert = alertStep(d, usableBrief(brief), now);
+        if (alert) {
+          d.alerted = alert;
+          this.decisionAlert(repo, d, item, brief);
+        }
+        await this.applyDefault(repo, d, item, brief, now);
+      }
+    } finally {
+      this.deciding = false;
+      this.save();
+    }
+  }
+
+  /** The phone hears about a decision: its brief in plain text, or that the CEO is writing one. */
+  private decisionAlert(repo: PersistedRepo, d: DecisionRecord, item: { title: string; url: string }, brief: Brief | null) {
+    const deadline = this.decisionDeadline(d);
+    const floor = repo.fullName.split('/')[1] ?? repo.fullName;
+    const n = briefAlert({ kind: d.kind, number: d.number, title: item.title, floor }, usableBrief(brief) ? brief : null, deadline ? whenLabel(deadline) : null, DECISION_MAX);
+    this.notifier.notify('needsHuman', n.title, n.body, n.title, item.url);
+  }
+
+  /** Past the deadline with no reply: the office applies the brief's recommendation (clockStep says how). */
+  private async applyDefault(repo: PersistedRepo, d: DecisionRecord, item: { title: string }, brief: Brief | null, now: number) {
+    const rt = this.repoRt.get(repo.id);
+    const pull = d.kind === 'pr' ? rt?.pulls.find((p) => p.number === d.number) : undefined;
+    const rec = d.kind === 'pr' ? this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === d.number) : undefined;
+    if (d.kind === 'pr' && !repo.autoMerge) return; // the manager merges everything on this floor
+    const step = clockStep({
+      record: d,
+      hours: repo.decisionTimeoutHours,
+      brief,
+      now,
+      pr: pull ? { qaPassed: rec?.status === 'passed', checks: pull.checks, mergeable: pull.mergeable } : null,
+    });
+    if (step.do === 'wait') return;
+    const hours = repo.decisionTimeoutHours;
+    d.appliedAt = now;
+    const where = `${d.kind === 'pr' ? 'PR ' : ''}#${d.number} on ${repo.fullName}`;
+    try {
+      if (step.do === 'proceed-issue') {
+        await this.backend.commentIssue(repo.fullName, d.number, defaultComment(hours, step.recommendation, 'proceeds'));
+        await this.backend.editIssue(repo.fullName, d.number, { removeLabels: [NEEDS_INPUT], addLabels: [DECIDED_DEFAULT] });
+        const issue = rt?.issues.find((i) => i.number === d.number);
+        if (issue) issue.labels = [...issue.labels.filter((l) => l.toLowerCase() !== NEEDS_INPUT && l !== DECIDED_DEFAULT), DECIDED_DEFAULT];
+        this.postMessage('office', `⏱️ No reply on ${where} (${item.title}) within ${hours} h, so the office goes with the recommendation: ${step.recommendation.slice(0, 200)}`);
+        this.emitRepo(repo);
+        setTimeout(() => this.schedule(), 200);
+      } else if (step.do === 'merge') {
+        await this.mergePull(repo.id, d.number);
+        await this.backend.commentIssue(repo.fullName, d.number, defaultComment(hours, step.recommendation, 'merges'));
+        this.postMessage('office', `⏱️ No reply on ${where} (${item.title}) within ${hours} h, so the office merged it, as its brief recommends.`);
+      } else {
+        if (!rec || rec.status !== 'passed') throw new Error('it is no longer waiting as passed');
+        // Like the manager's send-back, but from a passed (held) PR: a developer does what the brief recommends.
+        this.setQa(rec, {
+          status: 'failed',
+          fixReason: 'qa',
+          fixInstructions: `Nobody answered the decision brief within ${hours} h, so the office goes with its recommendation: ${step.note}`,
+          heldFor: null,
+          sessionFailures: 0,
+          retests: rec.retests + 1,
+          mergeNote: null,
+          pendingSince: null,
+        });
+        setTimeout(() => this.schedule(), 200);
+        await this.backend.commentIssue(repo.fullName, d.number, defaultComment(hours, step.note, 'sends it back'));
+        this.postMessage('office', `⏱️ No reply on ${where} (${item.title}) within ${hours} h, so it went back to a developer with the brief's recommendation.`);
+      }
+    } catch (err) {
+      // Applied once only: a failed merge or send-back stays with the manager rather than retrying every tick.
+      this.postMessage('office', `⚠️ No reply on ${where} within ${hours} h, but the office couldn't apply the recommendation: ${oneLine(err)}. It waits for you.`);
+    }
+  }
+
+  /** The CEO's write_brief: a brief comment on a waiting decision, with the office's deadline in it. */
+  private async writeBrief(x: { floor: number; number: number; background: string; decision: string; options: string[]; recommendation: string; risk: string; if_no_reply?: string }) {
+    const repo = this.floorRepo(x.floor);
+    const n = Number(x.number);
+    const item = this.waitingDecisions().find((w) => w.repoId === repo.id && w.number === n);
+    if (!item) throw new Error(`#${n} on floor ${repo.floor} isn't waiting for the manager: only needs-input issues and held PRs get a brief.`);
+    const d = this.state.decisions.find((r) => decisionKey(r) === decisionKey(item));
+    if (d && (d.briefAt ?? null) === null) d.briefAt = Date.now(); // the manager gets a day with it (deadlineOf)
+    const deadline = d ? this.decisionDeadline(d) : deadlineOf({ firstSeen: Date.now() }, repo.decisionTimeoutHours);
+    const brief: Brief = {
+      background: String(x.background ?? '').trim(),
+      decision: String(x.decision ?? '').trim(),
+      options: (x.options ?? []).map((o) => String(o).trim()).filter(Boolean),
+      recommendation: String(x.recommendation ?? '').trim(),
+      risk: String(x.risk ?? '').trim(),
+      ifNoReply: String(x.if_no_reply ?? '').trim() || 'The office applies the recommendation.',
+    };
+    if (!usableBrief(brief)) throw new Error('A brief needs the decision and your recommendation.');
+    const by = deadline ? whenLabel(deadline) : null;
+    await this.backend.commentIssue(repo.fullName, n, `${renderBrief(brief, by)}\n\n<sub>Written by ${this.ceo().name}, the cubefarm CEO.</sub>\n${OFFICE_MARK}`);
+    this.briefs.set(decisionKey(item), brief);
+    this.decisionTickSoon();
+    return `Posted the brief on ${item.kind === 'pr' ? 'PR ' : ''}#${n} on floor ${repo.floor}.${by ? ` If the manager doesn't reply by ${by}, the office applies your recommendation.` : ''}`;
+  }
+
   // ---------- the daily digest ----------
 
   /** Once a day at the manager's hour: the digest, unless it went out (or was refused) today already. */
@@ -4907,13 +5169,14 @@ export class Swarm {
     try {
       let floors: DigestFloor[];
       try {
+        await this.decisionTick(now.getTime()); // fresh briefs and deadlines
         floors = await this.digestFloors(now.getTime());
       } catch (err) {
         this.digestRetryAt = now.getTime() + 10 * 60_000;
         if (manual) throw new HttpError(502, `GitHub couldn't be read for the digest: ${oneLine(err)}`);
         throw err;
       }
-      const digest = buildDigest(floors, { officeUrl: this.state.settings.notify.officeUrl || undefined });
+      const digest = buildDigest(floors, { officeUrl: this.state.settings.notify.officeUrl || undefined, now: now.getTime() });
       if (!manual) {
         this.state.digestSentDay = digestDay(now);
         this.save();
@@ -4934,6 +5197,14 @@ export class Swarm {
     }
   }
 
+  /** A decision's brief, deadline and reply for the digest; nothing when it isn't on the decision clock. */
+  private decisionInfo(repoId: string, kind: 'issue' | 'pr', number: number): DecisionInfo {
+    const d = this.state.decisions.find((r) => r.repoId === repoId && r.kind === kind && r.number === number && r.appliedAt === null);
+    if (!d) return {};
+    const brief = this.briefs.get(decisionKey(d));
+    return { brief: brief === undefined ? null : usableBrief(brief) ? brief : null, deadline: this.decisionDeadline(d), answered: d.answeredAt !== null };
+  }
+
   /** What each floor has for the digest: PRs waiting for the manager, needs-input issues, the last 24 hours' merges. */
   private async digestFloors(now: number): Promise<DigestFloor[]> {
     const since = new Date(now - MERGED_WINDOW_MS).toISOString();
@@ -4941,15 +5212,19 @@ export class Swarm {
       this.state.repos.map(async (repo): Promise<DigestFloor> => {
         const rt = this.repoRt.get(repo.id);
         const asks = needsInputIssues(rt?.issues ?? []);
-        const [merged, comments] = await Promise.all([
+        const [merged, comments, milestones] = await Promise.all([
           this.backend.mergedPullsSince(repo.fullName, since),
           Promise.all(asks.map((i) => this.backend.latestIssueComment(repo.fullName, i.number))),
+          this.backend.milestones(repo.fullName).catch(() => []),
         ]);
+        const waiting = waitingPulls(rt?.pulls ?? [], this.state.qa.filter((q) => q.repoId === repo.id), repo.autoMerge, repo.fullName.split('/')[1] ?? repo.fullName);
         return {
           name: repo.fullName,
-          waiting: waitingPulls(rt?.pulls ?? [], this.state.qa.filter((q) => q.repoId === repo.id), repo.autoMerge, repo.fullName.split('/')[1] ?? repo.fullName),
-          needsInput: asks.map((i, k) => ({ number: i.number, title: i.title, url: i.url, excerpt: excerpt(comments[k] ?? i.body) })),
+          waiting: waiting.map((p) => ({ ...p, ...this.decisionInfo(repo.id, 'pr', p.number) })),
+          needsInput: asks.map((i, k) => ({ number: i.number, title: i.title, url: i.url, excerpt: excerpt(comments[k] ?? i.body), ...this.decisionInfo(repo.id, 'issue', i.number) })),
           merged: mergedSince(merged, now).map((p) => ({ number: p.number, title: p.title, url: p.url })),
+          inProgress: (rt?.issues ?? []).filter((i) => this.issueTaken(repo, i.number)).map((i) => i.title),
+          milestone: milestones[0] ? { title: milestones[0].title, open: milestones[0].open, closed: milestones[0].closed } : null,
         };
       }),
     );
@@ -5233,6 +5508,21 @@ export class Swarm {
           preview: { command: r.preview.command, env: r.preview.env, status: this.previews.view(r).status },
           autoAssign: r.autoAssign,
           autoMerge: r.autoMerge,
+          autoPlan: r.autoPlan,
+          ...(r.autoPlan ? { minReady: r.minReady } : {}),
+          decisionTimeoutHours: r.decisionTimeoutHours,
+          decisionsForManager: this.state.decisions
+            .filter((d) => d.repoId === r.id && d.appliedAt === null)
+            .map((d) => {
+              const brief = this.briefs.get(decisionKey(d));
+              const deadline = this.decisionDeadline(d);
+              return {
+                kind: d.kind,
+                number: d.number,
+                brief: brief === undefined ? 'not read yet' : usableBrief(brief) ? 'written' : 'missing: write_brief',
+                ...(d.answeredAt !== null ? { managerReplied: true } : deadline ? { defaultAppliesAt: new Date(deadline).toISOString() } : {}),
+              };
+            }),
           folderSync: rt.folderSync,
           team: { size: team.agents.length, max: s.maxAgents, free: this.available(r).length, pendingHires: team.pendingHires.length, pendingLetGos: team.pendingLetGos.length },
           throughput: {
@@ -5349,7 +5639,7 @@ export class Swarm {
 
   private async fileIssue(x: { floor: number; title: string; body: string }) {
     const repo = this.floorRepo(x.floor);
-    if (!this.ceoAsked) throw new Error(NOT_ASKED);
+    if (!this.ceoAsked && !mayFileIssue(this.state.ceo.job, repo)) throw new Error(NOT_ASKED);
     this.ceoIssues.check();
     const title = String(x.title ?? '').trim().slice(0, 120);
     if (!title) throw new Error('An issue needs a title.');

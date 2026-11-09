@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decisionLines, decisionNote, heldWhy, orList, readyDecision, stuckPrDecision, stuckPrPick } from './decision.ts';
+import { briefAlert, decisionLines, decisionNote, heldWhy, orList, readyDecision, stuckPrDecision, stuckPrPick } from './decision.ts';
 
 const pr = { number: 12, title: 'Add visit schedule', url: 'https://github.com/o/rtsm/pull/12' };
 
@@ -68,5 +68,29 @@ describe('orList', () => {
   it('joins with commas and or', () => {
     expect(orList(['a'])).toBe('a');
     expect(orList(['a', 'b', 'c'])).toBe('a, b or c');
+  });
+});
+
+describe('briefAlert', () => {
+  const brief = {
+    background: 'The pricing page needs a plan name. '.repeat(10),
+    decision: 'What do we call the paid plan?',
+    options: ['Pro: familiar, but every competitor uses it.', 'Studio: fits the brand, but users must learn it.'],
+    recommendation: 'Studio, because it sets us apart. '.repeat(5),
+    risk: 'Users may not get it at once; the page says what it includes.',
+    ifNoReply: 'The office ships Studio.',
+  };
+
+  it('fits every section of the brief, deadline included, in the room a phone alert has', () => {
+    const a = briefAlert({ kind: 'pr', number: 42, title: 'Pricing page', floor: 'openRTSM' }, brief, 'Wed 11 Nov 08:00', 600);
+    expect(a.title).toBe('Decide on openRTSM: PR #42 Pricing page');
+    expect(a.body.length).toBeLessThanOrEqual(600);
+    const lines = a.body.split('\n');
+    expect(lines.map((l) => l.split(':')[0])).toEqual(['Background', 'The decision', 'Options', 'Recommendation', 'Risk and mitigation', 'If no reply by Wed 11 Nov 08']);
+    expect(lines[5]).toBe('If no reply by Wed 11 Nov 08:00: The office ships Studio.');
+  });
+
+  it('says the CEO is writing a missing brief', () => {
+    expect(briefAlert({ kind: 'issue', number: 7, title: 'Plan name', floor: 'web' }, null, null).body).toBe('The team needs your answer before building this. No decision brief yet: the CEO is writing it.');
   });
 });

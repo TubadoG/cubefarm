@@ -70,6 +70,9 @@ export const api = {
       autoMerge?: boolean;
       holdPaths?: string[];
       routineOnly?: boolean;
+      autoPlan?: boolean;
+      minReady?: number;
+      decisionTimeoutHours?: number;
       browserTesting?: boolean;
       color?: string;
       links?: string[];

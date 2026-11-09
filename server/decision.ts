@@ -1,6 +1,7 @@
 // A PR that waits for the manager, as a decision in plain words: what is being decided, the options, the office's
 // pick and why in one line, and how to approve it. The phone's notifications (push, ntfy, desktop) and the daily digest
 // both word their asks with these, so the manager can decide from the alert alone. Pure.
+import { briefLines, type Brief } from '../shared/brief.ts';
 import { HOLD_LABEL } from '../shared/issues.ts';
 import { NOT_ROUTINE } from '../shared/holds.ts';
 
@@ -89,4 +90,29 @@ export function decisionLines(d: Decision): string[] {
 /** A notification's title, body (one paragraph) and summary line. The PR link goes with it separately. */
 export function decisionNote(d: Decision): { title: string; body: string; line: string } {
   return { title: d.question, body: decisionLines(d).join(' '), line: `${d.question} ${d.pick ? `Recommended: ${d.pick}.` : ''}`.trim() };
+}
+
+// ---------- decision briefs ----------
+
+/**
+ * The phone's alert for a decision on the decision clock (decisionClock.ts): the brief, section by section, cut to
+ * fit `room` characters with every section kept, or, without a brief, what waits and that the CEO is writing one.
+ */
+export function briefAlert(
+  d: { kind: 'issue' | 'pr'; number: number; title: string; floor: string },
+  brief: Brief | null,
+  by: string | null,
+  room = 600,
+): { title: string; body: string } {
+  const title = `Decide on ${d.floor}: ${d.kind === 'pr' ? 'PR ' : ''}#${d.number} ${d.title}`;
+  if (!brief) {
+    const what = d.kind === 'pr' ? 'This PR passed QA and waits for you.' : 'The team needs your answer before building this.';
+    return { title, body: `${what} No decision brief yet: the CEO is writing it.` };
+  }
+  let body = '';
+  for (let max = 200; max >= 20; max -= 10) {
+    body = briefLines(brief, { by, max }).join('\n');
+    if (body.length <= room) break;
+  }
+  return { title, body };
 }

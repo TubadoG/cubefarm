@@ -36,6 +36,54 @@ export interface CeoJob {
 /** Jobs the manager started by asking for work: a plan from their brief, or their message. Only these may file issues. */
 export const askedFor = (job: Pick<CeoJob, 'kind'>) => job.kind === 'plan' || job.kind === 'chat';
 
+/**
+ * Whether file_issue may file on a floor in this job: work the manager asked for (askedFor), or a review on a floor
+ * that plans itself (autoPlan on: the CEO keeps its backlog stocked from the brief and roadmap).
+ */
+export const mayFileIssue = (job: Pick<CeoJob, 'kind'> | null, floor: { autoPlan: boolean }) => !!job && (askedFor(job) || (job.kind === 'review' && floor.autoPlan));
+
+/** autoPlan's default stock of issues ready to start, and the most a floor may ask for. */
+export const DEFAULT_MIN_READY = 5;
+export const MAX_MIN_READY = 20;
+
+/** A floor's minReady from a request body: a whole number from 1 to MAX_MIN_READY. Throws a message on bad input. */
+export function parseMinReady(value: unknown): number {
+  const n = typeof value === 'number' || (typeof value === 'string' && value.trim() !== '') ? Number(value) : NaN;
+  if (!Number.isInteger(n) || n < 1 || n > MAX_MIN_READY) throw new Error(`minReady must be a whole number from 1 to ${MAX_MIN_READY}`);
+  return n;
+}
+
+/**
+ * The floors a review must stock even when nothing else changed: autoPlan on, fewer than minReady issues ready to
+ * start, and not left idle by the last review (it filed nothing for them: the roadmap may be done).
+ */
+export function planReviewDue(floors: readonly { id: string; autoPlan: boolean; ready: number; minReady: number }[], idle: ReadonlySet<string>): string[] {
+  return floors.filter((f) => f.autoPlan && f.ready < f.minReady && !idle.has(f.id)).map((f) => f.id);
+}
+
+/** A floor that plans itself, as a review job sees it. */
+export interface AutoPlanFloor {
+  floor: number;
+  fullName: string;
+  clone: string;
+  ready: number; // issues ready to start now
+  minReady: number;
+}
+
+/** A decision waiting for the manager with no brief yet: the CEO writes one (write_brief). */
+export interface MissingBrief {
+  floor: number;
+  kind: 'issue' | 'pr';
+  number: number;
+  title: string;
+}
+
+/** What a review job looks at beyond company_status: floors that plan themselves, and decisions without a brief. */
+export interface ReviewInput {
+  autoPlan: AutoPlanFloor[];
+  missingBriefs: MissingBrief[];
+}
+
 export interface OfficeHandlers {
   companyStatus(): string;
   agentDetail(a: { agent_id: string }): string;
@@ -43,6 +91,7 @@ export interface OfficeHandlers {
   scaleTeam(a: { floor: number; size: number; reason: string; cli?: AgentCli; model?: string; effort?: string }): string;
   configureAgent(a: { agent_id: string; cli?: AgentCli | ''; model?: string; effort?: string }): string;
   fileIssue(a: { floor: number; title: string; body: string }): Promise<string>;
+  writeBrief(a: { floor: number; number: number; background: string; decision: string; options: string[]; recommendation: string; risk: string; if_no_reply?: string }): Promise<string>;
   setDependencies(a: { floor: number; number: number; depends_on: number[] }): Promise<string>;
   closeIssue(a: { floor: number; number: number; reason: string }): Promise<string>;
   retryQa(a: { floor: number; pr: number }): Promise<string>;
@@ -134,13 +183,28 @@ export function createOfficeTools(h: OfficeHandlers): OfficeTools {
     ),
     tool(
       'file_issue',
-      'File a GitHub issue on a floor, only for work the manager asked for in this job (a plan, or their message); anything else is refused. The next free agent takes the next issue that can start. Write "Depends on #N" in the body only when it cannot start until #N is merged: the office will not start it until #N is closed.',
+      'File a GitHub issue on a floor, only for work the manager asked for in this job (a plan, or their message), or in a review on a floor with autoPlan on; anything else is refused. The next free agent takes the next issue that can start. Write "Depends on #N" in the body only when it cannot start until #N is merged: the office will not start it until #N is closed.',
       {
         floor: z.number().int(),
         title: z.string().max(120),
         body: z.string().max(6000).describe('Context, what to build, acceptance criteria'),
       },
       (a) => run(() => h.fileIssue(a)),
+    ),
+    tool(
+      'write_brief',
+      'Post a decision brief on a needs-input issue or a held PR that has none, for an executive who has not read the code. The office adds the deadline; if the manager does not reply by then, it applies your recommendation.',
+      {
+        floor: z.number().int(),
+        number: z.number().int().positive().describe('The issue or PR number'),
+        background: z.string().min(1).max(1500).describe('What this is about, in plain words'),
+        decision: z.string().min(1).max(300).describe('The one question the manager answers'),
+        options: z.array(z.string().min(1).max(400)).min(2).max(5).describe('Each option with its trade-offs'),
+        recommendation: z.string().min(1).max(600).describe('The option you pick, and why. For a PR, say "Merge it" or what to change.'),
+        risk: z.string().min(1).max(600).describe('Risk of the recommendation, and its mitigation'),
+        if_no_reply: z.string().max(300).optional().describe('What the office does at the deadline; default: applies the recommendation'),
+      },
+      (a) => run(() => h.writeBrief(a)),
     ),
     tool(
       'set_dependencies',
@@ -274,6 +338,7 @@ export function ceoSystemPrompt(o: {
   maxAgents: number;
   scaling: 'approve' | 'auto';
   email?: boolean; // Settings → Email is on: send_email's rule goes in
+  autoPlan?: boolean; // some floor plans itself: the exception to "never decide on new work" goes in
 }) {
   const manager = o.manager ? `the manager, ${o.manager}` : 'the human manager';
   return [
@@ -296,6 +361,10 @@ export function ceoSystemPrompt(o: {
     '',
     'Rules:',
     '- Never decide on new work yourself. Only the manager asks for changes to their projects: file issues only when they asked in this job. In reviews, onboarding and triage, suggest work in your final message instead, and they decide.',
+    ...(o.autoPlan
+      ? ["- Exception: floors with autoPlan on (company_status) plan themselves. In reviews, keep their ready issues at minReady for the current milestone of their brief and roadmap docs, and plan the next milestone when one is done. Only the manager's brief and roadmap decide what gets built."]
+      : []),
+    '- Decisions for the manager (needs-input issues, PRs held with swarm:hold) are business decisions only. Each needs a decision brief; when one has none, write it with write_brief.',
     '- Every floor keeps at least one agent.',
     `- Change a floor's size with one scale_team call, with a reason the manager can decide on in a sentence or two. ${o.scaling === 'auto' ? "Team changes apply straight away, within the floor's max, so be deliberate." : 'The manager approves every change, and sets up each new agent before hiring them.'} If the manager declined a similar change (recentDecisions), do not ask again unless something has changed, and say what.`,
     "- Agents run the office's default coding agent, model and effort. Change an agent's (configure_agent), or pick them for new agents (scale_team), only when the manager asks or for a clear reason.",
@@ -308,7 +377,12 @@ export function ceoSystemPrompt(o: {
   ].join('\n');
 }
 
-export function ceoJobPrompt(job: CeoJob, floor: { floor: number; fullName: string; clone: string; mission: string; backlog: number } | null, pr?: TriagePr | null): string {
+export function ceoJobPrompt(
+  job: CeoJob,
+  floor: { floor: number; fullName: string; clone: string; mission: string; backlog: number } | null,
+  pr?: TriagePr | null,
+  review?: ReviewInput | null,
+): string {
   switch (job.kind) {
     case 'triage':
       if (!floor || !pr) return `Pull request #${job.prNumber ?? '?'} no longer needs triage. Reply ${NO_MESSAGE}.`;
@@ -361,6 +435,21 @@ export function ceoJobPrompt(job: CeoJob, floor: { floor: number; fullName: stri
         '- backlog against the team (capacity): long dependency chains (fix them with set_dependencies), or PRs piling up in QA (then plan fewer, bigger issues)',
         '- pull requests stuck in QA or marked as needing a human',
         '- floors with a brief and an empty backlog: suggest what the manager might ask for next, once (file no issues: only they decide on new work)',
+        ...(review?.autoPlan.length
+          ? [
+              'Floors that plan themselves (autoPlan): file issues for them in this job, from the brief and the roadmap docs in the clone (docs/roadmap.md, ROADMAP.md or similar). Never duplicate an open issue.',
+              ...review.autoPlan.map(
+                (f) =>
+                  `- floor ${f.floor} (${f.fullName}, clone at ${f.clone}): ${f.ready} ready to start, keep at least ${f.minReady}.${f.ready < f.minReady ? ` File up to ${f.minReady - f.ready} for the current milestone; if its issues are all closed, plan the next milestone. If the roadmap is done, file nothing and say so once.` : ''}`,
+              ),
+            ]
+          : []),
+        ...(review?.missingBriefs.length
+          ? [
+              'Decisions waiting for the manager without a brief: read each issue or PR, then write_brief for it.',
+              ...review.missingBriefs.map((m) => `- floor ${m.floor}: ${m.kind === 'pr' ? 'PR' : 'issue'} #${m.number} "${m.title}"`),
+            ]
+          : []),
         `Change team sizes only when clearly justified. If the manager has no new decision to make, reply ${NO_MESSAGE}.`,
       ].join('\n');
     case 'chat':

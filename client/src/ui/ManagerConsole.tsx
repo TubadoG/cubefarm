@@ -142,6 +142,38 @@ function FloorRow({ repo, all }: { repo: RepoView; all: RepoView[] }) {
         >
           <input type="checkbox" checked={repo.routineOnly ?? true} disabled={!repo.autoMerge} onChange={(e) => patch({ routineOnly: e.target.checked })} /> 🧹 Routine work only
         </label>
+        <label className="toggle" title="The CEO files issues for this floor in its reviews, from your brief and the roadmap docs in the repo, so the backlog never runs dry">
+          <input type="checkbox" checked={repo.autoPlan ?? false} onChange={(e) => patch({ autoPlan: e.target.checked })} /> 🗺️ Plan itself
+        </label>
+        <label className="toggle" title="With Plan itself on: how many issues ready to start the CEO keeps">
+          keep{' '}
+          <input
+            key={`ready-${repo.minReady ?? 5}`}
+            type="number"
+            min={1}
+            max={20}
+            style={{ width: '3.5em' }}
+            disabled={!repo.autoPlan}
+            defaultValue={repo.minReady ?? 5}
+            aria-label={`Floor ${repo.floor}: issues ready to start`}
+            onBlur={(e) => Number(e.target.value) !== (repo.minReady ?? 5) && patch({ minReady: Number(e.target.value) })}
+          />{' '}
+          ready
+        </label>
+        <label className="toggle" title="A decision you don't answer in this many hours gets its brief's recommendation (reversible). 0: never.">
+          ⏱️ decide after{' '}
+          <input
+            key={`timeout-${repo.decisionTimeoutHours ?? 48}`}
+            type="number"
+            min={0}
+            max={720}
+            style={{ width: '4em' }}
+            defaultValue={repo.decisionTimeoutHours ?? 48}
+            aria-label={`Floor ${repo.floor}: hours before a decision is made by default`}
+            onBlur={(e) => Number(e.target.value) !== (repo.decisionTimeoutHours ?? 48) && patch({ decisionTimeoutHours: Number(e.target.value) })}
+          />{' '}
+          h
+        </label>
         <label className="toggle">
           <input type="checkbox" checked={repo.browserTesting} onChange={(e) => patch({ browserTesting: e.target.checked })} /> 🌐 Browser testing (Playwright MCP)
         </label>

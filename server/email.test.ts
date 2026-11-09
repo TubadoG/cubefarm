@@ -127,14 +127,16 @@ describe('the daily digest', () => {
     expect(() => digest({ to: 'eve@evil.example.com' })).toThrow(/isn't on the list/);
   });
 
-  it('sends now through the email path: needs-input issues with their latest comment', async () => {
+  it('sends now through the email path: needs-input issues with their decision brief', async () => {
     const { swarm, digest, emails, messages } = await withFloor();
     digest({ to: AUTO.email });
     expect(await swarm.sendDigest()).toEqual({ sent: true, to: AUTO.email, subject: 'Office: 1 decision waiting' });
     const [e] = emails();
     expect(e).toMatchObject({ to: AUTO.email, status: 'sent', subject: 'Office: 1 decision waiting' });
     expect(e.body).toContain('Which colour palette for v2?');
-    expect(e.body).toContain('> Two options in the mockups');
+    expect(e.body).toContain('Recommendation: Harbour: it passes the accessibility contrast checks without extra work.');
+    expect(e.body).toMatch(/If no reply by \w{3} \d+ \w{3} \d\d:\d\d: The office builds Harbour\./);
+    expect(e.body).toContain('Open decisions: 1 decision: #7 Which colour palette for v2?');
     expect(messages().at(-1)?.text).toBe('📧 Sent the daily digest to Sam: Office: 1 decision waiting');
   });
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildDigest, digestDay, digestDue, excerpt, mergedSince, needsInputIssues, waitingPulls, type DigestFloor } from './digest.ts';
+import { buildDigest, decisionInfoLines, digestDay, digestDue, excerpt, floorSummary, mergedSince, needsInputIssues, NO_BRIEF, waitingPulls, type DigestFloor } from './digest.ts';
+import { whenLabel } from './decisionClock.ts';
+import type { Brief } from '../shared/brief.ts';
 import { readyDecision } from './decision.ts';
 import type { IssueInfo, PullInfo } from '../shared/types.ts';
 
@@ -180,5 +182,84 @@ describe('digestDue', () => {
   it('handles midnight', () => {
     expect(digestDue(at(0, 0), 0, '2026-10-20')).toBe(true);
     expect(digestDue(at(23, 0), 23, null)).toBe(true);
+  });
+});
+
+describe('decision briefs in the digest', () => {
+  const now = Date.parse('2026-11-09T08:00:00Z');
+  const H = 3_600_000;
+  const brief: Brief = {
+    background: 'Pricing is not in the spec.',
+    decision: 'Free tier or 14-day trial?',
+    options: ['Free tier: more sign-ups', 'Trial: more paid'],
+    recommendation: 'Trial.',
+    risk: 'Fewer sign-ups; revisit after a month.',
+    ifNoReply: '',
+  };
+
+  it('renders a brief section by section, with the deadline, and flags one due within 24 hours', () => {
+    const lines = decisionInfoLines({ brief, deadline: now + 10 * H }, now);
+    expect(lines[0]).toBe(`Due within 24 hours: by ${whenLabel(now + 10 * H)}, the office applies the recommendation.`);
+    expect(lines.slice(1)).toEqual([
+      'Background: Pricing is not in the spec.',
+      'The decision: Free tier or 14-day trial?',
+      'Options: (1) Free tier: more sign-ups (2) Trial: more paid',
+      'Recommendation: Trial.',
+      'Risk and mitigation: Fewer sign-ups; revisit after a month.',
+      `If no reply by ${whenLabel(now + 10 * H)}: the office applies the recommendation`,
+    ]);
+    expect(decisionInfoLines({ brief, deadline: now + 40 * H }, now)[0]).toBe('Background: Pricing is not in the spec.');
+  });
+
+  it('says when a brief is missing, and when the manager already replied', () => {
+    expect(decisionInfoLines({ brief: null, deadline: null }, now)).toEqual([NO_BRIEF]);
+    expect(decisionInfoLines({ brief, deadline: now + H, answered: true }, now)[0]).toBe('You replied, so the office will not decide this by default.');
+    expect(decisionInfoLines({}, now)).toEqual([]); // not on the decision clock
+  });
+
+  it('opens each floor with an executive summary', () => {
+    const f = floor('o/rtsm', {
+      merged: [{ number: 10, title: 'Add the dose calculator', url: 'u' }],
+      inProgress: ['Kit returns'],
+      needsInput: [{ number: 7, title: 'Free tier or trial?', url: 'u', excerpt: '', brief: null, deadline: now + 10 * H }],
+      milestone: { title: 'M2', open: 3, closed: 9 },
+    });
+    expect(floorSummary(f, now)).toEqual([
+      'Merged in the last 24 hours: Add the dose calculator.',
+      'In progress: Kit returns.',
+      `Open decisions: 1 decision, 1 due within 24 hours: #7 Free tier or trial? (default applies ${whenLabel(now + 10 * H)}) (brief missing).`,
+      'Milestone M2: 9 of 12 issues closed (75%).',
+    ]);
+    expect(floorSummary(floor('o/x', { inProgress: [] }), now)).toEqual(['Nothing merged in the last 24 hours.', 'Nothing in progress.', 'No decisions wait for you.']);
+  });
+
+  it('puts the brief in place of the excerpt and counts what is due in the subject', () => {
+    const d = buildDigest(
+      [
+        floor('o/rtsm', {
+          needsInput: [
+            { number: 7, title: 'Free tier or trial?', url: 'u7', excerpt: 'old comment', brief, deadline: now + 10 * H },
+            { number: 8, title: 'Product name', url: 'u8', excerpt: 'which name?', brief: null, deadline: now + 40 * H },
+          ],
+        }),
+      ],
+      { now },
+    );
+    expect(d.subject).toBe('Office: 2 decisions waiting (1 due within 24 hours)');
+    expect(d.text).toContain('  Recommendation: Trial.');
+    expect(d.text).not.toContain('> old comment');
+    expect(d.text).toContain(`  > which name?\n  ${NO_BRIEF}`);
+    expect(d.html).toContain('<b>Due within 24 hours: by ');
+    expect(d.html).toContain('Recommendation: Trial.');
+  });
+
+  it('shows a held PR by its brief instead of the office’s own pick', () => {
+    const [waiting] = waitingPulls([pull(3)], [{ prNumber: 3, status: 'passed', heldFor: 'label swarm:hold' }], true, 'web');
+    const d = buildDigest([floor('o/web', { waiting: [{ ...waiting, brief: { ...brief, recommendation: 'Merge it.' }, deadline: now + 30 * H }] })], { now });
+    expect(d.text).toContain('  Recommendation: Merge it.');
+    expect(d.text).not.toContain('Options: merge it, send it back');
+    const bare = buildDigest([floor('o/web', { waiting: [{ ...waiting, brief: null, deadline: now + 30 * H }] })], { now });
+    expect(bare.text).toContain('Options: merge it, send it back with a note or close it.');
+    expect(bare.text).toContain(NO_BRIEF);
   });
 });
