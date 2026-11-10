@@ -888,6 +888,12 @@ function SettingsTab() {
           <br />
           Agents' machines: <code>{machinesRoot}</code>
         </div>
+        <div className="row" style={{ marginTop: 8 }}>
+          <a className="btn btn-small" href="/oauth2/sign_out">
+            🔒 Log out
+          </a>
+        </div>
+        <p className="muted small">Ends your sign-in with this office's login proxy (e.g. oauth2-proxy) and sends you back to it. Does nothing if the office isn't behind one.</p>
       </div>
       <ProfileSettings />
       <VoiceSettings />
