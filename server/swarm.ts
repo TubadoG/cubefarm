@@ -55,7 +55,7 @@ import { clip, DECISION_MAX, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
 import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
 import { Mailer } from './email.ts';
-import { briefAlert, decisionNote, stuckPickView, stuckPrDecision } from './decision.ts';
+import { briefAlert, decisionNote, stuckPickView, stuckPrDecision, waitsOnDecision } from './decision.ts';
 import { businessHold, closeComment, MAX_REBUILDS, giveUpStep, REBUILD_RETRY_MS, issueComment, parkBrief, parkDue, parkedComment, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
 import { answerPlan } from './decisionAnswer.ts';
 import { decisionKeyOf, decisionLink, MAX_DECISION_TEXT, parseDecisionChoice, type DecisionMessage, type DecisionReason, type DecisionView } from '../shared/decisions.ts';
@@ -3579,7 +3579,14 @@ export class Swarm {
         .sort((x, y) => x.updatedAt - y.updatedAt);
     const fixes = waiting('failed', 'fix');
     const owed = new Set(fixes.map((q) => q.devAgentId).filter((id): id is string => !!id));
+    const rt = this.repoRt.get(repo.id)!;
+    const needsInput = new Set(rt.issues.filter((i) => i.labels.some((l) => /^needs-input$/i.test(l))).map((i) => i.number));
+    const placeholder = (q: QaRecord) => {
+      const pr = rt.pulls.find((p) => p.number === q.prNumber);
+      return !!pr && waitsOnDecision(pr, needsInput);
+    };
     for (const rec of waiting('queued', 'qa')) {
+      if (placeholder(rec)) continue; // a draft that waits on the manager's decision: nothing to test yet
       const othersCan = this.state.agents.some((a) => a.repoId === repo.id && isWorker(a) && a.id !== rec.devAgentId && a.status !== 'stopped');
       const tester = pickTester(free, rec.devAgentId, owed, othersCan, now - rec.updatedAt);
       if (!tester) continue;

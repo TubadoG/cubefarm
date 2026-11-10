@@ -29,6 +29,17 @@ const BUTTON: Record<string, string> = { 'merge it': 'Merge', 'retry QA': 'Retry
 
 const approveWith = (pick: string | null) => (pick ? `To approve, open Approvals and tap ${BUTTON[pick]}.` : 'Open Approvals to choose.');
 
+/**
+ * A draft PR that only holds a branch until the manager decides: a draft with the swarm:hold label, or a draft whose
+ * issue still has needs-input. QA leaves it queued (there is nothing to test yet), so it never fails its way to
+ * "needs you" as a second card for a decision the manager already has on the issue. It is tested once it is marked
+ * ready, or once the hold comes off and the issue is decided.
+ */
+export function waitsOnDecision(pr: { isDraft: boolean; labels?: readonly string[]; closesIssues: readonly number[] }, needsInput: ReadonlySet<number>): boolean {
+  if (!pr.isDraft) return false;
+  return (pr.labels ?? []).some((l) => l.toLowerCase() === HOLD_LABEL) || pr.closesIssues.some((n) => needsInput.has(n));
+}
+
 /** Why a passed PR is held, as the end of "it waits for you only because …". */
 export function heldWhy(held: string): string {
   if (held.toLowerCase() === `label ${HOLD_LABEL}`) return `it has the ${HOLD_LABEL} label`;
