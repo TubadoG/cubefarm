@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefAlert, decisionLines, decisionNote, heldWhy, orList, readyDecision, stuckPickView, stuckPrDecision, stuckPrPick } from './decision.ts';
+import { briefAlert, decisionLines, decisionNote, heldWhy, orList, readyDecision, stuckPickView, stuckPrDecision, stuckPrPick, waitsOnDecision } from './decision.ts';
 
 const pr = { number: 12, title: 'Add visit schedule', url: 'https://github.com/o/rtsm/pull/12' };
 
@@ -110,5 +110,23 @@ describe('stuckPickView', () => {
   it('picks Close for a rebuild that got stuck again', () => {
     expect(stuckPickView('it still conflicts with main after 5 fixes', true)).toEqual({ action: 'close', why: expect.stringContaining('rebuilt once') });
     expect(stuckPrPick(null, true).pick).toBe('close it');
+  });
+});
+
+describe('waitsOnDecision', () => {
+  const none = new Set<number>();
+  it('skips a draft held with swarm:hold (a placeholder for a decision)', () => {
+    expect(waitsOnDecision({ isDraft: true, labels: ['swarm:hold'], closesIssues: [] }, none)).toBe(true);
+    expect(waitsOnDecision({ isDraft: true, labels: ['SWARM:HOLD'], closesIssues: [] }, none)).toBe(true);
+  });
+  it('skips a draft whose issue still needs input', () => {
+    expect(waitsOnDecision({ isDraft: true, labels: [], closesIssues: [92] }, new Set([92]))).toBe(true);
+  });
+  it('tests a held PR that is ready for review: QA runs, then the hold waits for the manager', () => {
+    expect(waitsOnDecision({ isDraft: false, labels: ['swarm:hold'], closesIssues: [92] }, new Set([92]))).toBe(false);
+  });
+  it('tests an ordinary draft (a developer who could not finish), so it still gets sent back with fixes', () => {
+    expect(waitsOnDecision({ isDraft: true, labels: [], closesIssues: [5] }, none)).toBe(false);
+    expect(waitsOnDecision({ isDraft: true, closesIssues: [] }, none)).toBe(false);
   });
 });
