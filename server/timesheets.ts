@@ -114,7 +114,7 @@ export function timesheet(s: WorkSession, span: [number, number], k: KimaiSettin
   if (!project) return { error: s.repoId ? `No Kimai project for ${s.repo || s.repoId}` : 'No Kimai project for the CEO’s office-wide jobs' };
   const activity = k.activities[s.work];
   if (!activity) return { error: `No Kimai activity for ${WORK_LABEL[s.work]}` };
-  const user = k.users[s.agentId];
+  const user = k.users[s.agentId] ?? k.defaultUser ?? undefined;
   return {
     payload: {
       begin: localDateTime(span[0], k.timezone),
