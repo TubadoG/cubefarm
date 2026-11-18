@@ -143,10 +143,17 @@ export function TimeTrackingSettings() {
             <span className="grow">
               <b>Floor {r.floor}</b> <span className="muted small">{r.fullName}</span>
             </span>
-            <IdInput value={k.projects[r.id]} label={`Kimai project for ${r.fullName}`} onSave={(v) => setIn('projects', r.id, v)} />
-            <label className="toggle small">
-              <input type="checkbox" checked={k.billable[r.id] !== false} onChange={(e) => void save({ billable: { ...k.billable, [r.id]: e.target.checked } })} /> Billable
+            <label className="toggle small" title="Its tasks log nothing">
+              <input type="checkbox" checked={k.skip[r.id] === true} onChange={(e) => void save({ skip: { ...k.skip, [r.id]: e.target.checked } })} /> Don't log
             </label>
+            {k.skip[r.id] !== true && (
+              <>
+                <IdInput value={k.projects[r.id]} label={`Kimai project for ${r.fullName}`} onSave={(v) => setIn('projects', r.id, v)} />
+                <label className="toggle small">
+                  <input type="checkbox" checked={k.billable[r.id] !== false} onChange={(e) => void save({ billable: { ...k.billable, [r.id]: e.target.checked } })} /> Billable
+                </label>
+              </>
+            )}
           </li>
         ))}
         <li className="row wrap">

@@ -161,6 +161,16 @@ describe('KimaiSync', () => {
     expect(r.state.entries).toHaveLength(1);
   });
 
+  it('logs nothing for a floor marked "Don\'t log"', async () => {
+    const r = await rig({ settings: { ...LIVE, skip: { r2: true } } });
+    r.sync.record(session({ repoId: 'r2', repo: 'acme/blog' }));
+    r.sync.notLogged(session({ key: 'bo:1', repoId: 'r2' }), 'cut off');
+    r.sync.record(session());
+    await r.sync.flush();
+    expect(r.state.entries.map((e) => e.session.repoId)).toEqual(['r1']);
+    expect(r.posts()).toHaveLength(1);
+  });
+
   it('subtracts a wait on the usage limit, splitting the entry around it', async () => {
     const r = await rig();
     r.sync.limitWait('ada', T0 + 10 * 60_000, T0 + 20 * 60_000);

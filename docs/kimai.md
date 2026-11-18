@@ -30,7 +30,8 @@ In the manager's console:
   shows only **Set** or **Not set**. It never goes in the state file, the snapshot, events, the journal, the logs or
   agents' environments, and it's cut out of any error text.
 - **Test connection**: asks Kimai for its version and who the token signs in as.
-- **Floors → projects**, with **Billable** per floor (on by default), and a project for the CEO's office-wide jobs.
+- **Floors → projects**, with **Billable** per floor (on by default) and **Don't log** for a floor whose tasks
+  should log nothing, and a project for the CEO's office-wide jobs.
 - **Work → activities**, and **Log the CEO's and floor leads' jobs as Planning** (off by default).
 - **Shortest task logged**: tasks shorter than this (1 minute by default) log nothing.
 - **Agents → Kimai users**.

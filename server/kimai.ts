@@ -204,7 +204,7 @@ export class KimaiSync {
   /** A finished session: one entry per working span, built now and, in live mode, posted soon. Off: nothing. */
   record(s: WorkSession) {
     const k = this.deps.settings();
-    if (k.mode === 'off' || this.has(s.key)) return;
+    if (k.mode === 'off' || this.skipped(s) || this.has(s.key)) return;
     const waits = this.deps.state().waits.filter((w) => w.agentId === s.agentId);
     const spans = workSpans(s.begin, s.end, waits, k.minMinutes * 60_000);
     spans.forEach((span, i) => this.push(this.entry(s, span, spanKey(s.key, i, spans.length), k)));
@@ -214,9 +214,14 @@ export class KimaiSync {
 
   /** A session the office can't log (a restart cut it off and its end is unknown): shown, never sent. */
   notLogged(s: WorkSession, why: string) {
-    if (this.deps.settings().mode === 'off' || this.has(s.key)) return;
+    if (this.deps.settings().mode === 'off' || this.skipped(s) || this.has(s.key)) return;
     this.push({ key: s.key, session: s, span: [s.begin, s.begin], status: 'not-logged', payload: null, kimaiId: null, error: why, tries: 0, nextAt: 0, attempted: false, at: this.now() });
     this.changed();
+  }
+
+  /** A floor the manager chose not to log ("Don't log" in Settings → Time tracking). */
+  private skipped(s: WorkSession) {
+    return !!s.repoId && this.deps.settings().skip[s.repoId] === true;
   }
 
   private entry(s: WorkSession, span: [number, number], key: string, k: KimaiSettings): KimaiEntry {
