@@ -1,7 +1,7 @@
 import { useStore } from './store';
 import type { PongResult } from '../../shared/pong';
 import type { AgentStyle } from '../../shared/looks';
-import type { AgentCli, AgentPromptView, AgentView, BoardChangeView, DoctorFinding, DoctorFix, EffortLevel, EmailView, GhRepoSummary, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
+import type { AgentCli, AgentPromptView, AgentView, BoardChangeView, DoctorFinding, DoctorFix, EffortLevel, EmailView, GhRepoSummary, KimaiView, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
 import type { JournalChunk, JournalDayView } from '../../shared/journal';
 import type { DecorItem, ProgressView } from '../../shared/progress';
 import type { DecisionChoice } from '../../shared/decisions';
@@ -147,6 +147,10 @@ export const api = {
   testEmail: () => call<{ ok: true; to: string }>('POST', '/api/email/test', undefined, false),
   /** The daily digest, now (Settings → Email). No toast: the settings show the outcome. */
   sendDigest: () => call<{ sent: boolean; to?: string; subject?: string; reason?: string }>('POST', '/api/email/digest', undefined, false),
+  /** Settings → Time tracking: the Kimai token (write-only; '' removes it), a connection test, and retrying parked entries. No toasts: the page shows the outcome. */
+  setKimaiToken: (token: string) => (token ? call<KimaiView>('PUT', '/api/kimai/token', { token }, false) : call<KimaiView>('DELETE', '/api/kimai/token', undefined, false)),
+  testKimai: () => call<{ version: string; user: string }>('POST', '/api/kimai/test', undefined, false),
+  retryKimai: () => call<KimaiView>('POST', '/api/kimai/retry', undefined, false),
   /** Demo office only: the CEO asks for a new agent (or for one to leave) on demand. */
   demoPropose: (kind: 'hire' | 'let-go', floor?: number) => call<{ text: string }>('POST', '/api/demo/proposals', { kind, floor }),
   /** Saves (or with '' removes) the ElevenLabs key. No toast: the settings show why a key was rejected. */

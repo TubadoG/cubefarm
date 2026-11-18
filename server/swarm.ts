@@ -23,6 +23,9 @@ import { catchUp, failedRunId, logTail, noChangeReason, PR_LIMITS_VERSION, QA_ST
 import { conflictFixInstructions, MAX_QA_ROUNDS, qaGate, qaOutcome, type PreQa, type QaNext } from './qaOutcome.ts';
 import { qaInstructions } from './qaPrompt.ts';
 import { followKeptCli, resumeNote, resumesAfterRestart } from './restartRecovery.ts';
+import { emptyKimai, KimaiSync, loadKimai, type KimaiState } from './kimai.ts';
+import type { WorkSession } from './timesheets.ts';
+import { DEFAULT_KIMAI, kimaiProblem, kimaiSettings } from '../shared/kimai.ts';
 import { reconcileStep, restartMessage, sessionStart, workState, type ReconcileStep, type RestartCounts, type WorkState } from './reconcile.ts';
 import { diagnose, finding, forget, NUDGE_WAIT_MS, nudgeText, QUIET_MS, triage, unclosedIssues, type Problem, type Remedy, type WatchAgent, type WatchMemory } from './watchdog.ts';
 import { sendBackPatch } from './sendBack.ts';
@@ -258,6 +261,7 @@ interface Persisted {
   leads: Record<string, LeadState>; // each floor lead's queue and current job, by repo id (lead.ts)
   boardLog: BoardEntry[]; // the floor leads' board changes and their undo (boardLog.ts)
   order: Record<string, number[]>; // each floor's backlog order set by its lead (reorder_backlog), by repo id
+  kimai: KimaiState; // time tracking's outbox (kimai.ts)
 }
 
 /** A Decision room card's own state: its thread with the CEO, and the manager's answer. */
@@ -283,6 +287,7 @@ interface AgentRuntime {
   shots: Shot[]; // every screenshot of the current session (QA evidence)
   terminal: AgentTerminal | null; // their terminal, once they've run in the terminal runtime
   qaResume?: { cwd: string; systemAppend: string } | null; // the QA run's one resume for a missing report, until used
+  sessionModel?: string; // the model the current session runs on, for its timesheet
 }
 
 interface RepoRuntime {
@@ -539,6 +544,7 @@ export class Swarm {
       listen: { ...DEFAULT_LISTEN },
       notify: notifySettings(DEFAULT_NOTIFY, {}),
       email: emailSettings(DEFAULT_EMAIL, {}),
+      kimai: kimaiSettings(DEFAULT_KIMAI, {}),
       lead: { ...DEFAULT_LEAD_SETTINGS },
     },
     repos: [],
@@ -561,6 +567,7 @@ export class Swarm {
     leads: {},
     boardLog: [],
     order: {},
+    kimai: emptyKimai(),
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -659,6 +666,8 @@ export class Swarm {
   readonly notifier: Notifier;
   /** The CEO's outbound email's sender (docs/email.md). The demo's only logs what it would send. */
   readonly mailer: Mailer;
+  /** Time tracking (docs/kimai.md): finished sessions as Kimai timesheets. The demo's never leave the office. */
+  readonly kimai: KimaiSync;
   private emailSeq = 0;
   private sendingEmails = new Set<string>(); // ids the manager approved that are on their way
   private toldStuck = new Set<string>(); // `${agentId}:${endedAt}`: agents in an error the manager was notified about
@@ -702,6 +711,18 @@ export class Swarm {
       secretsFile: path.join(HOME_DIR, backend.demo ? 'demo-secrets.json' : 'secrets.json'),
       changed: (emailSender) => this.broadcast({ type: 'emailSender', emailSender }),
     });
+    this.kimai = new KimaiSync({
+      transport: backend.kimai,
+      secretsFile: path.join(HOME_DIR, backend.demo ? 'demo-secrets.json' : 'secrets.json'),
+      state: () => this.state.kimai,
+      settings: () => this.state.settings.kimai,
+      persist: () => this.writeState(),
+      changed: (kimai) => {
+        this.save();
+        this.broadcast({ type: 'kimai', kimai });
+      },
+      log: (line) => console.warn(line),
+    });
     this.previews = new Previews(backend, {
       emit: (id) => {
         const r = this.state.repos.find((x) => x.id === id);
@@ -718,6 +739,7 @@ export class Swarm {
 
   async init() {
     let emailSaved = false;
+    let kimaiSaved = false;
     try {
       const raw = await fs.readFile(STATE_FILE, 'utf8');
       const loaded = JSON.parse(raw) as Partial<Persisted>;
@@ -790,6 +812,7 @@ export class Swarm {
         leads: loadLeads(loaded.leads),
         boardLog: Array.isArray(loaded.boardLog) ? pruneBoardLog(loaded.boardLog, Date.now()) : [],
         order: loaded.order && typeof loaded.order === 'object' ? loaded.order : {},
+        kimai: loadKimai(loaded.kimai),
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -826,6 +849,8 @@ export class Swarm {
       this.state.settings.notify = notifySettings(DEFAULT_NOTIFY, loaded.settings?.notify);
       this.state.settings.email = emailSettings(DEFAULT_EMAIL, loaded.settings?.email ?? this.backend.email.demoSettings);
       emailSaved = true;
+      this.state.settings.kimai = kimaiSettings(DEFAULT_KIMAI, loaded.settings?.kimai);
+      kimaiSaved = loaded.settings?.kimai !== undefined;
       // Offices that were set up before the setup wizard existed skip it.
       if (loaded.settings && loaded.settings.setupDone === undefined && this.state.repos.length > 0) {
         Object.assign(this.state.settings, { setupDone: true, tutorialStep: -1 });
@@ -837,6 +862,8 @@ export class Swarm {
     await this.weather.init();
     await this.notifier.init();
     await this.mailer.init();
+    await this.kimai.init();
+    const cutOffAt = this.state.kimai.aliveAt; // the last state write before this start: when cut-off sessions ended
     if (!emailSaved && this.backend.email.demoSettings) {
       this.state.settings.email = emailSettings(DEFAULT_EMAIL, this.backend.email.demoSettings);
     }
@@ -860,6 +887,7 @@ export class Swarm {
       });
     for (const r of this.state.repos) this.repoRt.set(r.id, { issues: [], pulls: [], lastSync: null, syncing: false, cloneStatus: 'pending', lastMergedAt: null, folderSync: null, merging: false, closedIssues: new Map(), closedPulls: new Map(), openAt: new Map() });
     const restart = await this.reconcileRestart((a) => followKeptCli(a, back.find((c) => c.agentId === a.id)));
+    for (const a of restart.interrupted) if (!restart.preparing.has(a)) this.logCutOff(a, cutOffAt);
     interrupted.push(...restart.interrupted);
     for (const c of back) if (c.busy && !restart.carryOn.some((a) => a.id === c.agentId)) this.agentRt.get(c.agentId)?.terminal?.releaseIdle?.();
     for (const a of restart.carryOn) this.reattachSession(a);
@@ -885,6 +913,9 @@ export class Swarm {
       // Mission control opens on a week that already happened.
       this.state.ops = this.backend.seedOps?.(this.state.repos.map((r) => r.id), Date.now()) ?? this.state.ops;
     }
+    // A demo office starts in dry-run with made-up mappings, so Settings → Time tracking shows what it would send.
+    if (!kimaiSaved && this.backend.kimai.demoSettings) this.state.settings.kimai = this.backend.kimai.demoSettings(this.state.repos.map((r) => r.id));
+    this.kimai.start();
     for (const r of this.state.repos) this.ensureAgent(r);
     this.ensureCeo(interrupted);
     this.ensureLeads(interrupted);
@@ -1193,6 +1224,7 @@ export class Swarm {
       notifyChannels: this.notifier.channelsView(),
       emails: this.state.emails,
       emailSender: this.mailer.view(),
+      kimai: this.kimai.view(),
       version: VERSION,
       officeCommit: this.officeHead?.slice(0, 7) ?? null,
       officeUpdate: this.officeHead ? this.officeUpdateView() : undefined,
@@ -1254,8 +1286,7 @@ export class Swarm {
 
   /** Values the journal must never write: the ElevenLabs key and secret-looking environment variables. */
   private secrets(): string[] {
-    const key = this.voice.secret();
-    return key ? [...this.envSecrets, key] : this.envSecrets;
+    return [...this.envSecrets, this.voice.secret(), this.kimai.secret()].filter((x): x is string => !!x);
   }
 
   /** POST /api/journal/sample (demo only): writes a made-up working day as yesterday's journal, to replay. */
@@ -1344,6 +1375,7 @@ export class Swarm {
 
   private async writeStateFile() {
     for (const a of this.state.agents) a.logTail = (this.agentRt.get(a.id)?.log ?? []).slice(-200);
+    this.kimai.alive();
     await fs.mkdir(path.dirname(STATE_FILE), { recursive: true });
     const tmp = `${STATE_FILE}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(this.state, null, 2));
@@ -1907,6 +1939,7 @@ export class Swarm {
    * through a restart (the terminal keeper holds them for the next start) and stop when the office quits.
    */
   async shutdown(restart = false): Promise<void> {
+    this.kimai.stop();
     await this.writeState().catch((err) => console.warn('could not save the state', err));
     await this.journal.close().catch((err) => console.warn('could not write the journal', err));
     await this.backend.releaseClis(restart); // before the terminals are saved: whatever they print next waits in the keeper
@@ -2733,12 +2766,13 @@ export class Swarm {
     const active = (entries: LogEntry[]) => {
       if (entries.some((e) => e.kind !== 'manager')) this.activity.set(a.id, Date.now());
     };
+    rt.sessionModel = this.modelFor(a, how.cli);
     rt.session = this.backend.startSession(
       {
         cwd,
         prompt,
         systemAppend,
-        model: this.modelFor(a, how.cli),
+        model: rt.sessionModel,
         effort: a.effort || this.state.settings.defaultEffort,
         browserTesting: repo.browserTesting,
         additionalDirectories: this.linkedRepos(repo).map((r) => this.backend.mainDir(r.fullName)),
@@ -2785,7 +2819,7 @@ export class Swarm {
             .then(() => fs.writeFile(screenFile(a.id, mime), data))
             .catch((err) => console.warn('could not save screenshot', err));
         },
-        limited: (at) => this.pauseForLimit(at),
+        limited: (at) => this.limitedSession(a, at),
         usageWarning: (info) => this.paceForWarning(info),
         finished: (result) => void this.onFinished(a, repo, result),
       },
@@ -2803,6 +2837,7 @@ export class Swarm {
     a.costUsd += result.costUsd;
     a.turns += result.turns;
     recordCost(this.state.ops, repo.id, result.costUsd, a.endedAt);
+    this.logWork(a, repo.id, a.task ?? 'issue', a.endedAt);
     this.ledger({ kind: 'session', agentId: a.id, key: `${a.id}:${a.startedAt}:${a.endedAt}`, costUsd: result.costUsd, turns: result.turns }, false); // emitted below
     // Dev servers the agent forgot to stop would otherwise keep its port and lock its desk folder.
     void this.releaseDesk(a, repo).catch(() => undefined);
@@ -2818,6 +2853,50 @@ export class Swarm {
     this.applyTeamChanges();
     void this.syncRepo(repo.id);
     setTimeout(() => this.schedule(), 500);
+  }
+
+  // ---------- time tracking ----------
+
+  /** The session that just ended (or was cut off at `end`), as time tracking records it. */
+  private workSession(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number, cutOff = false): WorkSession | null {
+    if (!a.startedAt) return null;
+    const repo = repoId ? this.state.repos.find((r) => r.id === repoId) : undefined;
+    return {
+      key: `${a.id}:${a.startedAt}`,
+      agentId: a.id,
+      agentName: a.name,
+      repoId: repo?.id ?? null,
+      repo: repo?.fullName ?? '',
+      work,
+      issue: work === 'planning' ? null : a.issueNumber,
+      pr: work === 'planning' ? null : a.prNumber,
+      title: a.issueTitle,
+      model: this.agentRt.get(a.id)?.sessionModel ?? a.model,
+      cli: a.sessionCli ?? 'claude',
+      begin: a.startedAt,
+      end,
+      ...(cutOff ? { cutOff } : {}),
+    };
+  }
+
+  private logWork(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number) {
+    const s = this.workSession(a, repoId, work, end);
+    if (s) this.kimai.record(s);
+  }
+
+  /** A worker's session the restart cut off: logged up to the office's last state write, or shown as not logged. */
+  private logCutOff(a: PersistedAgent, cutOffAt: number) {
+    if (!isWorker(a) || !a.task) return;
+    const s = this.workSession(a, a.repoId, a.task, cutOffAt, true);
+    if (!s) return;
+    if (cutOffAt > s.begin) this.kimai.record(s);
+    else this.kimai.notLogged(s, 'Not logged: an office restart cut this session off and its end time is unknown.');
+  }
+
+  /** Claude turned this agent's session away for the usage limit: the office pauses, and the wait isn't working time. */
+  private limitedSession(a: PersistedAgent, resetsAt: number | null) {
+    this.pauseForLimit(resetsAt);
+    this.kimai.limitWait(a.id, Date.now(), resetsAt ?? Date.now() + LIMIT_PAUSE_MS);
   }
 
   private minutes(a: PersistedAgent) {
@@ -3489,6 +3568,14 @@ export class Swarm {
       if (problem) throw new HttpError(400, problem);
       s.email = emailSettings(s.email, patch.email);
     }
+    if (patch.kimai !== undefined) {
+      const problem = kimaiProblem(patch.kimai);
+      if (problem) throw new HttpError(400, problem);
+      const next = kimaiSettings(s.kimai, patch.kimai);
+      if (next.mode === 'live' && !next.url) throw new HttpError(400, 'Set the Kimai URL before you switch to live.');
+      s.kimai = next;
+      setTimeout(() => void this.kimai.flush(), 200);
+    }
     this.save();
     this.broadcast({ type: 'settings', settings: s });
     this.emitCeo();
@@ -4115,7 +4202,7 @@ export class Swarm {
         cwd: CEO_DIR,
         prompt: ceoJobPrompt(job, floor, job.kind === 'review' ? this.reviewInput() : null, job.kind === 'decision' ? this.decisionContext(job) : null),
         systemAppend: ceoSystemPrompt(this.ceoPromptInput(a)),
-        model: a.model || CEO_MODEL,
+        model: (rt.sessionModel = a.model || CEO_MODEL),
         effort: a.effort || CEO_EFFORT,
         browserTesting: false,
         additionalDirectories: this.state.repos.filter((r) => this.repoRt.get(r.id)?.cloneStatus === 'ready').map((r) => this.backend.mainDir(r.fullName)),
@@ -4141,7 +4228,7 @@ export class Swarm {
           const reply = ceoReply(text);
           if (reply) this.postMessage('ceo', reply);
         },
-        limited: (at) => this.pauseForLimit(at),
+        limited: (at) => this.limitedSession(a, at),
         usageWarning: (info) => this.paceForWarning(info),
         finished: (result) => this.onCeoFinished(a, result),
       },
@@ -4158,6 +4245,7 @@ export class Swarm {
     a.turns += result.turns;
     recordCost(this.state.ops, '', result.costUsd, a.endedAt);
     const job = this.state.ceo.job;
+    if (this.state.settings.kimai.planning) this.logWork(a, job?.repoId ?? null, 'planning', a.endedAt);
     this.state.ceo.job = null;
     if (job?.kind === 'decision') void this.decisionAnswered(job, result.ok && !result.interrupted ? result.text : null);
     if (result.interrupted) this.interrupted(a);
@@ -4708,6 +4796,7 @@ export class Swarm {
     if (job.kind === 'board' && job.reasons.includes('cleanup')) Object.assign(l, { lastCleanupAt: Date.now(), fingerprint: this.boardFingerprint(repo) });
     const clone = this.backend.mainDir(repo.fullName);
     const { model, effort } = leadModel(job.kind, a, this.state.settings.lead);
+    rt.sessionModel = model;
     rt.session = this.backend.startSession(
       {
         cwd: dir,
@@ -4735,7 +4824,7 @@ export class Swarm {
         browserUrl: () => undefined,
         screenshot: () => undefined,
         turn: () => undefined, // a lead never messages the manager: only an escalation's brief reaches them
-        limited: (at) => this.pauseForLimit(at),
+        limited: (at) => this.limitedSession(a, at),
         usageWarning: (info) => this.paceForWarning(info),
         finished: (result) => this.onLeadFinished(a, repo.id, result),
       },
@@ -4751,6 +4840,7 @@ export class Swarm {
     a.costUsd += result.costUsd;
     a.turns += result.turns;
     recordCost(this.state.ops, repoId, result.costUsd, a.endedAt);
+    if (this.state.settings.kimai.planning) this.logWork(a, repoId, 'planning', a.endedAt);
     const l = this.state.leads[repoId];
     const job = l?.job ?? null;
     if (l) l.job = null;
@@ -5446,6 +5536,7 @@ export class Swarm {
       this.silenced.delete(a.id);
     });
     const restart = await this.reconcileRestart((a) => a === keep); // keep's session never stopped: nothing to reattach
+    for (const a of restart.interrupted) if (!restart.preparing.has(a)) this.logCutOff(a, Date.now());
     this.finishRestart(restart);
     setTimeout(() => this.schedule(), 500);
     return restartMessage(restart.counts) ?? 'Restarted: nothing to do.';

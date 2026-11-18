@@ -348,6 +348,7 @@ export interface SwarmSettings {
   listen: ListenSettings;
   notify: NotifySettings;
   email: EmailSettings; // Settings → Email: whom the CEO may email (docs/email.md)
+  kimai: KimaiSettings; // Settings → Time tracking: agents' working time as Kimai timesheets (docs/kimai.md)
   lead: LeadSettings; // the floor leads' models (docs/floor-lead.md)
 }
 
@@ -394,6 +395,52 @@ export interface EmailSettings {
   copyTo: string; // a recipient on the list who gets a blind copy of every email ('' = none); test emails go here
   recipients: EmailRecipient[];
   digest: DigestSettings;
+}
+
+/** Time tracking's mode: off, dry-run (every entry built and shown, nothing sent) or live (posted to Kimai). */
+export type KimaiMode = 'off' | 'dry-run' | 'live';
+/** The kinds of work a timesheet is logged as: building, QA, fixing, and the CEO's and floor leads' planning. */
+export type KimaiWork = 'issue' | 'qa' | 'fix' | 'planning';
+
+/** Settings → Time tracking (docs/kimai.md, shared/kimai.ts). The API token lives in the secrets file, never here. */
+export interface KimaiSettings {
+  mode: KimaiMode;
+  url: string; // the Kimai instance, e.g. https://time.example.com ('' = not set)
+  timezone: string; // the IANA zone begin and end are written in ('' = the office server's)
+  minMinutes: number; // sessions shorter than this log nothing
+  planning: boolean; // log the CEO's and floor leads' jobs too, as the planning activity
+  projects: Record<string, number>; // floor (repo id) → Kimai project id
+  billable: Record<string, boolean>; // floor (repo id) → billable (absent = true)
+  skip: Record<string, boolean>; // floor (repo id) → true: its tasks log nothing
+  activities: Record<KimaiWork, number | null>; // kind of work → Kimai activity id
+  users: Record<string, number>; // agent id → Kimai user id (absent: the token's own user)
+  planningProject: number | null; // the project for CEO jobs that aren't about one floor
+}
+
+/** One finished session in the time-tracking outbox, as Settings → Time tracking lists it. */
+export interface KimaiEntryView {
+  key: string;
+  status: 'waiting' | 'sent' | 'failed' | 'dry-run' | 'not-logged';
+  agentName: string;
+  repo: string; // the floor's owner/name, '' for the CEO's own jobs
+  work: KimaiWork;
+  begin: number;
+  end: number;
+  description: string;
+  /** What is (or would be) posted to POST /api/timesheets; null when it can't be built (see error). */
+  payload: Record<string, unknown> | null;
+  kimaiId: number | null; // Kimai's timesheet id once sent
+  error: string | null;
+  tries: number;
+  at: number; // when it last changed
+}
+
+/** Time tracking as the browser sees it: whether the token is set (never the token), and the latest entries. */
+export interface KimaiView {
+  tokenSet: boolean;
+  entries: KimaiEntryView[]; // the latest 50, newest first
+  waiting: number;
+  failed: number;
 }
 
 /** The daily decision digest: one email a day listing what waits for the manager (server/digest.ts). */
@@ -660,6 +707,7 @@ export interface WorldSnapshot {
   notifyChannels: NotifyChannelsView;
   emails: EmailView[]; // every pending email and the latest decided ones, oldest first
   emailSender: EmailSenderView;
+  kimai?: KimaiView; // Settings → Time tracking (absent in old journals)
   progress: ProgressView; // coins, decorations and achievements (#210)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   decisions?: DecisionView[]; // the Decision room's cards: every open decision on every floor (absent in old journals)
@@ -712,6 +760,7 @@ export type ServerEvent =
   /** The floor leads' board changes of the last week, all of them, whenever one is made or undone. */
   | { type: 'boardLog'; boardLog: BoardChangeView[] }
   | { type: 'emailSender'; emailSender: EmailSenderView }
+  | { type: 'kimai'; kimai: KimaiView }
   | { type: 'ceo'; ceo: CeoInfo }
   | { type: 'message'; message: PhoneMessage }
   | { type: 'phoneRead'; at: number }
