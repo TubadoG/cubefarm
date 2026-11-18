@@ -1645,12 +1645,45 @@ const demoEmail: EmailTransport = {
       { email: 'bad-address@acme.example.com', name: 'Broken mailbox', approve: false },
     ],
     digest: { enabled: false, hour: 8, to: 'manager@demo-co.example.com' },
+    inbox: false,
+    mine: ['manager@demo-co.example.com'],
   },
   send: async (_sender, m) => {
     await new Promise((r) => setTimeout(r, 300));
     const ok = !/bad/i.test(m.to);
     console.log(`📧 demo email${ok ? '' : ' (fails: "bad" address)'} to ${m.to}${m.bcc && m.bcc !== m.to ? ` (bcc ${m.bcc})` : ''}: ${m.subject}`);
     if (!ok) throw new Error(`The demo mail server doesn't know ${m.to}.`);
+  },
+  // The demo's mailbox: a reply from the manager, one from a client and an out-of-office, all "just arrived", so with
+  // reading switched on the first lands on the phone and the other two show as ignored. Fixed ids: each counts once.
+  get: async () => {
+    await new Promise((r) => setTimeout(r, 200));
+    const at = new Date().toISOString();
+    const who = (address: string, name: string) => ({ emailAddress: { address, name } });
+    const internal = [{ name: 'X-MS-Exchange-Organization-AuthAs', value: 'Internal' }];
+    const msg = (id: string, from: ReturnType<typeof who>, subject: string, text: string, headers: { name: string; value: string }[]) => ({
+      id,
+      internetMessageId: `<${id}@demo-co.example.com>`,
+      from,
+      sender: from,
+      subject,
+      uniqueBody: { contentType: 'text', content: text },
+      receivedDateTime: at,
+      hasAttachments: false,
+      attachments: [],
+      internetMessageHeaders: headers,
+    });
+    const manager = who('manager@demo-co.example.com', 'The manager');
+    return {
+      status: 200,
+      body: {
+        value: [
+          msg('demo-reply-manager', manager, 'Re: Weekly report', 'Thanks. Put the checkout fix first next week, please.', internal),
+          msg('demo-reply-client', who('client@acme.example.com', 'Ada at Acme'), 'Re: Your PR', 'Looks good to me!', [{ name: 'Authentication-Results', value: 'spf=pass; dkim=pass; dmarc=pass action=none header.from=acme.example.com' }]),
+          msg('demo-reply-ooo', manager, 'Automatic reply: Weekly report', "I'm out until Monday.", [...internal, { name: 'Auto-Submitted', value: 'auto-replied' }]),
+        ],
+      },
+    };
   },
 };
 

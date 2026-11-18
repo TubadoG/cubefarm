@@ -9,8 +9,10 @@ past it.
 **Settings → Email** (the manager's console, or the settings in pocket mode):
 
 - **The CEO may send email**: the switch. Off, `send_email` is refused and the CEO isn't told about it.
-- **From**: the mailbox it sends from. Replies go there; every email ends with a two-line footer saying the
-  company's office CEO (an AI agent in cubefarm) wrote it.
+- **From**: the mailbox it sends from. Every email ends with a two-line footer saying the company's office CEO (an
+  AI agent in cubefarm) wrote it, and what happens to a reply: to your own addresses, "Reply to this email to answer
+  the CEO." while the office reads replies (below), "Replies to this address aren't read; answer in the office." while
+  it doesn't; to anyone else, "Replies to this address aren't read."
 - **Blind copy of every email to**: someone on the list (usually you) who gets a copy of each email. **Send test**
   sends a short email there.
 - **Who the CEO may email**: up to 25 people. **Ask me** (on by default): each email to them waits in **Approvals**
@@ -94,8 +96,58 @@ Test-ServicePrincipalAuthorization -Identity <application id> -Resource ceo@your
 Then remove the Graph **Mail.Send** application permission from the app registration (the Exchange role assignment
 grants it, scoped), so a leaked credential can only send as that one mailbox.
 
+## Reading replies
+
+The office can read the From mailbox's Inbox, so you can answer the CEO (or the digest) by replying to its email.
+Your own emails reach the CEO exactly like a message typed on the phone, and the CEO answers on the phone as usual;
+the phone marks them ✉️. Everything else is only listed. `server/mailInbox.ts` does it:
+
+- Every 2 minutes, while email is on, a sender is saved, From is set and **Read replies to this mailbox** is on, it asks
+  Graph for the Inbox's messages since the last one it handled (`GET /users/{from}/mailFolders/inbox/messages`).
+- Only the new part of a reply reaches the CEO (Graph's `uniqueBody`: no quoted thread, no footer), after "Email from
+  the manager. Subject: …", cut to 4000 characters. Attachments are counted ("2 attachments, not read"), never opened.
+- An email is passed on only when all of these hold; otherwise it is listed as ignored, with the reason:
+  - it isn't an auto-reply or a bounce (`Auto-Submitted` other than `no`, `X-Auto-Response-Suppress`, a postmaster or
+    mailer-daemon sender, an "Automatic reply:" subject), so out-of-office answers to the office's email never loop;
+  - its From is its sender, and Exchange marks it internal to the tenant (`X-MS-Exchange-Organization-AuthAs:
+    Internal`, which Exchange strips from mail coming in from outside), or, for an address outside the office's own
+    domain, Exchange Online's own `Authentication-Results` says `dmarc=pass` ("failed sender check" otherwise);
+  - its address is on **Count email from these addresses as mine** ("not yours" otherwise). Switching reading on with
+    the list empty puts the blind-copy address on it. Other people on the CEO's list are never passed on.
+- Nothing is marked read or moved, so **Mail.Read** is enough. The ids handled and the last arrival time are saved
+  before an email is passed on, so a restart never delivers one twice. Mail that arrived before reading was switched
+  on (or back on) is never replayed.
+- A 403 from Graph puts one note in the phone thread ("the app may lack Mail.Read…"), and the office then checks
+  every 30 minutes until a check succeeds. A 401 gets a new token and tries once more. Logs name the sender, the
+  subject and the outcome, never the text.
+
+**Settings → Email → Replies** shows the switch, your addresses, the last check (and its error), and the last 20
+emails read with what happened to each. **Check now** (`POST /api/email/inbox/check`) checks straight away;
+`GET /api/email/inbox` returns the same list.
+
+### Setting it up
+
+The app needs **Mail.Read** for the office mailbox. As with Mail.Send, scope it with RBAC for Applications instead
+of granting the Graph permission in Entra (a tenant-wide Mail.Read lets the app read every mailbox):
+
+```powershell
+Connect-ExchangeOnline
+New-ManagementRoleAssignment -App <application id> -Role "Application Mail.Read" -CustomResourceScope "cubefarm CEO mailbox"
+Test-ServicePrincipalAuthorization -Identity <application id> -Resource ceo@your-company.com
+```
+
+Use the management scope you made for Mail.Send. If you once granted **Mail.Read** in Entra, remove it there. Exchange
+can take up to 2 hours to apply a new role assignment; until then checks get a 403. Then switch on **Read replies to
+this mailbox**, make sure your address is in the list, and reply to any office email with one line: it shows on the
+phone within 2 minutes.
+
+Not covered: replies from anyone else (listed only), attachments, answering a decision by email (a reply to the digest
+reaches the CEO as an ordinary message, and the CEO can act on it with its tools; one-tap decisions stay in the
+Decision room), and marking or filing mail.
+
 ## The demo
 
 A demo office starts with a made-up sender and a short list (one person behind **Ask me**, one whose address contains
 "bad" so sends to it fail). Nothing is sent: each email is logged. Ask the demo CEO on the phone to "email Ada the
-weekly update" to see one wait for your OK.
+weekly update" to see one wait for your OK. Switch on **Read replies to this mailbox** to see three made-up replies
+arrive: one from the manager reaches the CEO, a client's and an out-of-office are listed as ignored.

@@ -17,7 +17,7 @@ async function office() {
   const swarm = new Swarm(createDemoBackend());
   (swarm as unknown as Internals).ensureCeo([]);
   await swarm.mailer.init(); // the demo's fake sender
-  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD], digest: { enabled: false, hour: 8, to: '' } } });
+  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [] } });
   const tools = (swarm as unknown as Internals).officeTools();
   const send = (to: string, subject = 'Weekly report') => tools.call('send_email', { to, subject, body: 'All floors are green.' });
   return { swarm, send, emails: () => swarm.snapshot().emails, messages: () => swarm.snapshot().messages };
@@ -158,4 +158,21 @@ describe('the daily digest', () => {
     await internals.digestTick(new Date(2026, 9, 21, 12, 0));
     expect(emails()).toHaveLength(1);
   });
+});
+
+describe('reading replies', () => {
+  it('hands the manager’s reply to the CEO as their message, marked as email, and ignores the rest', async () => {
+    const { swarm, messages } = await office();
+    const s = swarm.snapshot().settings.email;
+    swarm.updateSettings({ email: { ...s, copyTo: AUTO.email, mine: [], inbox: true } });
+    expect(swarm.snapshot().settings.email.mine).toEqual([AUTO.email]); // the blind-copy address counts as the manager's
+    swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, mine: ['manager@demo-co.example.com'] } });
+    const view = await swarm.inbox.check(true);
+    expect(view.items.map((i) => i.outcome)).toEqual(['ignored', 'ignored', 'delivered']);
+    const m = messages().filter((x) => x.from === 'manager');
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({ via: 'email', text: expect.stringMatching(/^Email from the manager\. Subject: Re: Weekly report/) });
+    await swarm.inbox.check(true);
+    expect(messages().filter((x) => x.from === 'manager')).toHaveLength(1);
+  }, 15_000); // a whole demo office: slow when the full suite runs in parallel
 });

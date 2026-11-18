@@ -285,6 +285,8 @@ app.put('/api/email/sender', route((req) => swarm.mailer.setSender(req.body ?? {
 app.delete('/api/email/sender', route(() => swarm.mailer.removeSender()));
 app.post('/api/email/test', route(() => swarm.testEmail()));
 app.post('/api/email/digest', route(() => swarm.sendDigest()));
+app.get('/api/email/inbox', route(() => swarm.inbox.view()));
+app.post('/api/email/inbox/check', route(() => swarm.inbox.check(true)));
 // Time tracking (docs/kimai.md): the Kimai token (write-only), a connection test, and retrying parked entries.
 app.put('/api/kimai/token', route((req) => swarm.kimai.setToken(req.body ?? {})));
 app.delete('/api/kimai/token', route(() => swarm.kimai.removeToken()));

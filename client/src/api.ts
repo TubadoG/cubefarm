@@ -1,7 +1,7 @@
 import { useStore } from './store';
 import type { PongResult } from '../../shared/pong';
 import type { AgentStyle } from '../../shared/looks';
-import type { AgentCli, AgentPromptView, AgentView, BoardChangeView, DoctorFinding, DoctorFix, EffortLevel, EmailView, GhRepoSummary, KimaiView, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
+import type { AgentCli, AgentPromptView, AgentView, BoardChangeView, DoctorFinding, DoctorFix, EffortLevel, EmailInboxView, EmailView, GhRepoSummary, KimaiView, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
 import type { JournalChunk, JournalDayView } from '../../shared/journal';
 import type { DecorItem, ProgressView } from '../../shared/progress';
 import type { DecisionChoice } from '../../shared/decisions';
@@ -145,6 +145,7 @@ export const api = {
   declineEmail: (id: string, note?: string) => call<EmailView>('POST', `/api/emails/${id}/decline`, { note }),
   /** A test email to Settings → Email's copy-to address. No toast: the settings show why it failed. */
   testEmail: () => call<{ ok: true; to: string }>('POST', '/api/email/test', undefined, false),
+  checkInbox: () => call<EmailInboxView>('POST', '/api/email/inbox/check', undefined, false),
   /** The daily digest, now (Settings → Email). No toast: the settings show the outcome. */
   sendDigest: () => call<{ sent: boolean; to?: string; subject?: string; reason?: string }>('POST', '/api/email/digest', undefined, false),
   /** Settings → Time tracking: the Kimai token (write-only; '' removes it), a connection test, and retrying parked entries. No toasts: the page shows the outcome. */

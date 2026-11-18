@@ -1,5 +1,6 @@
-// Sending email through Microsoft Graph (docs/email.md): an app-only token (client credentials, with a client secret or
-// a certificate whose private key stays in Azure Key Vault), then POST /users/{from}/sendMail. The pure parts (the
+// Email through Microsoft Graph (docs/email.md): an app-only token (client credentials, with a client secret or a
+// certificate whose private key stays in Azure Key Vault), then POST /users/{from}/sendMail to send, and GETs of the
+// mailbox's Inbox to read replies (mailInbox.ts). The pure parts (the
 // client assertion's JWT, the request body, base64url) are exported for tests. Tokens, assertions and secrets are
 // never logged or put in an error message.
 import { createHash, randomUUID } from 'node:crypto';
@@ -25,6 +26,8 @@ export interface OutgoingEmail {
 export interface EmailTransport {
   /** Sends it, or throws why not, in words the manager can act on. */
   send(sender: EmailSender, msg: OutgoingEmail): Promise<void>;
+  /** A Graph GET, bodies as text. `fresh`: drop the cached token first (after a 401). Throws only on network errors. */
+  get(sender: EmailSender, url: string, fresh?: boolean): Promise<{ status: number; body: unknown }>;
   /** A fake sender a demo office starts with (never used for anything real). */
   demoSender?: EmailSender;
   /** The demo office's made-up email settings, for an office that has none saved. */
@@ -122,8 +125,10 @@ async function vaultSign(keyId: string, digest: string): Promise<string> {
   return sig;
 }
 
+const tokenKey = (s: EmailSender) => `${s.tenantId}/${s.clientId}/${senderMode(s)}`;
+
 async function accessToken(s: EmailSender): Promise<string> {
-  const key = `${s.tenantId}/${s.clientId}/${senderMode(s)}`;
+  const key = tokenKey(s);
   const hit = tokens.get(key);
   if (hit && hit.until > Date.now()) return hit.token;
   const form = new URLSearchParams({ client_id: s.clientId, scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' });
@@ -154,9 +159,18 @@ export const graphTransport: EmailTransport = {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.status === 202 || res.ok) return;
-    if (res.status === 401) tokens.delete(`${sender.tenantId}/${sender.clientId}/${senderMode(sender)}`);
+    if (res.status === 401) tokens.delete(tokenKey(sender));
     const err = (await res.json().catch(() => ({}))) as { error?: { code?: string; message?: string } };
     const why = res.status === 403 ? ` The app may lack Mail.Send for ${msg.from} (see docs/email.md).` : '';
     throw new Error(`Graph refused the email (HTTP ${res.status}${err.error?.code ? `, ${err.error.code}` : ''}): ${(err.error?.message ?? '').slice(0, 200)}${why}`);
+  },
+  async get(sender, url, fresh) {
+    if (fresh) tokens.delete(tokenKey(sender));
+    const token = await accessToken(sender);
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', Prefer: 'outlook.body-content-type="text"' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    return { status: res.status, body: await res.json().catch(() => null) };
   },
 };
