@@ -38,6 +38,18 @@ async function clip(url: string): Promise<Blob> {
   return res.blob();
 }
 
+/** PUT /api/logo with the image file itself as the body (PNG, JPEG or WebP, up to 1 MB). */
+async function putLogo(file: Blob): Promise<{ logoAt: number | null }> {
+  const res = await fetch('/api/logo', { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = (data as { error?: string }).error ?? `${res.status} ${res.statusText}`;
+    useStore.getState().pushToast('error', message);
+    throw new Error(message);
+  }
+  return data as { logoAt: number | null };
+}
+
 const r = (repoId: string) => `/api/repos/${encodeURIComponent(repoId)}`;
 
 /** An agent's coding agent, model and effort ('' = the office default). */
@@ -144,6 +156,8 @@ export const api = {
   sendEmail: (id: string) => call<EmailView>('POST', `/api/emails/${id}/send`),
   declineEmail: (id: string, note?: string) => call<EmailView>('POST', `/api/emails/${id}/decline`, { note }),
   /** A test email to Settings → Email's copy-to address. No toast: the settings show why it failed. */
+  setLogo: (file: Blob) => putLogo(file),
+  removeLogo: () => call<{ logoAt: number | null }>('DELETE', '/api/logo'),
   testEmail: () => call<{ ok: true; to: string }>('POST', '/api/email/test', undefined, false),
   /** The daily digest, now (Settings → Email). No toast: the settings show the outcome. */
   sendDigest: () => call<{ sent: boolean; to?: string; subject?: string; reason?: string }>('POST', '/api/email/digest', undefined, false),

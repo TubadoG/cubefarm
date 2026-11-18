@@ -837,6 +837,27 @@ function SettingsTab() {
           <span>Company name</span>
           <input defaultValue={settings.companyName} placeholder="cubefarm" onBlur={(e) => e.target.value !== settings.companyName && set({ companyName: e.target.value })} />
         </label>
+        <div className="field">
+          <span>Logo (on the lobby sign; PNG, JPEG or WebP up to 1 MB, made for a dark background)</span>
+          <div className="row wrap">
+            {settings.logoAt && <img className="logo-preview" src={`/api/logo?v=${settings.logoAt}`} alt="The company logo" />}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              aria-label="Upload a logo"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) void api.setLogo(f).catch(() => undefined);
+              }}
+            />
+            {settings.logoAt && (
+              <button className="btn btn-small btn-ghost" onClick={() => void api.removeLogo().catch(() => undefined)}>
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
         <label className="field">
           <span>The office dog's name</span>
           <input key={settings.dogName} defaultValue={settings.dogName} placeholder="Biscuit" maxLength={24} onBlur={(e) => e.target.value.trim() !== settings.dogName && set({ dogName: e.target.value })} />

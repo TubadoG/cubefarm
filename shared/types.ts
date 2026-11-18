@@ -333,6 +333,7 @@ export interface SwarmSettings {
   ceoHeartbeatMin: number; // minutes between the CEO's periodic reviews; 0 = off
   managerName: string; // what the office calls you
   companyName: string;
+  logoAt: number | null; // when the company logo (GET /api/logo, server/logo.ts) was last set; null: none
   dogName: string; // the office dog's name, on its tag and in the hint when you aim at it
   projectsDir: string; // where your project folders live; new projects are created here
   setupDone: boolean; // the first-run setup wizard has been completed or skipped

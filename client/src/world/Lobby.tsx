@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { floorPrCounts, pendingRequests, useStore } from '../store';
 import { useKeyName } from '../ui/controls';
@@ -296,6 +296,7 @@ export function Lobby() {
   const user = useStore((s) => s.user);
   const managerName = useStore((s) => s.settings.managerName);
   const company = useStore((s) => s.settings.companyName);
+  const logo = useLogo();
   const boss = managerName || user;
   return (
     <group>
@@ -362,12 +363,20 @@ export function Lobby() {
         size={[7, 1.6]}
         px={[1400, 320]}
         draw={(ctx) =>
-          drawSign(ctx, 1400, 320, [
-            { text: `✻ ${company || 'cubefarm'}`, size: 120 },
-            { text: company ? 'powered by a team of AI coding agents' : 'a team of AI coding agents', size: 48, weight: 400, color: '#AABFD5' },
-          ], '#26394D')
+          drawSign(
+            ctx,
+            1400,
+            320,
+            [
+              { text: logo ? company || 'cubefarm' : `✻ ${company || 'cubefarm'}`, size: 120 },
+              { text: company ? 'powered by a team of AI coding agents' : 'a team of AI coding agents', size: 48, weight: 400, color: '#AABFD5' },
+            ],
+            '#26394D',
+            undefined,
+            logo && { img: logo, w: logo.naturalWidth, h: logo.naturalHeight },
+          )
         }
-        deps={[company]}
+        deps={[company, logo]}
       />
 
       <MissionControl />
@@ -392,4 +401,23 @@ export function Lobby() {
       <Plant position={[3, 0, -HALF_D + 0.7]} scale={0.8} />
     </group>
   );
+}
+
+/** The company logo (Settings → Company), loaded again whenever it changes; null while there is none or it fails. */
+function useLogo(): HTMLImageElement | null {
+  const at = useStore((s) => s.settings.logoAt);
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!at) return setImg(null);
+    let alive = true;
+    const next = new Image();
+    next.onload = () => alive && setImg(next);
+    next.onerror = () => alive && setImg(null);
+    next.src = `/api/logo?v=${at}`;
+    return () => {
+      alive = false;
+      next.onload = next.onerror = null;
+    };
+  }, [at]);
+  return img;
 }

@@ -644,24 +644,40 @@ export function drawCandidateTag(ctx: CanvasRenderingContext2D, w: number, h: nu
   ctx.fillText(fit(`${detail}${floor ? ` · Floor ${floor}` : ''}`, w - 100), 80, h * 0.72);
 }
 
-export function drawSign(ctx: CanvasRenderingContext2D, w: number, h: number, lines: { text: string; size: number; color?: string; weight?: number }[], bg: string, fg = '#FFFFFF') {
+/**
+ * A sign: centred lines of text on a rounded panel. `logo`: an image drawn left of the first line, three quarters as
+ * tall as the panel, the two centred together (the lobby's company logo).
+ */
+export function drawSign(ctx: CanvasRenderingContext2D, w: number, h: number, lines: { text: string; size: number; color?: string; weight?: number }[], bg: string, fg = '#FFFFFF', logo?: { img: CanvasImageSource; w: number; h: number } | null) {
   roundRect(ctx, 0, 0, w, h, 28);
   ctx.fillStyle = bg;
   ctx.fill();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const total = lines.reduce((s, l) => s + l.size * 1.25, 0);
+  // The logo sits beside the text block, three quarters as tall as the panel, and shifts the text right by half its width.
+  const lh = logo ? h * 0.75 : 0;
+  const lw = logo && logo.h > 0 ? Math.min(w * 0.3, (logo.w / logo.h) * lh) : 0;
+  const gap = lw ? 36 : 0;
   let y = h / 2 - total / 2;
-  for (const l of lines) {
+  let textX = w / 2;
+  lines.forEach((l, i) => {
     y += (l.size * 1.25) / 2;
     ctx.fillStyle = l.color ?? fg;
     // Komet has 400 and 700 only: lighter asks get 400, heavier 700
     ctx.font = `${(l.weight ?? 700) >= 600 ? 700 : 400} ${l.size}px ${SANS}`;
     let text = l.text;
-    while (text.length > 3 && ctx.measureText(text).width > w - 40) text = `${text.slice(0, -2)}…`;
-    ctx.fillText(text, w / 2, y);
+    const room = w - 40 - lw - gap;
+    while (text.length > 3 && ctx.measureText(text).width > room) text = `${text.slice(0, -2)}…`;
+    if (i === 0 && logo && lw) {
+      const groupW = lw + gap + ctx.measureText(text).width;
+      const x0 = (w - groupW) / 2;
+      ctx.drawImage(logo.img, x0, (h - (lw / logo.w) * logo.h) / 2, lw, (lw / logo.w) * logo.h);
+      textX = x0 + lw + gap + (groupW - lw - gap) / 2;
+    }
+    ctx.fillText(text, textX, y);
     y += (l.size * 1.25) / 2;
-  }
+  });
   ctx.textAlign = 'left';
 }
 

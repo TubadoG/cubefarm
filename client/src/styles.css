@@ -5667,3 +5667,12 @@ html[data-high-contrast] :is(button, a, input, select, textarea, summary, [tabin
     margin-bottom: 6px;
   }
 }
+
+/* Settings → Company: the logo, on the sign's own navy so a light logo shows. */
+.logo-preview {
+  height: 48px;
+  width: auto;
+  padding: 4px;
+  border-radius: 6px;
+  background: #26394d;
+}
