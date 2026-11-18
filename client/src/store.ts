@@ -227,6 +227,7 @@ export const useStore = create<State>((set, get) => ({
     ceoHeartbeatMin: 60,
     managerName: '',
     companyName: '',
+    logoAt: null,
     dogName: DEFAULT_DOG_NAME,
     projectsDir: '',
     setupDone: true,

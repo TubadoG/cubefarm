@@ -24,6 +24,7 @@ import { conflictFixInstructions, MAX_QA_ROUNDS, qaGate, qaOutcome, type PreQa, 
 import { qaInstructions } from './qaPrompt.ts';
 import { followKeptCli, resumeNote, resumesAfterRestart } from './restartRecovery.ts';
 import { emptyKimai, KimaiSync, loadKimai, type KimaiState } from './kimai.ts';
+import { findLogo, logoProblem, removeLogo, saveLogo } from './logo.ts';
 import { emptyInbox, loadInbox, MailInbox, type InboxState } from './mailInbox.ts';
 import type { WorkSession } from './timesheets.ts';
 import { DEFAULT_KIMAI, kimaiProblem, kimaiSettings } from '../shared/kimai.ts';
@@ -532,6 +533,7 @@ export class Swarm {
       ceoHeartbeatMin: 60,
       managerName: '',
       companyName: '',
+      logoAt: null,
       dogName: DEFAULT_DOG_NAME,
       projectsDir: DEFAULT_PROJECTS_DIR,
       setupDone: false,
@@ -3610,6 +3612,38 @@ export class Swarm {
   }
 
   /** The setup wizard: who you are, the company, and your CEO. */
+  // ---------- the company logo (logo.ts) ----------
+
+  private get logoBase() {
+    return this.backend.demo ? 'demo-logo' : 'logo';
+  }
+
+  /** GET /api/logo: the saved file, or null. */
+  logoFile() {
+    return findLogo(HOME_DIR, this.logoBase);
+  }
+
+  /** PUT /api/logo: the image itself as the body. */
+  async setLogo(body: unknown) {
+    const problem = logoProblem(body);
+    if (problem) throw new HttpError(400, problem);
+    await saveLogo(HOME_DIR, this.logoBase, body as Buffer);
+    return this.logoChanged(Date.now());
+  }
+
+  async removeLogo() {
+    await removeLogo(HOME_DIR, this.logoBase);
+    return this.logoChanged(null);
+  }
+
+  private logoChanged(at: number | null) {
+    const s = this.state.settings;
+    s.logoAt = at;
+    this.save();
+    this.broadcast({ type: 'settings', settings: s });
+    return { logoAt: at };
+  }
+
   setup(x: { managerName?: string; companyName?: string; scaling?: string; ceoName?: string; ceoLook?: string; ceoColor?: string }) {
     this.updateSettings({
       managerName: x.managerName,

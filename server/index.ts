@@ -281,6 +281,15 @@ app.post(
 );
 app.post('/api/requests/:id/reject', route((req) => swarm.rejectRequest(String(req.params.id), str(req.body?.note))));
 // The CEO's email (docs/email.md): the sender's credentials (write-only), a test, and the emails waiting for the manager.
+// The company logo (server/logo.ts): the lobby sign draws it beside the company name.
+app.get('/api/logo', (_req, res, next) => {
+  swarm
+    .logoFile()
+    .then((f) => (f ? res.type(f.type).set('Cache-Control', 'no-cache').sendFile(f.file, { dotfiles: 'allow' }) : res.status(404).json({ error: 'No logo is set' })))
+    .catch(next);
+});
+app.put('/api/logo', express.raw({ type: () => true, limit: '1mb' }), route((req) => swarm.setLogo(req.body)));
+app.delete('/api/logo', route(() => swarm.removeLogo()));
 app.put('/api/email/sender', route((req) => swarm.mailer.setSender(req.body ?? {})));
 app.delete('/api/email/sender', route(() => swarm.mailer.removeSender()));
 app.post('/api/email/test', route(() => swarm.testEmail()));
