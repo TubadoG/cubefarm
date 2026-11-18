@@ -185,8 +185,17 @@ export function TimeTrackingSettings() {
       </label>
 
       <h4 className="notify-h">Agents → Kimai users</h4>
-      <p className="muted small">Optional. An agent without a user logs to the token's own user. Logging for other users needs that permission in Kimai.</p>
+      <p className="muted small">
+        Optional. An agent without a user of its own logs to the default user, or to the token's own user when there is none. Logging for other users needs that
+        permission in Kimai.
+      </p>
       <ul className="email-list">
+        <li className="row wrap">
+          <span className="grow">
+            <b>Default user</b> <span className="muted small">every agent without one, new hires too</span>
+          </span>
+          <IdInput value={k.defaultUser} label="Default Kimai user for agents" onSave={(v) => void save({ defaultUser: v })} />
+        </li>
         {agents.map((a) => (
           <li key={a.id} className="row wrap">
             <span className="grow">

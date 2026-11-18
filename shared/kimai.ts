@@ -22,6 +22,7 @@ export const DEFAULT_KIMAI: KimaiSettings = {
   skip: {},
   activities: { issue: null, qa: null, fix: null, planning: null },
   users: {},
+  defaultUser: null,
   planningProject: null,
 };
 
@@ -112,6 +113,7 @@ export function kimaiSettings(base: KimaiSettings | undefined, patch: unknown): 
     skip: p.skip === undefined ? b.skip : boolMap(p.skip, b.skip),
     activities,
     users: p.users === undefined ? b.users : idMap(p.users, b.users),
+    defaultUser: p.defaultUser === undefined ? b.defaultUser : kimaiId(p.defaultUser),
     planningProject: p.planningProject === undefined ? b.planningProject : kimaiId(p.planningProject),
   };
 }

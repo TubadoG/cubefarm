@@ -39,7 +39,8 @@ In the manager's console:
   should log nothing, and a project for the CEO's office-wide jobs.
 - **Work → activities**, and **Log the CEO's and floor leads' jobs as Planning** (off by default).
 - **Shortest task logged**: tasks shorter than this (1 minute by default) log nothing.
-- **Agents → Kimai users**.
+- **Agents → Kimai users**, and a **Default user** for every agent without one (new hires too). Set it when the
+  token belongs to a person or an admin: without a user, an entry goes to the token's own user.
 - **Latest entries**: the last 50 with their status (Dry-run, Waiting, Sent with Kimai's id, Parked with the reason,
   Not logged). Click one to see exactly what is (or would be) posted. **Retry failed** puts parked entries back in
   line after you fix a mapping; they're rebuilt with the current mappings.

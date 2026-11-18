@@ -60,6 +60,12 @@ describe('timesheet', () => {
     expect(timesheet(session({ work: 'fix' }), [T0, T0 + 60_000], settings)).toMatchObject({ payload: { activity: 23 } });
   });
 
+  it('sends agents without a user of their own to the default user', () => {
+    const k = { ...settings, defaultUser: 4 };
+    expect(timesheet(session({ agentId: 'new-hire' }), [T0, T0 + 60_000], k)).toMatchObject({ payload: { user: 4 } });
+    expect(timesheet(session(), [T0, T0 + 60_000], k)).toMatchObject({ payload: { user: 5 } });
+  });
+
   it('logs the CEO’s office-wide jobs as planning, on the planning project', () => {
     const ceo = session({ agentId: 'ceo', agentName: 'Marcus', repoId: null, repo: '', work: 'planning', issue: null, pr: null, title: 'Weekly review' });
     expect(timesheet(ceo, [T0, T0 + 60_000], settings)).toMatchObject({ payload: { project: 99, activity: 24, billable: true, description: '[Planning] Marcus · office · Weekly review · 1m actual · claude-opus-5-5 via claude' } });

@@ -413,7 +413,8 @@ export interface KimaiSettings {
   billable: Record<string, boolean>; // floor (repo id) → billable (absent = true)
   skip: Record<string, boolean>; // floor (repo id) → true: its tasks log nothing
   activities: Record<KimaiWork, number | null>; // kind of work → Kimai activity id
-  users: Record<string, number>; // agent id → Kimai user id (absent: the token's own user)
+  users: Record<string, number>; // agent id → Kimai user id (absent: defaultUser)
+  defaultUser: number | null; // the Kimai user for agents without one (null: the token's own user)
   planningProject: number | null; // the project for CEO jobs that aren't about one floor
 }
 
