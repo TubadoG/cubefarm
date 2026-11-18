@@ -11,6 +11,7 @@ import { realOffice, type OfficeHost } from './officeUpdate.ts';
 import { elevenLabs } from './elevenlabs.ts';
 import { httpTransport, type NotifyTransport } from './notifier.ts';
 import { graphTransport, type EmailTransport } from './graphMail.ts';
+import { httpKimai, type KimaiTransport } from './kimai.ts';
 import type { VoiceApi } from './voice.ts';
 import { openMeteo, type WeatherApi } from './weather.ts';
 import type { AgentTerminal } from './terminal.ts';
@@ -111,6 +112,8 @@ export interface Backend {
   notify: NotifyTransport;
   /** The CEO's outbound email (Microsoft Graph; docs/email.md). */
   email: EmailTransport;
+  /** Time tracking's Kimai API (docs/kimai.md). */
+  kimai: KimaiTransport;
   /** The demo only: a made-up past week for mission control, so a fresh demo office has numbers from the start. */
   seedOps?(repos: string[], now: number): OpsHistory;
   /** The demo only: how many agents a fresh demo office hires on floor `floor`. */
@@ -190,4 +193,5 @@ export const realBackend: Backend = {
   weather: openMeteo,
   notify: httpTransport,
   email: graphTransport,
+  kimai: httpKimai,
 };

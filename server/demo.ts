@@ -16,6 +16,8 @@ import { VoiceApiError, type VoiceApi } from './voice.ts';
 import type { WeatherApi } from './weather.ts';
 import type { NotifyTransport } from './notifier.ts';
 import type { EmailTransport } from './graphMail.ts';
+import type { KimaiTransport } from './kimai.ts';
+import { DEFAULT_KIMAI } from '../shared/kimai.ts';
 
 // `npm run demo`: a fake GitHub and fake Claude Code sessions, so the office (including the
 // build → QA → fix loop) can be explored without spending any usage or touching real repos.
@@ -935,6 +937,7 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
     weather: demoWeather,
     notify: demoNotify,
     email: demoEmail,
+    kimai: demoKimai,
     seedOps: (ids, at) => demoPastWeek(ids, at),
     demoTeam: (floor) => demoTeam(scale, floor),
     simulateUsage: demoUsage,
@@ -1648,6 +1651,39 @@ const demoEmail: EmailTransport = {
     const ok = !/bad/i.test(m.to);
     console.log(`📧 demo email${ok ? '' : ' (fails: "bad" address)'} to ${m.to}${m.bcc && m.bcc !== m.to ? ` (bcc ${m.bcc})` : ''}: ${m.subject}`);
     if (!ok) throw new Error(`The demo mail server doesn't know ${m.to}.`);
+  },
+};
+
+// ---------- time tracking ----------
+
+let demoTimesheetId = 1000;
+
+/**
+ * No network: a made-up Kimai that answers the office itself. A demo office starts in dry-run with ids for every floor
+ * and kind of work, so its entries show what would be sent; switched to live, each "post" gets a fake id and a log line.
+ * A URL containing "bad" refuses the token, to try the error.
+ */
+const demoKimai: KimaiTransport = {
+  demoSettings: (repoIds) => ({
+    ...DEFAULT_KIMAI,
+    mode: 'dry-run',
+    url: 'https://kimai.demo.example',
+    projects: Object.fromEntries(repoIds.map((id, i) => [id, i + 1])),
+    activities: { issue: 1, qa: 2, fix: 3, planning: 4 },
+  }),
+  request: async (req) => {
+    await new Promise((r) => setTimeout(r, 150));
+    if (/bad/i.test(req.url)) return { status: 401, body: { code: 401, message: 'Invalid credentials' } };
+    const path = new URL(req.url).pathname;
+    if (path.endsWith('/api/version')) return { status: 200, body: { version: '2.x (demo)', semver: '2.0.0-demo' } };
+    if (path.endsWith('/api/users/me')) return { status: 200, body: { id: 1, username: 'demo', alias: 'Demo office' } };
+    if (req.method === 'GET' && path.endsWith('/api/timesheets')) return { status: 200, body: [] };
+    if (req.method === 'POST' && path.endsWith('/api/timesheets')) {
+      const id = ++demoTimesheetId;
+      console.log(`⏱ demo Kimai timesheet #${id}: ${(req.body as { description?: string }).description ?? ''}`);
+      return { status: 200, body: { id } };
+    }
+    return { status: 404, body: { code: 404, message: 'Not found' } };
   },
 };
 

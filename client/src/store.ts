@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type BoardChangeView, type CeoInfo, type CliView, type DoctorFinding, type EmailSenderView, type EmailView, type HireRequestView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
+import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type BoardChangeView, type CeoInfo, type CliView, type DoctorFinding, type EmailSenderView, type EmailView, type HireRequestView, type KimaiView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
 import { blockers } from '../../shared/issues';
 import { latestListed } from '../../shared/watch';
 import { DEFAULT_WEATHER, DEFAULT_WORLD_EVENTS, EMPTY_WEATHER_VIEW, type WeatherView } from '../../shared/outside';
 import { DEFAULT_NOTIFY } from '../../shared/notify';
 import { DEFAULT_EMAIL } from '../../shared/email';
+import { DEFAULT_KIMAI } from '../../shared/kimai';
 import { speechText } from '../../shared/speech';
 import { showDesktopNote } from './notifications';
 import { EMPTY_OPS, newAlarms } from './ops';
@@ -134,6 +135,7 @@ interface State {
   decisions: DecisionView[]; // the Decision room's cards
   boardLog: BoardChangeView[]; // the floor leads' board changes of the last week, with their undo (Decision room)
   emailSender: EmailSenderView; // whether email's sender is set up on the server (its kind and a hint only)
+  kimai: KimaiView; // Settings → Time tracking: whether the token is set (never the token) and the latest entries
   notifyChannels: NotifyChannelsView; // which chat apps have a webhook saved (hints only) and how many devices get push
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   restarting: boolean; // the connection dropped because the office is restarting to update
@@ -238,6 +240,7 @@ export const useStore = create<State>((set, get) => ({
     listen: { provider: 'off', autoSend: false, handsFree: false },
     notify: DEFAULT_NOTIFY,
     email: DEFAULT_EMAIL,
+    kimai: DEFAULT_KIMAI,
     lead: { triageModel: 'claude-opus-5-5', triageEffort: 'high', cleanupModel: 'claude-sonnet-5', cleanupEffort: 'low' },
   },
   clis: [],
@@ -268,6 +271,7 @@ export const useStore = create<State>((set, get) => ({
   decisions: [],
   boardLog: [],
   emailSender: { set: false, mode: null, hint: '' },
+  kimai: { tokenSet: false, entries: [], waiting: 0, failed: 0 },
   pong: {},
   restarting: false,
   visitors: [],
@@ -341,6 +345,7 @@ export const useStore = create<State>((set, get) => ({
           notifyChannels: d.notifyChannels ?? get().notifyChannels,
           emails: d.emails ?? [],
           emailSender: d.emailSender ?? get().emailSender,
+          kimai: d.kimai ?? get().kimai,
           progress: d.progress ?? { floors: {}, achievements: [], coffees: 0, merges: 0 },
           pong: d.pong ?? {},
           restarting: false,
@@ -477,6 +482,9 @@ export const useStore = create<State>((set, get) => ({
         break;
       case 'emailSender':
         set({ emailSender: ev.emailSender });
+        break;
+      case 'kimai':
+        set({ kimai: ev.kimai });
         break;
       case 'ceo':
         set({ ceo: ev.ceo });

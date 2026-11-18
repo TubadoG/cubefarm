@@ -285,6 +285,11 @@ app.put('/api/email/sender', route((req) => swarm.mailer.setSender(req.body ?? {
 app.delete('/api/email/sender', route(() => swarm.mailer.removeSender()));
 app.post('/api/email/test', route(() => swarm.testEmail()));
 app.post('/api/email/digest', route(() => swarm.sendDigest()));
+// Time tracking (docs/kimai.md): the Kimai token (write-only), a connection test, and retrying parked entries.
+app.put('/api/kimai/token', route((req) => swarm.kimai.setToken(req.body ?? {})));
+app.delete('/api/kimai/token', route(() => swarm.kimai.removeToken()));
+app.post('/api/kimai/test', route(() => swarm.kimai.test()));
+app.post('/api/kimai/retry', route(() => swarm.kimai.retryFailed()));
 // The Decision room (shared/decisions.ts): the manager's answer on a card, and questions for the CEO.
 app.post('/api/decisions/:repo/:n/answer', route((req) => swarm.answerDecision(repoId(req), num(req.params.n), req.body)));
 app.post('/api/decisions/:repo/:n/ask', route((req) => swarm.askDecision(repoId(req), num(req.params.n), req.body)));

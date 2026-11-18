@@ -5512,6 +5512,28 @@ html[data-high-contrast] :is(button, a, input, select, textarea, summary, [tabin
   border-top: 1px solid var(--border-hairline);
   overflow-wrap: anywhere;
 }
+/* ui/TimeTrackingSettings.tsx */
+.kimai-id {
+  width: 6em;
+}
+.kimai-entry {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  font-size: 0.85rem;
+}
+.kimai-entry:focus-visible {
+  outline: 2px solid var(--focus, currentColor);
+}
+.kimai-payload {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--sunken);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* ---------- the Decision room (ui/DecisionRoom.tsx) ---------- */
 .decisions-btn {
