@@ -45,8 +45,8 @@ describe('timesheet', () => {
         end: '2026-11-17T09:45:00',
         project: 11,
         activity: 21,
-        description: 'Ada · Build · acme/shop #12 / PR #34 · Add a cart',
-        tags: 'ai-agent,cubefarm,claude-opus-5-5,claude',
+        description: '[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 45m actual · claude-opus-5-5 via claude',
+        tags: 'ai-agent',
         billable: false,
         user: 5,
       },
@@ -55,14 +55,14 @@ describe('timesheet', () => {
 
   it('maps QA and Fix to their activities, and leaves the user out when the agent has none', () => {
     const qa = timesheet(session({ work: 'qa', agentId: 'bo', agentName: 'Bo', issue: null }), [T0, T0 + 60_000], settings);
-    expect(qa).toMatchObject({ payload: { activity: 22, description: 'Bo · QA · acme/shop PR #34 · Add a cart' } });
+    expect(qa).toMatchObject({ payload: { activity: 22, description: '[QA] Bo · acme/shop PR #34 · Add a cart · 1m actual · claude-opus-5-5 via claude' } });
     expect('payload' in qa && 'user' in qa.payload).toBe(false);
     expect(timesheet(session({ work: 'fix' }), [T0, T0 + 60_000], settings)).toMatchObject({ payload: { activity: 23 } });
   });
 
   it('logs the CEO’s office-wide jobs as planning, on the planning project', () => {
     const ceo = session({ agentId: 'ceo', agentName: 'Marcus', repoId: null, repo: '', work: 'planning', issue: null, pr: null, title: 'Weekly review' });
-    expect(timesheet(ceo, [T0, T0 + 60_000], settings)).toMatchObject({ payload: { project: 99, activity: 24, billable: true, description: 'Marcus · Planning · office · Weekly review' } });
+    expect(timesheet(ceo, [T0, T0 + 60_000], settings)).toMatchObject({ payload: { project: 99, activity: 24, billable: true, description: '[Planning] Marcus · office · Weekly review · 1m actual · claude-opus-5-5 via claude' } });
   });
 
   it('parks a floor with no project, naming the repo', () => {
@@ -70,9 +70,9 @@ describe('timesheet', () => {
     expect(timesheet(session(), [T0, T0 + 60_000], { ...settings, activities: { ...settings.activities, issue: null } })).toEqual({ error: 'No Kimai activity for Build' });
   });
 
-  it('marks a session a restart cut off, and keeps commas out of tags', () => {
-    expect(describeSession(session({ cutOff: true }))).toMatch(/\(cut off by an office restart\)$/);
-    expect(tags(session({ model: 'a,b' }))).toEqual(['ai-agent', 'cubefarm', 'a b', 'claude']);
+  it('marks a session a restart cut off, and sends only the ai-agent tag', () => {
+    expect(describeSession(session({ cutOff: true }), [T0, T0 + 47 * 60_000])).toBe('[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 47m actual · claude-opus-5-5 via claude (cut off by an office restart)');
+    expect(tags()).toEqual(['ai-agent']);
   });
 });
 

@@ -91,7 +91,7 @@ describe('KimaiSync', () => {
     const saved = loadKimai(JSON.parse(JSON.stringify(first.state)));
     const found = await rig({
       state: saved,
-      answer: (req) => (req.method === 'GET' ? { status: 200, body: [{ id: 777, begin: '2026-11-17T15:00:00+0000', description: 'Ada · Build · acme/shop #12 / PR #34 · Add a cart' }] } : { status: 200, body: { id: 1 } }),
+      answer: (req) => (req.method === 'GET' ? { status: 200, body: [{ id: 777, begin: '2026-11-17T15:00:00+0000', description: '[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 30m actual · m via claude' }] } : { status: 200, body: { id: 1 } }),
     });
     await found.sync.flush();
     expect(found.posts()).toHaveLength(0);
@@ -259,7 +259,7 @@ describe('sessions a restart cut off', () => {
     internals.logCutOff({ ...agent, id: 'bo', name: 'Bo', startedAt: T0 + 60_000 }, T0);
     const entries = swarm.kimai.view().entries;
     expect(entries).toHaveLength(2);
-    expect(entries.find((e) => e.agentName === 'Ada')).toMatchObject({ status: 'dry-run', end: T0 + 20 * 60_000, description: 'Ada · Fix · acme/shop PR #34 · Add a cart (cut off by an office restart)' });
+    expect(entries.find((e) => e.agentName === 'Ada')).toMatchObject({ status: 'dry-run', end: T0 + 20 * 60_000, description: '[Fix] Ada · acme/shop PR #34 · Add a cart · 20m actual · claude (cut off by an office restart)' });
     expect(entries.find((e) => e.agentName === 'Bo')).toMatchObject({ status: 'not-logged', error: expect.stringMatching(/end time is unknown/) });
   });
 });

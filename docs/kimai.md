@@ -10,14 +10,19 @@ It ships **off**. Start in **dry-run**, look over a day of entries, then switch 
 
 You need:
 
-- the Kimai URL, e.g. `https://time.example.com`;
+- the Kimai URL, e.g. `https://time.example.com`. When Kimai runs on the office's own machine, use its local
+  address (e.g. `http://127.0.0.1:8080`), so the office doesn't depend on a VPN;
 - an API token: in Kimai, your profile → **API access** → create a token (Kimai 2.x, sent as `Authorization: Bearer`);
 - the Kimai **project** id for each floor (Customers → Projects; the id is in the project's URL);
 - the **activity** ids for Build, QA, Fix and, if you log them, Planning (usually Development, QA, Rework, Planning);
 - optionally, a Kimai **user** id per agent. Without one, entries go to the token's own user. Logging for other users
-  needs that permission (`edit_other_timesheet`) for the token's user.
+  needs that permission (`edit_other_timesheet`) for the token's user. To keep AI time apart from people's, create
+  one Kimai user for the agents (nobody signs in as it) and map every agent to it. If teams limit a project, that
+  user must be in the project's team, or Kimai refuses its timesheets.
 
-Kimai creates tags it hasn't seen when the token's user may create tags; otherwise create `ai-agent` and `cubefarm` first.
+Create the `ai-agent` tag in Kimai first: Kimai does not create a tag from an API call.
+
+Give the office its own API token rather than one other tools share, so you can revoke it on its own.
 
 ## Settings → Time tracking
 
@@ -50,19 +55,26 @@ Over REST: `PUT`/`DELETE /api/kimai/token`, `POST /api/kimai/test`, `POST /api/k
   "end": "2026-11-17T09:45:00",
   "project": 11,
   "activity": 21,
-  "description": "Ada · Build · acme/shop #12 / PR #34 · Add a cart",
-  "tags": "ai-agent,cubefarm,claude-opus-5-5,claude",
-  "billable": true,
-  "user": 5
+  "description": "[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 45m actual · claude-opus-5-5 via claude",
+  "tags": "ai-agent",
+  "billable": false,
+  "user": 4
 }
 ```
+
+`begin` and `end` are local times with no offset; Kimai adds the user's. `tags` is a comma-separated string (an
+array is refused). Only `ai-agent` is sent: the kind of work leads the description, since one activity may hold
+every kind, and the model and CLI follow it. Send `user` whenever the token belongs to an admin, or the time goes
+to the admin.
 
 ## How hours are measured
 
 - A task's hours are its session's wall-clock time, start to end. Idle agents log nothing; agents working in parallel
   each log their own time.
 - A wait on Claude's usage limit inside a session isn't working time: the entry is split around it.
-- The office doesn't round: Kimai's own rounding rules apply.
+- The office doesn't round: Kimai's own rounding rules apply. Kimai may round each duration up (e.g. to the next
+  30 minutes), so its totals can be higher than the agents' real time. The real minutes are in each description
+  ("45m actual").
 - A session an office restart or update cut off is logged once, ending when the office last saved its state, with
   "(cut off by an office restart)" in its description. When that end isn't known it is listed as **Not logged**.
   A CLI that kept working through the restart is logged when it finishes, as usual.

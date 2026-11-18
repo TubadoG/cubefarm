@@ -42,7 +42,6 @@ export interface LimitWait {
 }
 
 export const AI_TAG = 'ai-agent';
-export const OFFICE_TAG = 'cubefarm';
 
 /** The office server's own time zone, the default when the setting is ''. */
 export function serverZone(): string {
@@ -87,18 +86,26 @@ export function workSpans(begin: number, end: number, waits: { from: number; to:
   return spans.filter(([s, e]) => e - s >= Math.max(1000, minMs));
 }
 
-/** "<Agent> · <Build|QA|Fix> · <repo> #<issue> / PR #<pr> · <title>", or the planning job's label. */
-export function describe(s: WorkSession): string {
+/**
+ * "[<Build|QA|Fix|Planning>] <Agent> · <repo> #<issue> / PR #<pr> · <title> · <n>m actual · <model> via <cli>". The kind
+ * of work leads, since one Kimai activity may hold them all. The actual minutes are there because Kimai may round the
+ * duration it shows (e.g. up to 30 minutes); the model and CLI because only the ai-agent tag is sent.
+ */
+export function describe(s: WorkSession, span?: [number, number]): string {
   const refs = [s.issue ? `#${s.issue}` : '', s.pr ? `PR #${s.pr}` : ''].filter(Boolean).join(' / ');
   const where = [s.repo || (s.work === 'planning' ? 'office' : ''), refs].filter(Boolean).join(' ');
-  const text = [s.agentName, WORK_LABEL[s.work], where, s.title?.trim() ?? ''].filter(Boolean).join(' · ');
-  return (s.cutOff ? `${text} (cut off by an office restart)` : text).slice(0, 1000);
+  const actual = span ? `${Math.max(1, Math.round((span[1] - span[0]) / 60_000))}m actual` : '';
+  const how = [s.model, s.cli].filter(Boolean).join(' via ');
+  const text = [s.agentName, where, s.title?.trim() ?? '', actual, how].filter(Boolean).join(' · ');
+  return `[${WORK_LABEL[s.work]}] ${text}${s.cutOff ? ' (cut off by an office restart)' : ''}`.slice(0, 1000);
 }
 
-/** ai-agent and cubefarm on every entry, then the model and the CLI. Commas would split a tag in Kimai. */
-export function tags(s: WorkSession): string[] {
-  const clean = (t: string) => t.replace(/,/g, ' ').trim().slice(0, 100);
-  return [...new Set([AI_TAG, OFFICE_TAG, clean(s.model), clean(s.cli)].filter(Boolean))];
+/**
+ * Only ai-agent, on every entry: Kimai creates a tag it hasn't seen only for users allowed to, and refuses the rest,
+ * so the model and CLI go in the description instead. Commas would split a tag in Kimai.
+ */
+export function tags(): string[] {
+  return [AI_TAG];
 }
 
 /** The timesheet for one span of a session, or why it can't be built (a missing mapping, worded for the manager). */
@@ -114,8 +121,8 @@ export function timesheet(s: WorkSession, span: [number, number], k: KimaiSettin
       end: localDateTime(span[1], k.timezone),
       project,
       activity,
-      description: describe(s),
-      tags: tags(s).join(','),
+      description: describe(s, span),
+      tags: tags().join(','),
       billable: s.repoId ? k.billable[s.repoId] !== false : true,
       ...(user ? { user } : {}),
     },
