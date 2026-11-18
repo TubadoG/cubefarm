@@ -84,20 +84,56 @@ export function screen(m: GraphMessage, o: { mine: string[]; officeDomain: strin
   return { ok: true };
 }
 
-/** What the CEO gets: who and the subject, then the new text of the email, cut to CEO_MAX with the attachments counted. */
-export function ceoText(m: GraphMessage): string {
-  const subject = (m.subject ?? '').replace(/\s+/g, ' ').trim() || '(no subject)';
+/** At most this many phone messages for one email; anything longer is cut, and the last part says so. */
+export const CEO_PARTS_MAX = 12;
+
+/** Split text into chunks of at most `size` characters, at a paragraph break, else a line break, else a space. */
+export function splitText(text: string, size: number): string[] {
+  const out: string[] = [];
+  let rest = text;
+  while (rest.length > size) {
+    const window = rest.slice(0, size);
+    let at = window.lastIndexOf('\n\n');
+    if (at < size / 2) at = window.lastIndexOf('\n');
+    if (at < size / 2) at = window.lastIndexOf(' ');
+    if (at < size / 2) at = size;
+    out.push(rest.slice(0, at).trimEnd());
+    rest = rest.slice(at).replace(/^\s+/, '');
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+/**
+ * What the CEO gets: who and the subject, then the new text of the email, with the attachments counted. An email
+ * longer than one phone message (CEO_MAX) arrives as numbered parts, in order, so a long brief is never cut off.
+ */
+export function ceoTexts(m: GraphMessage): string[] {
+  const subject = ((m.subject ?? '').replace(/\s+/g, ' ').trim() || '(no subject)').slice(0, 200);
   const files = m.attachments ? m.attachments.filter((a) => !a.isInline).length : m.hasAttachments ? -1 : 0;
   const note = files === 0 ? '' : files < 0 ? '\n\n(attachments, not read)' : `\n\n(${files} attachment${files === 1 ? '' : 's'}, not read)`;
-  const head = `Email from the manager. Subject: ${subject.slice(0, 200)}\n\n`;
   const body =
     (m.uniqueBody?.content ?? '')
       .replace(/\r\n?/g, '\n')
       .replace(/[ \t]+\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim() || '(no text)';
-  const room = CEO_MAX - head.length - note.length;
-  return `${head}${body.length > room ? `${body.slice(0, room - 1)}…` : body}${note}`;
+  const single = `Email from the manager. Subject: ${subject}\n\n`;
+  if (single.length + body.length + note.length <= CEO_MAX) return [`${single}${body}${note}`];
+  // Room for the longest head ("(part 12 of 12)") and, on every part, the attachment note and a cut marker.
+  const head = (i: number, n: number) => `Email from the manager (part ${i} of ${n}). Subject: ${subject}\n\n`;
+  const cutNote = '\n\n(The rest of this email was too long and was not delivered: ask the manager to send it.)';
+  const room = CEO_MAX - head(CEO_PARTS_MAX, CEO_PARTS_MAX).length - note.length - cutNote.length;
+  let chunks = splitText(body, room);
+  const cut = chunks.length > CEO_PARTS_MAX;
+  if (cut) chunks = chunks.slice(0, CEO_PARTS_MAX);
+  const n = chunks.length;
+  return chunks.map((c, i) => `${head(i + 1, n)}${c}${i === n - 1 ? `${cut ? cutNote : ''}${note}` : ''}`);
+}
+
+/** The first phone message for an email (kept for callers that need only one). */
+export function ceoText(m: GraphMessage): string {
+  return ceoTexts(m)[0];
 }
 
 // ---------- the poller ----------
@@ -248,7 +284,7 @@ export class MailInbox {
       // Saved before it's delivered: a restart from here on never delivers it again.
       await this.deps.persist();
       this.deps.log(`📥 inbox: ${item.from} “${item.subject}”: ${verdict.ok ? 'delivered' : `ignored (${verdict.reason})`}`);
-      if (verdict.ok) await this.deps.deliver(ceoText(m));
+      if (verdict.ok) for (const part of ceoTexts(m)) await this.deps.deliver(part);
     }
     const v = this.view();
     this.deps.changed(v);

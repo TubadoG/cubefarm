@@ -105,7 +105,10 @@ the phone marks them ✉️. Everything else is only listed. `server/mailInbox.t
 - Every 2 minutes, while email is on, a sender is saved, From is set and **Read replies to this mailbox** is on, it asks
   Graph for the Inbox's messages since the last one it handled (`GET /users/{from}/mailFolders/inbox/messages`).
 - Only the new part of a reply reaches the CEO (Graph's `uniqueBody`: no quoted thread, no footer), after "Email from
-  the manager. Subject: …", cut to 4000 characters. Attachments are counted ("2 attachments, not read"), never opened.
+  the manager. Subject: …". An email longer than one phone message (4000 characters) arrives whole, as numbered parts
+  in order ("Email from the manager (part 2 of 3). Subject: …"), split at paragraph, line or word breaks; at most 12
+  parts (about 45,000 characters), after which the last part says the rest was not delivered. Attachments are counted
+  ("2 attachments, not read") on the last part, never opened.
 - An email is passed on only when all of these hold; otherwise it is listed as ignored, with the reason:
   - it isn't an auto-reply or a bounce (`Auto-Submitted` other than `no`, `X-Auto-Response-Suppress`, a postmaster or
     mailer-daemon sender, an "Automatic reply:" subject), so out-of-office answers to the office's email never loop;
