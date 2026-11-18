@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type BoardChangeView, type CeoInfo, type CliView, type DoctorFinding, type EmailSenderView, type EmailView, type HireRequestView, type KimaiView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
+import { CEO_ID, DEFAULT_DOG_NAME, DEFAULT_MAX_AGENTS, type AgentView, type BoardChangeView, type CeoInfo, type CliView, type DoctorFinding, type EmailInboxView, type EmailSenderView, type EmailView, type HireRequestView, type KimaiView, type LogLine, type NotifyChannelsView, type OfficeUpdateView, type OpsView, type PhoneMessage, type PongRow, type PrPreviewView, type QaView, type RepoView, type ServerEvent, type SwarmSettings, type TickerItem, type UsageView, type VisitorView, type VoiceCacheView, type WorldSnapshot } from '../../shared/types';
 import { blockers } from '../../shared/issues';
 import { latestListed } from '../../shared/watch';
 import { DEFAULT_WEATHER, DEFAULT_WORLD_EVENTS, EMPTY_WEATHER_VIEW, type WeatherView } from '../../shared/outside';
@@ -136,6 +136,7 @@ interface State {
   boardLog: BoardChangeView[]; // the floor leads' board changes of the last week, with their undo (Decision room)
   emailSender: EmailSenderView; // whether email's sender is set up on the server (its kind and a hint only)
   kimai: KimaiView; // Settings → Time tracking: whether the token is set (never the token) and the latest entries
+  emailInbox: EmailInboxView; // Settings → Email: replies read from the office mailbox (never their text)
   notifyChannels: NotifyChannelsView; // which chat apps have a webhook saved (hints only) and how many devices get push
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   restarting: boolean; // the connection dropped because the office is restarting to update
@@ -273,6 +274,7 @@ export const useStore = create<State>((set, get) => ({
   boardLog: [],
   emailSender: { set: false, mode: null, hint: '' },
   kimai: { tokenSet: false, entries: [], waiting: 0, failed: 0 },
+  emailInbox: { lastCheck: null, lastError: null, items: [] },
   pong: {},
   restarting: false,
   visitors: [],
@@ -347,6 +349,7 @@ export const useStore = create<State>((set, get) => ({
           emails: d.emails ?? [],
           emailSender: d.emailSender ?? get().emailSender,
           kimai: d.kimai ?? get().kimai,
+          emailInbox: d.emailInbox ?? get().emailInbox,
           progress: d.progress ?? { floors: {}, achievements: [], coffees: 0, merges: 0 },
           pong: d.pong ?? {},
           restarting: false,
@@ -486,6 +489,9 @@ export const useStore = create<State>((set, get) => ({
         break;
       case 'kimai':
         set({ kimai: ev.kimai });
+        break;
+      case 'emailInbox':
+        set({ emailInbox: ev.emailInbox });
         break;
       case 'ceo':
         set({ ceo: ev.ceo });

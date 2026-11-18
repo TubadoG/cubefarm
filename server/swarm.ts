@@ -25,6 +25,7 @@ import { qaInstructions } from './qaPrompt.ts';
 import { followKeptCli, resumeNote, resumesAfterRestart } from './restartRecovery.ts';
 import { emptyKimai, KimaiSync, loadKimai, type KimaiState } from './kimai.ts';
 import { findLogo, logoProblem, removeLogo, saveLogo } from './logo.ts';
+import { emptyInbox, loadInbox, MailInbox, type InboxState } from './mailInbox.ts';
 import type { WorkSession } from './timesheets.ts';
 import { DEFAULT_KIMAI, kimaiProblem, kimaiSettings } from '../shared/kimai.ts';
 import { reconcileStep, restartMessage, sessionStart, workState, type ReconcileStep, type RestartCounts, type WorkState } from './reconcile.ts';
@@ -57,7 +58,7 @@ import { DEFAULT_LISTEN, DEFAULT_VOICE, listenSettings, speaks, Voice, voiceSett
 import { Notifier } from './notifier.ts';
 import { clip, DECISION_MAX, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
-import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient } from '../shared/email.ts';
+import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient, replyNote } from '../shared/email.ts';
 import { Mailer } from './email.ts';
 import { briefAlert, decisionNote, stuckPickView, stuckPrDecision, waitsOnDecision } from './decision.ts';
 import { businessHold, closeComment, MAX_REBUILDS, giveUpStep, REBUILD_RETRY_MS, issueComment, parkBrief, parkDue, parkedComment, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
@@ -263,6 +264,7 @@ interface Persisted {
   boardLog: BoardEntry[]; // the floor leads' board changes and their undo (boardLog.ts)
   order: Record<string, number[]>; // each floor's backlog order set by its lead (reorder_backlog), by repo id
   kimai: KimaiState; // time tracking's outbox (kimai.ts)
+  emailInbox: InboxState; // replies read from the office mailbox (mailInbox.ts)
 }
 
 /** A Decision room card's own state: its thread with the CEO, and the manager's answer. */
@@ -395,6 +397,7 @@ const FULL_HOUSE = 4;
 // Mission control's numbers are recomputed after these events (debounced), and every half minute for the clock's sake.
 const OPS_EVENTS = new Set<ServerEvent['type']>(['repo', 'repoRemoved', 'agent', 'agentRemoved', 'qa', 'qaRemoved', 'ceo']);
 const OPS_TICK_MS = 30_000;
+const INBOX_TICK_MS = 30_000; // the inbox checks whether a read is due (mailInbox.ts: every 2 minutes, 30 after a 403)
 const DIGEST_TICK_MS = 60_000; // the daily digest checks whether it is due (server/digest.ts digestDue)
 const DECISION_TICK_MS = 5 * 60_000; // the decision clock reads briefs and replies, and applies defaults (decisionClock.ts)
 // How often the watchdog looks for stuck work (watchdog.ts).
@@ -570,6 +573,7 @@ export class Swarm {
     boardLog: [],
     order: {},
     kimai: emptyKimai(),
+    emailInbox: emptyInbox(),
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -670,6 +674,8 @@ export class Swarm {
   readonly mailer: Mailer;
   /** Time tracking (docs/kimai.md): finished sessions as Kimai timesheets. The demo's never leave the office. */
   readonly kimai: KimaiSync;
+  /** Replies to the office mailbox (docs/email.md): the manager's own reach the CEO. The demo's are made up. */
+  readonly inbox: MailInbox;
   private emailSeq = 0;
   private sendingEmails = new Set<string>(); // ids the manager approved that are on their way
   private toldStuck = new Set<string>(); // `${agentId}:${endedAt}`: agents in an error the manager was notified about
@@ -712,6 +718,20 @@ export class Swarm {
       transport: backend.email,
       secretsFile: path.join(HOME_DIR, backend.demo ? 'demo-secrets.json' : 'secrets.json'),
       changed: (emailSender) => this.broadcast({ type: 'emailSender', emailSender }),
+    });
+    this.inbox = new MailInbox({
+      state: () => this.state.emailInbox,
+      settings: () => this.state.settings.email,
+      ready: () => this.mailer.ready,
+      get: (url, fresh) => this.mailer.get(url, fresh),
+      persist: () => this.writeState(),
+      deliver: (text) => this.messageCeo(text, 'email'),
+      note: (text) => this.postMessage('office', text),
+      changed: (emailInbox) => {
+        this.save();
+        this.broadcast({ type: 'emailInbox', emailInbox });
+      },
+      log: (line) => console.log(line),
     });
     this.kimai = new KimaiSync({
       transport: backend.kimai,
@@ -815,6 +835,7 @@ export class Swarm {
         boardLog: Array.isArray(loaded.boardLog) ? pruneBoardLog(loaded.boardLog, Date.now()) : [],
         order: loaded.order && typeof loaded.order === 'object' ? loaded.order : {},
         kimai: loadKimai(loaded.kimai),
+        emailInbox: loadInbox(loaded.emailInbox),
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -967,6 +988,8 @@ export class Swarm {
     setInterval(() => this.watchdogTick(), WATCHDOG_MS);
     setInterval(() => this.screenTick(), SCREEN_TICK_MS);
     setInterval(() => void this.digestTick(), DIGEST_TICK_MS);
+    setInterval(() => this.inbox.tick(), INBOX_TICK_MS);
+    setTimeout(() => this.inbox.tick(), 10_000);
     setInterval(() => void this.decisionTick(), DECISION_TICK_MS);
     void this.backend
       .detectClis()
@@ -1227,6 +1250,7 @@ export class Swarm {
       emails: this.state.emails,
       emailSender: this.mailer.view(),
       kimai: this.kimai.view(),
+      emailInbox: this.inbox.view(),
       version: VERSION,
       officeCommit: this.officeHead?.slice(0, 7) ?? null,
       officeUpdate: this.officeHead ? this.officeUpdateView() : undefined,
@@ -3568,7 +3592,9 @@ export class Swarm {
     if (patch.email !== undefined) {
       const problem = emailProblem(patch.email, s.email);
       if (problem) throw new HttpError(400, problem);
+      const wasReading = s.email.inbox;
       s.email = emailSettings(s.email, patch.email);
+      if (s.email.inbox && !wasReading) this.inbox.switchedOn();
     }
     if (patch.kimai !== undefined) {
       const problem = kimaiProblem(patch.kimai);
@@ -4306,12 +4332,12 @@ export class Swarm {
     setTimeout(() => this.schedule(), 300);
   }
 
-  /** The manager's phone → the CEO. Injected into a running session, otherwise the CEO picks it up next. */
-  async messageCeo(text: string) {
+  /** The manager's phone (or an email of theirs) → the CEO. Injected into a running session, otherwise the CEO picks it up next. */
+  async messageCeo(text: string, via?: 'email') {
     const t = text.trim().slice(0, 4000);
     if (!t) throw new HttpError(400, 'Empty message');
     const a = this.ceo();
-    this.postMessage('manager', t);
+    this.postMessage('manager', t, undefined, undefined, via);
     const rt = this.agentRt.get(a.id)!;
     if (rt.session) {
       this.appendLog(a, [{ kind: 'manager', text: `▶ Manager: ${t}` }]);
@@ -5668,8 +5694,8 @@ export class Swarm {
 
   // ---------- the phone ----------
 
-  private postMessage(from: PhoneMessage['from'], text: string, requestId?: string, emailId?: string) {
-    const m: PhoneMessage = { id: this.messageSeq++, from, text: text.trim().slice(0, 6000), at: Date.now(), ...(requestId ? { requestId } : {}), ...(emailId ? { emailId } : {}) };
+  private postMessage(from: PhoneMessage['from'], text: string, requestId?: string, emailId?: string, via?: 'email') {
+    const m: PhoneMessage = { id: this.messageSeq++, from, text: text.trim().slice(0, 6000), at: Date.now(), ...(requestId ? { requestId } : {}), ...(emailId ? { emailId } : {}), ...(via ? { via } : {}) };
     const v = this.state.settings.voice;
     if (v.provider !== 'off' && speaks(m, v)) m.voice = v.provider; // what the phone's ▶ replays it with
     this.state.messages.push(m);
@@ -5792,8 +5818,8 @@ export class Swarm {
         to: e.to,
         toName: e.toName,
         subject: e.subject,
-        text: emailText(e.body, company, s.from),
-        ...(html ? { html: emailHtml(html, company, s.from) } : {}),
+        text: emailText(e.body, company, replyNote(s, e.to)),
+        ...(html ? { html: emailHtml(html, company, replyNote(s, e.to)) } : {}),
         bcc: s.copyTo || undefined,
       });
       Object.assign(e, { status: 'sent', decidedAt: Date.now() });
@@ -5871,7 +5897,7 @@ export class Swarm {
     if (!s.from) throw new HttpError(400, 'Set the From address first.');
     if (!this.mailer.ready) throw new HttpError(400, 'No sender is set up yet: save the app registration with PUT /api/email/sender (docs/email.md).');
     try {
-      await this.mailer.send({ from: s.from, to: s.copyTo, toName: '', subject: 'Test from cubefarm', text: emailText('Email from the office works.', this.state.settings.companyName, s.from) });
+      await this.mailer.send({ from: s.from, to: s.copyTo, toName: '', subject: 'Test from cubefarm', text: emailText('Email from the office works.', this.state.settings.companyName, replyNote(s, s.copyTo)) });
     } catch (err) {
       throw new HttpError(502, `The test email didn't go out: ${oneLine(err)}`);
     }

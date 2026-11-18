@@ -5668,6 +5668,12 @@ html[data-high-contrast] :is(button, a, input, select, textarea, summary, [tabin
   }
 }
 
+/* Settings → Email → Replies: the emails read from the mailbox, two lines each. */
+.inbox-item {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 /* Settings → Company: the logo, on the sign's own navy so a light logo shows. */
 .logo-preview {
   height: 48px;

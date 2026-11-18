@@ -57,6 +57,12 @@ export class Mailer {
     await this.deps.transport.send(this.sender, msg);
   }
 
+  /** A Graph GET as the sender (mailInbox.ts), or throws when none is set. */
+  async get(url: string, fresh = false): Promise<{ status: number; body: unknown }> {
+    if (!this.sender) throw new Error('No email sender is set up on the office.');
+    return this.deps.transport.get(this.sender, url, fresh);
+  }
+
   private changed() {
     const v = this.view();
     this.deps.changed(v);

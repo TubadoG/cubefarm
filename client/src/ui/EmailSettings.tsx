@@ -1,11 +1,12 @@
 // Settings → Email (docs/email.md): whether the CEO may email at all, the mailbox it sends from, who gets a blind
 // copy, and the list of people it may write to (each sent at once, or after the manager's OK). The sender's
 // credentials are set over REST and never reach the browser: only whether they're set. The daily digest (server/digest.ts)
-// goes to one of them, once a day.
+// goes to one of them, once a day. Reading replies (server/mailInbox.ts) hands the manager's own emails to the mailbox
+// to the CEO; only who sent each one, its subject and what happened to it reach the browser.
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { EMAILS_PER_DAY, emailAddress, MAX_NAME, MAX_RECIPIENTS } from '../../../shared/email';
+import { EMAILS_PER_DAY, emailAddress, MAX_MINE, MAX_NAME, MAX_RECIPIENTS } from '../../../shared/email';
 import type { EmailRecipient, EmailSettings as Email } from '../../../shared/types';
 import { confirmDialog } from './Confirm';
 
@@ -14,6 +15,9 @@ const DOCS = 'https://github.com/leonvanzyl/cubefarm/blob/main/docs/email.md';
 export function EmailSettings() {
   const email = useStore((s) => s.settings.email);
   const sender = useStore((s) => s.emailSender);
+  const inbox = useStore((s) => s.emailInbox);
+  const [mineAdd, setMineAdd] = useState('');
+  const [check, setCheck] = useState<{ busy: boolean; result: string | null }>({ busy: false, result: null });
   const [from, setFrom] = useState(email.from);
   const [add, setAdd] = useState({ email: '', name: '', approve: true });
   const [error, setError] = useState('');
@@ -39,6 +43,17 @@ export function EmailSettings() {
       setTest({ busy: false, result: `✓ Sent to ${r.to}`, ok: true });
     } catch (err) {
       setTest({ busy: false, result: err instanceof Error ? err.message : String(err), ok: false });
+    }
+  };
+  const mine = email.mine ?? [];
+  const mineOk = !!emailAddress(mineAdd) && !mine.includes(emailAddress(mineAdd)!) && mine.length < MAX_MINE;
+  const runCheck = async () => {
+    setCheck({ busy: true, result: null });
+    try {
+      await api.checkInbox();
+      setCheck({ busy: false, result: null });
+    } catch (err) {
+      setCheck({ busy: false, result: err instanceof Error ? err.message : String(err) });
     }
   };
   const runDigest = async () => {
@@ -192,6 +207,68 @@ export function EmailSettings() {
             </span>
           )}
         </div>
+      </div>
+      <h4 className="notify-h">Replies</h4>
+      <p className="muted small">
+        When this is on, the office reads {email.from || 'the From mailbox'} every 2 minutes. Your own emails to it reach the CEO like a message from the phone, and
+        the CEO answers on the phone. Email from anyone else, auto-replies and senders that fail the checks are only listed here. Nothing is marked read or moved.
+      </p>
+      <div className="notify-hook">
+        <label className="toggle block">
+          <input type="checkbox" checked={!!email.inbox} onChange={(e) => void save({ inbox: e.target.checked })} />
+          <span>Read replies to this mailbox</span>
+        </label>
+        <div className="small">Count email from these addresses as mine:</div>
+        {mine.length === 0 && <p className="muted small">Nobody: every email is ignored.</p>}
+        <ul className="email-list">
+          {mine.map((m) => (
+            <li key={m} className="row wrap">
+              <span className="grow small">{m}</span>
+              <button className="btn btn-small btn-ghost" aria-label={`Remove ${m}`} onClick={() => void save({ mine: mine.filter((x) => x !== m) })}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        <form
+          className="row wrap"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!mineOk) return;
+            void save({ mine: [...mine, mineAdd.trim()] });
+            setMineAdd('');
+          }}
+        >
+          <input type="email" value={mineAdd} onChange={(e) => setMineAdd(e.target.value)} placeholder="you@your-company.com" aria-label="Your email address" autoComplete="off" className="grow" />
+          <button className="btn btn-small btn-good" disabled={!mineOk}>
+            Add
+          </button>
+        </form>
+        <div className="row wrap">
+          <span className="small grow" role="status">
+            {inbox.lastCheck ? `Last checked ${new Date(inbox.lastCheck).toLocaleTimeString()}` : 'Not checked yet'}
+            {inbox.lastError && <span className="term-error"> · {inbox.lastError}</span>}
+          </span>
+          <button className="btn btn-small" disabled={check.busy || !email.inbox || !sender.set || !email.enabled} onClick={() => void runCheck()}>
+            {check.busy ? 'Checking…' : 'Check now'}
+          </button>
+        </div>
+        {check.result && <div className="small term-error">{check.result}</div>}
+        {inbox.items.length > 0 && (
+          <ul className="email-list inbox-list">
+            {inbox.items.map((i) => (
+              <li key={i.id} className="small inbox-item">
+                <div>
+                  <b>{i.subject || '(no subject)'}</b> <span className="muted">{i.from}</span>
+                </div>
+                <div>
+                  <span className={i.outcome === 'delivered' ? 'notify-ok' : 'muted'}>{i.outcome === 'delivered' ? '✉️ Delivered' : `Ignored: ${i.reason}`}</span>
+                  <span className="muted"> · {new Date(i.at).toLocaleString()}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       {error && (
         <div className="term-error small" role="alert">

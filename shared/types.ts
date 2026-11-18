@@ -396,6 +396,25 @@ export interface EmailSettings {
   copyTo: string; // a recipient on the list who gets a blind copy of every email ('' = none); test emails go here
   recipients: EmailRecipient[];
   digest: DigestSettings;
+  inbox: boolean; // read replies to the From mailbox: the manager's own reach the CEO (server/mailInbox.ts)
+  mine: string[]; // the addresses whose email counts as the manager's
+}
+
+/** One email the office read from its mailbox, and what it did with it. Never the body. */
+export interface InboundEmailView {
+  id: string;
+  from: string;
+  subject: string;
+  at: number; // when it arrived
+  outcome: 'delivered' | 'ignored';
+  reason?: string; // why it was ignored
+}
+
+/** Settings → Email's inbox status. */
+export interface EmailInboxView {
+  lastCheck: number | null;
+  lastError: string | null;
+  items: InboundEmailView[]; // the latest 20, newest first
 }
 
 /** Time tracking's mode: off, dry-run (every entry built and shown, nothing sent) or live (posted to Kimai). */
@@ -656,6 +675,7 @@ export interface PhoneMessage {
   at: number;
   requestId?: string; // a hire / let-go proposal this message is about
   emailId?: string; // an email waiting for the manager's OK
+  via?: 'email'; // the manager's message came in by email (the office mailbox)
   voice?: Exclude<VoiceProvider, 'off'>; // who read it aloud when it arrived (absent: nobody), for the phone's ▶ replay
 }
 
@@ -710,6 +730,7 @@ export interface WorldSnapshot {
   emails: EmailView[]; // every pending email and the latest decided ones, oldest first
   emailSender: EmailSenderView;
   kimai?: KimaiView; // Settings → Time tracking (absent in old journals)
+  emailInbox?: EmailInboxView; // Settings → Email's inbox status (absent in old journals)
   progress: ProgressView; // coins, decorations and achievements (#210)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   decisions?: DecisionView[]; // the Decision room's cards: every open decision on every floor (absent in old journals)
@@ -763,6 +784,7 @@ export type ServerEvent =
   | { type: 'boardLog'; boardLog: BoardChangeView[] }
   | { type: 'emailSender'; emailSender: EmailSenderView }
   | { type: 'kimai'; kimai: KimaiView }
+  | { type: 'emailInbox'; emailInbox: EmailInboxView }
   | { type: 'ceo'; ceo: CeoInfo }
   | { type: 'message'; message: PhoneMessage }
   | { type: 'phoneRead'; at: number }
