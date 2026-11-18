@@ -12,7 +12,9 @@ export const EMAILS_PER_DAY = 10;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const DEFAULT_DIGEST: DigestSettings = { enabled: false, hour: 8, to: '' };
-export const DEFAULT_EMAIL: EmailSettings = { enabled: false, from: '', copyTo: '', recipients: [], digest: DEFAULT_DIGEST };
+export const DEFAULT_EMAIL: EmailSettings = { enabled: false, from: '', copyTo: '', recipients: [], digest: DEFAULT_DIGEST, inbox: false, mine: [] };
+/** Most addresses that count as the manager's own. */
+export const MAX_MINE = 10;
 
 // Deliberately plain: no quotes, spaces or brackets, a dot in the domain. Enough to catch typos, not RFC 5322.
 const ADDRESS = /^[a-z0-9._%+'-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
@@ -73,6 +75,13 @@ export function emailProblem(patch: unknown, base: EmailSettings = DEFAULT_EMAIL
     if (bad) return `"${String(bad?.email ?? '')}" isn't a valid email address.`;
   }
   if (p.copyTo !== undefined && p.copyTo !== '' && !emailAddress(p.copyTo)) return "The copy-to address isn't a valid email address.";
+  if (p.inbox !== undefined && typeof p.inbox !== 'boolean') return 'Reading replies is on or off.';
+  if (p.mine !== undefined) {
+    if (!Array.isArray(p.mine)) return 'The list of your addresses is missing.';
+    if (p.mine.length > MAX_MINE) return `At most ${MAX_MINE} addresses can count as yours.`;
+    const bad = (p.mine as unknown[]).find((m) => !emailAddress(m));
+    if (bad !== undefined) return `"${String(bad)}" isn't a valid email address.`;
+  }
   if (p.digest !== undefined) return digestProblem(p.digest, p.recipients, { ...DEFAULT_EMAIL, ...base, digest: { ...DEFAULT_DIGEST, ...base.digest } });
   return null;
 }
@@ -86,7 +95,23 @@ export function emailSettings(base: EmailSettings, patch: unknown): EmailSetting
   // The blind copy only ever goes to someone on the list: a copyTo that left the list goes with them.
   const wanted = p.copyTo === '' ? '' : (emailAddress(p.copyTo) ?? b.copyTo);
   const copyTo = recipients.some((r) => r.email === wanted) ? wanted : '';
-  return { enabled: typeof p.enabled === 'boolean' ? p.enabled : b.enabled, from, copyTo, recipients, digest: digestSettings({ ...DEFAULT_DIGEST, ...b.digest }, p.digest, recipients) };
+  const inbox = typeof p.inbox === 'boolean' ? p.inbox : b.inbox;
+  let mine = p.mine === undefined ? (b.mine ?? []) : (mineList(p.mine) ?? b.mine ?? []);
+  // Switched on with nobody listed: the blind-copy address, the manager's own, counts.
+  if (inbox && !b.inbox && mine.length === 0 && copyTo) mine = [copyTo];
+  return { enabled: typeof p.enabled === 'boolean' ? p.enabled : b.enabled, from, copyTo, recipients, digest: digestSettings({ ...DEFAULT_DIGEST, ...b.digest }, p.digest, recipients), inbox, mine };
+}
+
+/** The manager's own addresses from a patch, or null when it isn't a valid list. */
+function mineList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length > MAX_MINE) return null;
+  const out: string[] = [];
+  for (const m of raw as unknown[]) {
+    const a = emailAddress(m);
+    if (!a) return null;
+    if (!out.includes(a)) out.push(a);
+  }
+  return out;
 }
 
 /** The digest from a saved state or a patch; its recipient only ever someone on `recipients` without "Ask me". */
@@ -111,14 +136,33 @@ export function emailsToday(emails: Pick<EmailView, 'status' | 'createdAt'>[], n
   return emails.filter((e) => (e.status === 'sent' || e.status === 'pending') && now - e.createdAt < DAY_MS).length;
 }
 
-/** The two lines under every email: who wrote it, and where replies go. */
-export function emailFooter(company: string, from: string): string {
-  return [`Sent by the CEO of ${company.trim() || 'the company'}'s office, an AI agent running in cubefarm.`, `Replies go to ${from}.`].join('\n');
+/**
+ * What happens to a reply: it reaches the CEO (the office reads its mailbox and the recipient's address counts as the
+ * manager's), the manager answers in the office instead, or nobody reads it (anyone else).
+ */
+export type ReplyNote = 'read' | 'office' | 'unread';
+
+/** The reply note for an email to `to` under these settings. */
+export function replyNote(s: Pick<EmailSettings, 'inbox' | 'mine'>, to: string): ReplyNote {
+  const mine = (s.mine ?? []).includes(to.trim().toLowerCase());
+  if (!mine) return 'unread';
+  return s.inbox ? 'read' : 'office';
+}
+
+const REPLY_LINE: Record<ReplyNote, string> = {
+  read: 'Reply to this email to answer the CEO.',
+  office: "Replies to this address aren't read; answer in the office.",
+  unread: "Replies to this address aren't read.",
+};
+
+/** The two lines under every email: who wrote it, and what happens to a reply. */
+export function emailFooter(company: string, reply: ReplyNote): string {
+  return [`Sent by the CEO of ${company.trim() || 'the company'}'s office, an AI agent running in cubefarm.`, REPLY_LINE[reply]].join('\n');
 }
 
 /** The text that's sent: the CEO's body, then the footer. */
-export function emailText(body: string, company: string, from: string): string {
-  return `${body.trimEnd()}\n\n-- \n${emailFooter(company, from)}`;
+export function emailText(body: string, company: string, reply: ReplyNote): string {
+  return `${body.trimEnd()}\n\n-- \n${emailFooter(company, reply)}`;
 }
 
 /** Text made safe to put in HTML. */
@@ -127,7 +171,7 @@ export function escapeHtml(s: string): string {
 }
 
 /** The HTML that's sent, for an email that has some (the digest): its body, then the same footer. */
-export function emailHtml(bodyHtml: string, company: string, from: string): string {
-  const footer = emailFooter(company, from).split('\n').map(escapeHtml).join('<br>');
+export function emailHtml(bodyHtml: string, company: string, reply: ReplyNote): string {
+  const footer = emailFooter(company, reply).split('\n').map(escapeHtml).join('<br>');
   return `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.45">${bodyHtml}<hr style="border:0;border-top:1px solid #ccc;margin:20px 0 8px"><p style="color:#666;font-size:12px">${footer}</p></div>`;
 }

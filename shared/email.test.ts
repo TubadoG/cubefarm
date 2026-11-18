@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DAY_MS, DEFAULT_DIGEST, DEFAULT_EMAIL, emailAddress, emailHtml, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_NAME, MAX_RECIPIENTS } from './email.ts';
+import { DAY_MS, DEFAULT_DIGEST, DEFAULT_EMAIL, emailAddress, emailHtml, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_MINE, MAX_NAME, MAX_RECIPIENTS, replyNote } from './email.ts';
 
 const ada = { email: 'ada@acme.example.com', name: 'Ada', approve: true };
-const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada], digest: DEFAULT_DIGEST };
+const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada], digest: DEFAULT_DIGEST, inbox: false, mine: [] as string[] };
 
 describe('email addresses', () => {
   it('trims and lowercases good ones', () => {
@@ -16,7 +16,7 @@ describe('email addresses', () => {
 
 describe('email settings', () => {
   it('starts off and empty', () => {
-    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [], digest: { enabled: false, hour: 8, to: '' } });
+    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [] });
   });
 
   it('cleans the list: lowercased, deduped, names trimmed and capped, asking by default', () => {
@@ -77,10 +77,43 @@ describe('the allowlist and the daily cap', () => {
 });
 
 describe('the footer', () => {
-  it('says who sent it and where replies go, in two lines under the body', () => {
-    expect(emailFooter('Acme', 'ceo@acme.example.com').split('\n')).toHaveLength(2);
-    const text = emailText('Hello.\n\n', 'Acme', 'ceo@acme.example.com');
-    expect(text).toBe("Hello.\n\n-- \nSent by the CEO of Acme's office, an AI agent running in cubefarm.\nReplies go to ceo@acme.example.com.");
+  it('says who sent it and what happens to a reply, in two lines under the body', () => {
+    expect(emailFooter('Acme', 'read').split('\n')).toHaveLength(2);
+    const text = emailText('Hello.\n\n', 'Acme', 'office');
+    expect(text).toBe("Hello.\n\n-- \nSent by the CEO of Acme's office, an AI agent running in cubefarm.\nReplies to this address aren't read; answer in the office.");
+    expect(emailFooter('Acme', 'read')).toMatch(/Reply to this email to answer the CEO\.$/);
+    expect(emailFooter('Acme', 'unread')).toMatch(/Replies to this address aren't read\.$/);
+  });
+
+  it('promises an answer only to the manager’s own addresses, and only while the office reads its mailbox', () => {
+    const s = { inbox: true, mine: ['me@co.example.com'] };
+    expect(replyNote(s, 'ME@co.example.com')).toBe('read');
+    expect(replyNote({ ...s, inbox: false }, 'me@co.example.com')).toBe('office');
+    expect(replyNote(s, 'client@acme.example.com')).toBe('unread');
+  });
+});
+
+describe('reading replies', () => {
+  const withCopy = emailSettings(base, { recipients: [ada], copyTo: ada.email });
+
+  it('is off with nobody listed by default', () => {
+    expect(emailSettings(base, {})).toMatchObject({ inbox: false, mine: [] });
+  });
+
+  it('counts the blind-copy address as the manager’s when switched on with nobody listed', () => {
+    expect(emailSettings(withCopy, { inbox: true })).toMatchObject({ inbox: true, mine: [ada.email] });
+    // Already on, and the list emptied on purpose: it stays empty.
+    const on = emailSettings(withCopy, { inbox: true });
+    expect(emailSettings(on, { mine: [] }).mine).toEqual([]);
+  });
+
+  it('takes a list of addresses, lowercased and deduplicated, and refuses a bad one', () => {
+    expect(emailSettings(base, { mine: ['Me@Co.example.com', 'me@co.example.com', 'you@co.example.com'] }).mine).toEqual(['me@co.example.com', 'you@co.example.com']);
+    expect(emailProblem({ mine: ['nope'] })).toMatch(/isn't a valid email address/);
+    expect(emailProblem({ mine: 'me@co.example.com' })).toMatch(/missing/);
+    expect(emailProblem({ mine: Array.from({ length: MAX_MINE + 1 }, (_, i) => `a${i}@co.example.com`) })).toMatch(/At most/);
+    expect(emailProblem({ inbox: 'yes' })).toMatch(/on or off/);
+    expect(emailSettings(base, { mine: ['nope'] }).mine).toEqual([]);
   });
 });
 
@@ -119,9 +152,9 @@ describe('the daily digest settings', () => {
 
 describe('emailHtml', () => {
   it('puts the footer under the body, escaped', () => {
-    const html = emailHtml('<p>Hi</p>', 'A<B', 'ceo@co.example.com');
+    const html = emailHtml('<p>Hi</p>', 'A<B', 'unread');
     expect(html).toContain('<p>Hi</p>');
     expect(html).toContain("Sent by the CEO of A&lt;B's office".replace("'", '&#39;'));
-    expect(html).toContain('Replies go to ceo@co.example.com.');
+    expect(html).toContain('Replies to this address aren&#39;t read.');
   });
 });

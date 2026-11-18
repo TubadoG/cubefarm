@@ -339,6 +339,11 @@ function Bubble({ m, ceoName }: { m: PhoneMessage; ceoName: string }) {
         {email && email.status === 'pending' && m.from === 'ceo' && <EmailCard email={email} />}
         <div className="bubble-time">
           {!mine && <ReplayButton m={m} />}
+          {m.via === 'email' && (
+            <span className="bubble-via" title="Sent by email" aria-label="Sent by email">
+              ✉️{' '}
+            </span>
+          )}
           {clock(m.at)}
         </div>
       </div>
