@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_EMAIL, emailSettings } from '../shared/email.ts';
 import type { EmailInboxView, EmailSettings } from '../shared/types.ts';
 import { HttpError } from './httpError.ts';
-import { CEO_MAX, ceoText, DENIED_EVERY_MS, emptyInbox, type GraphMessage, inboxUrl, INBOX_EVERY_MS, KEEP_IDS, loadInbox, MailInbox, screen, type InboxState } from './mailInbox.ts';
+import { CEO_MAX, CEO_PARTS_MAX, ceoText, ceoTexts, DENIED_EVERY_MS, emptyInbox, type GraphMessage, inboxUrl, INBOX_EVERY_MS, KEEP_IDS, loadInbox, MailInbox, screen, splitText, type InboxState } from './mailInbox.ts';
 
 // Replies to the office mailbox (docs/email.md, "Reading replies"): the screen (the manager's addresses, the sender
 // checks, auto-replies), what the CEO gets, and the poller through a fake Graph: exactly once across restarts, the
@@ -74,11 +74,45 @@ describe('ceoText', () => {
     expect(ceoText(mail({ subject: '  ', uniqueBody: { content: '' } }))).toBe('Email from the manager. Subject: (no subject)\n\n(no text)');
   });
 
-  it('cuts a long body to what the CEO takes, and counts attachments without opening them', () => {
-    const t = ceoText(mail({ uniqueBody: { content: 'x'.repeat(10_000) }, hasAttachments: true, attachments: [{ id: 'a' }, { id: 'b' }, { id: 'logo', isInline: true }] }));
-    expect(t.length).toBe(CEO_MAX);
-    expect(t).toMatch(/x…\n\n\(2 attachments, not read\)$/);
+  it('counts attachments without opening them', () => {
+    const t = ceoText(mail({ uniqueBody: { content: 'Short.' }, hasAttachments: true, attachments: [{ id: 'a' }, { id: 'b' }, { id: 'logo', isInline: true }] }));
+    expect(t).toMatch(/Short\.\n\n\(2 attachments, not read\)$/);
     expect(ceoText(mail({ hasAttachments: true, attachments: undefined }))).toMatch(/\(attachments, not read\)$/);
+  });
+});
+
+describe('ceoTexts', () => {
+  it('keeps a short email as one message', () => {
+    expect(ceoTexts(mail({ uniqueBody: { content: 'Hello.' } }))).toEqual(['Email from the manager. Subject: Re: Weekly report\n\nHello.']);
+  });
+
+  it('sends a long email whole, as numbered parts that each fit a phone message', () => {
+    const paras = Array.from({ length: 40 }, (_, i) => `Section ${i + 1}. ` + 'word '.repeat(60).trim());
+    const body = paras.join('\n\n');
+    const parts = ceoTexts(mail({ uniqueBody: { content: body }, hasAttachments: true, attachments: [{ id: 'a' }] }));
+    expect(parts.length).toBeGreaterThan(1);
+    parts.forEach((p, i) => {
+      expect(p.length).toBeLessThanOrEqual(CEO_MAX);
+      expect(p.startsWith(`Email from the manager (part ${i + 1} of ${parts.length}). Subject: Re: Weekly report\n\n`)).toBe(true);
+    });
+    // Nothing lost: every section arrives, in order, and only the last part carries the attachment note.
+    const joined = parts.map((p) => p.replace(/^Email from the manager \(part \d+ of \d+\)\. Subject: [^\n]*\n\n/, '')).join('\n\n');
+    for (const para of paras) expect(joined).toContain(para);
+    expect(joined.indexOf('Section 40.')).toBeGreaterThan(joined.indexOf('Section 39.'));
+    expect(parts.at(-1)).toMatch(/\(1 attachment, not read\)$/);
+    expect(parts.slice(0, -1).some((p) => p.includes('attachment'))).toBe(false);
+  });
+
+  it('caps a huge email at CEO_PARTS_MAX parts and says the rest was not delivered', () => {
+    const parts = ceoTexts(mail({ uniqueBody: { content: 'word '.repeat(20_000) } }));
+    expect(parts.length).toBe(CEO_PARTS_MAX);
+    expect(parts.at(-1)).toMatch(/The rest of this email was too long and was not delivered/);
+  });
+
+  it('splits at paragraph, line or word breaks, never mid-word when it can avoid it', () => {
+    expect(splitText('aaaa bbbb cccc', 9)).toEqual(['aaaa bbbb', 'cccc']);
+    expect(splitText('aaaaaaaa\nbb cc', 12)).toEqual(['aaaaaaaa', 'bb cc']); // a line break in the second half wins over a later space
+    expect(splitText('x'.repeat(10), 4)).toEqual(['xxxx', 'xxxx', 'xx']);
   });
 });
 
