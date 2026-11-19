@@ -3,7 +3,7 @@ import { createDemoBackend } from './demo.ts';
 import { HttpError } from './httpError.ts';
 import { Swarm } from './swarm.ts';
 import type { OfficeTools } from './ceo.ts';
-import { EMAILS_PER_DAY } from '../shared/email.ts';
+import { DEFAULT_DAILY_CAP } from '../shared/email.ts';
 
 // The CEO's email (docs/email.md): only to the manager's list, some after the manager's OK, at most a few a day, and
 // the list is checked again when the manager approves. Through the demo's fake transport, so nothing is sent.
@@ -17,7 +17,7 @@ async function office() {
   const swarm = new Swarm(createDemoBackend());
   (swarm as unknown as Internals).ensureCeo([]);
   await swarm.mailer.init(); // the demo's fake sender
-  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [], colleagues: [] } });
+  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [], colleagues: [], dailyCap: DEFAULT_DAILY_CAP } });
   const tools = (swarm as unknown as Internals).officeTools();
   const send = (to: string, subject = 'Weekly report') => tools.call('send_email', { to, subject, body: 'All floors are green.' });
   return { swarm, send, emails: () => swarm.snapshot().emails, messages: () => swarm.snapshot().messages };
@@ -79,11 +79,38 @@ describe('send_email', () => {
     expect(emails()[0]).toMatchObject({ status: 'failed' });
   });
 
-  it(`stops at ${EMAILS_PER_DAY} a day, counting the ones waiting`, async () => {
+  it(`stops at ${DEFAULT_DAILY_CAP} by default, counting the ones waiting`, async () => {
     const { send, emails } = await office();
-    for (let i = 0; i < EMAILS_PER_DAY; i++) expect(await send(ASK.email, `Report ${i}`)).toMatch(/^Waiting/);
-    expect(await send(ASK.email)).toMatch(/^Refused: The office sends at most 10 emails a day/);
-    expect(emails()).toHaveLength(EMAILS_PER_DAY);
+    for (let i = 0; i < DEFAULT_DAILY_CAP; i++) expect(await send(ASK.email, `Report ${i}`)).toMatch(/^Waiting/);
+    expect(await send(ASK.email)).toMatch(/^Refused: The office sends at most 10 emails in any 24 hours/);
+    expect(emails()).toHaveLength(DEFAULT_DAILY_CAP);
+  });
+
+  it('stops at the cap set in Settings → Email, and raising it lets the next one through at once', async () => {
+    const { swarm, send, emails } = await office();
+    const cap = (dailyCap: number) => swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, dailyCap } });
+    cap(3);
+    for (let i = 0; i < 3; i++) expect(await send(ASK.email, `Report ${i}`)).toMatch(/^Waiting/);
+    expect(await send(AUTO.email)).toBe("Refused: The office sends at most 3 emails in any 24 hours, and they're used up. Put it in your message to the manager instead, or try later.");
+    cap(4);
+    expect(await send(AUTO.email)).toBe('Sent to Sam <manager@co.example.com>.');
+    cap(2); // below what's used: allowed, and it just blocks
+    expect(swarm.snapshot().settings.email.dailyCap).toBe(2);
+    expect(await send(AUTO.email)).toMatch(/^Refused: The office sends at most 2 emails/);
+    expect(emails()).toHaveLength(4);
+  });
+
+  it('keeps every email that counts toward a high cap', async () => {
+    const { swarm, send, emails } = await office();
+    swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, dailyCap: 60 } });
+    // More sent in the last 24 hours than the office keeps of older ones (50), plus a few from yesterday.
+    const now = Date.now();
+    const sent = (i: number, ago: number) => ({ id: `old-${i}`, to: AUTO.email, toName: 'Sam', subject: `Old ${i}`, body: '', status: 'sent' as const, createdAt: now - ago, decidedAt: now - ago });
+    const state = (swarm as unknown as { state: { emails: unknown[] } }).state;
+    state.emails.push(...Array.from({ length: 5 }, (_, i) => sent(i, 25 * 3600_000)), ...Array.from({ length: 59 }, (_, i) => sent(100 + i, 60_000)));
+    expect(await send(AUTO.email)).toMatch(/^Sent/);
+    expect(emails().filter((e) => now - e.createdAt < 24 * 3600_000)).toHaveLength(60);
+    expect(await send(AUTO.email)).toMatch(/^Refused: The office sends at most 60 emails/);
   });
 });
 
@@ -91,6 +118,7 @@ describe('Settings → Email', () => {
   it('refuses a bad address with a readable message', async () => {
     const { swarm } = await office();
     expect(() => swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, from: 'nope' } })).toThrow("The From address isn't a valid email address.");
+    expect(() => swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, dailyCap: 0 } })).toThrow('The daily cap must be a whole number from 1 to 100.');
   });
 
   it('shows only whether a sender is set, never its secret', async () => {
@@ -143,8 +171,10 @@ describe('the daily digest', () => {
   it('counts toward the daily cap', async () => {
     const { swarm, send, digest } = await withFloor();
     digest({ to: AUTO.email });
-    for (let i = 0; i < EMAILS_PER_DAY; i++) await send(ASK.email, `Report ${i}`);
-    await expect(swarm.sendDigest()).rejects.toThrow(/at most 10 emails a day/);
+    for (let i = 0; i < DEFAULT_DAILY_CAP; i++) await send(ASK.email, `Report ${i}`);
+    await expect(swarm.sendDigest()).rejects.toThrow(/at most 10 emails in any 24 hours/);
+    swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, dailyCap: 11 } });
+    expect(await swarm.sendDigest()).toMatchObject({ sent: true });
   });
 
   it('goes out once a day at the hour, and remembers the day', async () => {

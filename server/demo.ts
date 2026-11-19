@@ -1701,6 +1701,7 @@ const demoEmail: EmailTransport = {
     mine: ['manager@demo-co.example.com'],
     // Another agent the manager runs: its email reaches the CEO as Nova's, never as the manager's.
     colleagues: [{ email: 'nova@demo-co.example.com', name: 'Nova' }],
+    dailyCap: 10,
   },
   // A made-up channel, switched off: switched on, the demo's channel (demoTeamsMessages) is read.
   demoTeams: {

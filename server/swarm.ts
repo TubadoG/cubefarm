@@ -61,7 +61,7 @@ import { DEFAULT_LISTEN, DEFAULT_VOICE, listenSettings, speaks, Voice, voiceSett
 import { Notifier } from './notifier.ts';
 import { clip, DECISION_MAX, plainText, stuckAgents } from './notify.ts';
 import { DEFAULT_NOTIFY, notifySettings, officeUrl } from '../shared/notify.ts';
-import { DEFAULT_EMAIL, EMAILS_PER_DAY, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient, replyNote } from '../shared/email.ts';
+import { capRefusal, countsToday, dailyCap, DEFAULT_EMAIL, emailHtml, emailProblem, emailSettings, emailsToday, emailText, findRecipient, replyNote } from '../shared/email.ts';
 import { Mailer } from './email.ts';
 import { briefAlert, decisionNote, stuckPickView, stuckPrDecision, waitsOnDecision } from './decision.ts';
 import { businessHold, closeComment, MAX_REBUILDS, giveUpStep, REBUILD_RETRY_MS, issueComment, parkBrief, parkDue, parkedComment, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
@@ -5875,7 +5875,9 @@ export class Swarm {
 
   private addEmail(e: EmailView) {
     this.state.emails.push(e);
-    const decided = this.state.emails.filter((x) => x.status !== 'pending');
+    // Never drop one that still counts toward the daily cap, or a high cap could be overrun.
+    const now = Date.now();
+    const decided = this.state.emails.filter((x) => x.status !== 'pending' && !countsToday(x, now));
     if (decided.length > KEEP_DECIDED_EMAILS) {
       const drop = new Set(decided.slice(0, decided.length - KEEP_DECIDED_EMAILS));
       this.state.emails = this.state.emails.filter((x) => !drop.has(x));
@@ -5923,7 +5925,8 @@ export class Swarm {
     const refused = this.emailRefusal(to);
     if (refused) throw new Error(refused);
     const now = Date.now();
-    if (emailsToday(this.state.emails, now) >= EMAILS_PER_DAY) throw new Error(`The office sends at most ${EMAILS_PER_DAY} emails a day, and today's are used up. Put it in your message to the manager instead, or try tomorrow.`);
+    const capped = capRefusal(this.state.settings.email, this.state.emails, now);
+    if (capped) throw new Error(`${capped} Put it in your message to the manager instead, or try later.`);
     const who = findRecipient(this.state.settings.email, to)!;
     const e: EmailView = { id: `mail-${now.toString(36)}-${(this.emailSeq++).toString(36)}`, to: who.email, toName: who.name, subject: x.subject.trim().slice(0, 150), body: x.body.slice(0, 20_000), status: 'pending', createdAt: now, decidedAt: null };
     this.addEmail(e);
@@ -6388,7 +6391,8 @@ export class Swarm {
     if (who.approve) return refuse(`The digest only goes to someone without “Ask me”; ${who.email} needs your OK for each email.`);
     const refused = this.emailRefusal(who.email);
     if (refused) return refuse(refused);
-    if (emailsToday(this.state.emails, now.getTime()) >= EMAILS_PER_DAY) return refuse(`The office sends at most ${EMAILS_PER_DAY} emails a day, and today's are used up.`, 429);
+    const capped = capRefusal(s, this.state.emails, now.getTime());
+    if (capped) return refuse(capped, 429);
     this.digesting = true;
     try {
       let floors: DigestFloor[];
@@ -6822,7 +6826,7 @@ export class Swarm {
         ...(s.email.enabled && {
           email: {
             canEmail: s.email.recipients.map((r) => ({ email: r.email, name: r.name, needsManagerOk: r.approve })),
-            usedToday: `${emailsToday(this.state.emails, Date.now())} of ${EMAILS_PER_DAY}`,
+            usedToday: `${emailsToday(this.state.emails, Date.now())} of ${dailyCap(s.email)} in the last 24 hours`,
             recent: this.state.emails.slice(-5).map((e) => ({ to: e.to, subject: e.subject, status: e.status, ...(e.note ? { managerNote: e.note } : {}) })),
           },
         }),
