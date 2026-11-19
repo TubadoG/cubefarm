@@ -186,6 +186,35 @@ describe('KimaiSync', () => {
     expect(r.state.entries).toHaveLength(2);
   });
 
+  it('puts a split session’s tokens and cost on its first entry only', async () => {
+    const r = await rig();
+    r.sync.limitWait('ada', T0 + 10 * 60_000, T0 + 20 * 60_000);
+    r.sync.record(session({ tokens: { input: 5_000, output: 40_000, cacheWrite: 775_000, cacheRead: 13_100_000 }, costUsd: 4.123 }));
+    await r.sync.flush();
+    expect(r.posts().map((p) => (p.body as { description: string }).description)).toEqual([
+      '[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 10m actual · 820k tokens + 13.1M cache reads · $4.12 API-equivalent · m via claude',
+      '[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 10m actual · m via claude',
+    ]);
+    expect(r.state.entries[1].session).not.toHaveProperty('tokens');
+  });
+
+  it('finds a post with tokens in Kimai after a restart, rebuilding the same description', async () => {
+    const usage = { tokens: { input: 5_000, output: 40_000, cacheWrite: 775_000, cacheRead: 13_100_000 }, costUsd: 4.12 };
+    const first = await rig({ answer: () => Promise.reject(new Error('socket hang up')) });
+    first.sync.record(session(usage));
+    await first.sync.flush();
+    first.state.entries[0].attempted = true;
+    const description = first.state.entries[0].payload!.description;
+    expect(description).toBe('[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 30m actual · 820k tokens + 13.1M cache reads · $4.12 API-equivalent · m via claude');
+    const found = await rig({
+      state: loadKimai(JSON.parse(JSON.stringify(first.state))),
+      answer: (req) => (req.method === 'GET' ? { status: 200, body: [{ id: 778, begin: '2026-11-17T15:00:00+0000', description }] } : { status: 200, body: { id: 1 } }),
+    });
+    await found.sync.flush();
+    expect(found.posts()).toHaveLength(0);
+    expect(found.state.entries[0]).toMatchObject({ status: 'sent', kimaiId: 778 });
+  });
+
   it('shows a cut-off session it cannot time as not logged, and never sends it', async () => {
     const r = await rig();
     r.sync.notLogged(session(), 'Not logged: end unknown');

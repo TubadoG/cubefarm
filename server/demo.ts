@@ -365,6 +365,8 @@ function fakeSession(opts: SessionOptions, cb: SessionCallbacks, fullName: strin
   const finish = () => {
     const costUsd = 0.3 + Math.random();
     const turns = 15 + Math.floor(Math.random() * 20);
+    // Made-up tokens in Claude's proportions (cache reads dominate), for the timesheets' descriptions.
+    const tokens = { input: 2000 + Math.floor(Math.random() * 8000), output: 20_000 + Math.floor(Math.random() * 60_000), cacheWrite: 150_000 + Math.floor(Math.random() * 400_000), cacheRead: 2_000_000 + Math.floor(Math.random() * 8_000_000) };
     cb.tool(null);
     if (kind === 'qa') {
       // Most first rounds pass; some fail so the fix loop can be seen in action.
@@ -375,6 +377,7 @@ function fakeSession(opts: SessionOptions, cb: SessionCallbacks, fullName: strin
         text: '',
         costUsd,
         turns,
+        tokens,
         errors: [],
         structured: {
           verdict: pass ? 'pass' : 'fail',
@@ -412,7 +415,7 @@ function fakeSession(opts: SessionOptions, cb: SessionCallbacks, fullName: strin
           ? 'NO CHANGE NEEDED: main already makes the toolbar wrap, so the PR is right as it is.'
           : '● The toolbar wraps on narrow screens now. Ready for another QA round.';
       cb.log([{ kind: 'text', text }]);
-      cb.finished({ ok: true, text, costUsd, turns, errors: [] });
+      cb.finished({ ok: true, text, costUsd, turns, tokens, errors: [] });
       return;
     }
     const repo = repos.get(fullName);
@@ -444,7 +447,7 @@ function fakeSession(opts: SessionOptions, cb: SessionCallbacks, fullName: strin
       cb.log([{ kind: 'result', text: `  ⎿ ${url}` }]);
     }
     cb.log([{ kind: 'text', text: `● Opened ${url || 'the pull request'}. It closes #${number} and includes tests.` }]);
-    cb.finished({ ok: true, text: url, costUsd, turns, errors: [] });
+    cb.finished({ ok: true, text: url, costUsd, turns, tokens, errors: [] });
   };
 
   let i = 0;

@@ -56,7 +56,7 @@ Over REST: `PUT`/`DELETE /api/kimai/token`, `POST /api/kimai/test`, `POST /api/k
   "end": "2026-11-17T09:45:00",
   "project": 11,
   "activity": 21,
-  "description": "[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 45m actual · claude-opus-5-5 via claude",
+  "description": "[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 45m actual · 820k tokens + 13.1M cache reads · $4.12 API-equivalent · claude-opus-5-5 via claude",
   "tags": "ai-agent",
   "billable": false,
   "user": 4
@@ -68,11 +68,25 @@ array is refused). Only `ai-agent` is sent: the kind of work leads the descripti
 every kind, and the model and CLI follow it. Send `user` whenever the token belongs to an admin, or the time goes
 to the admin.
 
+The tokens and cost are there to set an agent's hours against what it delivered:
+
+- **Tokens** are input + output + cache-write tokens; cache reads are shown apart, since they are most of a
+  session's tokens and the cheapest. Under 1,000 as they are, then `820k`, then `13.1M`.
+- **API-equivalent** is what the session's tokens would cost at API prices, as Claude estimates it (the same cost
+  the office's ledger records), to the cent. On a subscription nothing is billed per token.
+- Tokens come from Claude sessions in the SDK runtime (the SDK's running per-model totals, subagents included). In
+  the terminal runtime Claude Code reports its cost through the status line but not its tokens, so only the cost is
+  shown. Codex and OpenCode report neither, and a session an office restart cut off has no result: both parts are
+  left out, and so are they on entries saved before the office recorded them.
+- A resumed session's first result already carries the turns before it, so a session that picks up an earlier
+  conversation (a follow-up, QA's resume) counts those again, in its tokens and its cost alike.
+
 ## How hours are measured
 
 - A task's hours are its session's wall-clock time, start to end. Idle agents log nothing; agents working in parallel
   each log their own time.
-- A wait on Claude's usage limit inside a session isn't working time: the entry is split around it.
+- A wait on Claude's usage limit inside a session isn't working time: the entry is split around it. The session's
+  tokens and cost go on the first of those entries only, so each is counted once; the others show their minutes.
 - The office doesn't round: Kimai's own rounding rules apply. Kimai may round each duration up (e.g. to the next
   30 minutes), so its totals can be higher than the agents' real time. The real minutes are in each description
   ("45m actual").

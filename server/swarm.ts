@@ -2863,7 +2863,7 @@ export class Swarm {
     a.costUsd += result.costUsd;
     a.turns += result.turns;
     recordCost(this.state.ops, repo.id, result.costUsd, a.endedAt);
-    this.logWork(a, repo.id, a.task ?? 'issue', a.endedAt);
+    this.logWork(a, repo.id, a.task ?? 'issue', a.endedAt, result);
     this.ledger({ kind: 'session', agentId: a.id, key: `${a.id}:${a.startedAt}:${a.endedAt}`, costUsd: result.costUsd, turns: result.turns }, false); // emitted below
     // Dev servers the agent forgot to stop would otherwise keep its port and lock its desk folder.
     void this.releaseDesk(a, repo).catch(() => undefined);
@@ -2883,8 +2883,11 @@ export class Swarm {
 
   // ---------- time tracking ----------
 
-  /** The session that just ended (or was cut off at `end`), as time tracking records it. */
-  private workSession(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number, cutOff = false): WorkSession | null {
+  /**
+   * The session that just ended (or was cut off at `end`), as time tracking records it. `result` gives its tokens and
+   * cost, the same cost the ledger records; a cut-off session has no result, so it shows neither.
+   */
+  private workSession(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number, cutOff = false, result?: SessionResult): WorkSession | null {
     if (!a.startedAt) return null;
     const repo = repoId ? this.state.repos.find((r) => r.id === repoId) : undefined;
     return {
@@ -2902,11 +2905,13 @@ export class Swarm {
       begin: a.startedAt,
       end,
       ...(cutOff ? { cutOff } : {}),
+      ...(result?.tokens ? { tokens: result.tokens } : {}),
+      ...(result && result.costUsd > 0 ? { costUsd: result.costUsd } : {}),
     };
   }
 
-  private logWork(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number) {
-    const s = this.workSession(a, repoId, work, end);
+  private logWork(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number, result?: SessionResult) {
+    const s = this.workSession(a, repoId, work, end, false, result);
     if (s) this.kimai.record(s);
   }
 
@@ -4305,7 +4310,7 @@ export class Swarm {
     a.turns += result.turns;
     recordCost(this.state.ops, '', result.costUsd, a.endedAt);
     const job = this.state.ceo.job;
-    if (this.state.settings.kimai.planning) this.logWork(a, job?.repoId ?? null, 'planning', a.endedAt);
+    if (this.state.settings.kimai.planning) this.logWork(a, job?.repoId ?? null, 'planning', a.endedAt, result);
     this.state.ceo.job = null;
     if (job?.kind === 'decision') void this.decisionAnswered(job, result.ok && !result.interrupted ? result.text : null);
     if (result.interrupted) this.interrupted(a);
@@ -4900,7 +4905,7 @@ export class Swarm {
     a.costUsd += result.costUsd;
     a.turns += result.turns;
     recordCost(this.state.ops, repoId, result.costUsd, a.endedAt);
-    if (this.state.settings.kimai.planning) this.logWork(a, repoId, 'planning', a.endedAt);
+    if (this.state.settings.kimai.planning) this.logWork(a, repoId, 'planning', a.endedAt, result);
     const l = this.state.leads[repoId];
     const job = l?.job ?? null;
     if (l) l.job = null;

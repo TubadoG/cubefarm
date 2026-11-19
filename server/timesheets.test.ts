@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_KIMAI, kimaiProblem, kimaiSettings } from '../shared/kimai.ts';
 import type { KimaiSettings } from '../shared/types.ts';
-import { describe as describeSession, localDateTime, tags, timesheet, workSpans, type WorkSession } from './timesheets.ts';
+import { describe as describeSession, localDateTime, shortCount, spanSession, tags, timesheet, workSpans, type WorkSession } from './timesheets.ts';
 
 // Finished sessions as Kimai timesheets (docs/kimai.md): the payload per kind of work and mapping, the time zone, and
 // the working spans (less waits on Claude's usage limit, nothing under the shortest task).
@@ -79,6 +79,44 @@ describe('timesheet', () => {
   it('marks a session a restart cut off, and sends only the ai-agent tag', () => {
     expect(describeSession(session({ cutOff: true }), [T0, T0 + 47 * 60_000])).toBe('[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 47m actual · claude-opus-5-5 via claude (cut off by an office restart)');
     expect(tags()).toEqual(['ai-agent']);
+  });
+
+  it('says how many tokens a Claude session used and what it would cost on the API', () => {
+    const tokens = { input: 5_000, output: 40_000, cacheWrite: 775_000, cacheRead: 13_100_000 };
+    expect(timesheet(session({ tokens, costUsd: 4.1234 }), [T0, T0 + 45 * 60_000], settings)).toMatchObject({
+      payload: { description: '[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 45m actual · 820k tokens + 13.1M cache reads · $4.12 API-equivalent · claude-opus-5-5 via claude' },
+    });
+    // No cache reads, no cost: only what there is.
+    expect(describeSession(session({ tokens: { input: 300, output: 600, cacheWrite: 0, cacheRead: 0 } }), [T0, T0 + 60_000])).toBe('[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 1m actual · 900 tokens · claude-opus-5-5 via claude');
+    expect(describeSession(session({ costUsd: 0.5 }), [T0, T0 + 60_000])).toBe('[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 1m actual · $0.50 API-equivalent · claude-opus-5-5 via claude');
+  });
+
+  it('leaves tokens and cost out for CLIs that report none, and for sessions saved before they were recorded', () => {
+    const codex = session({ model: 'gpt-5.5', cli: 'codex', costUsd: 0, tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 } });
+    expect(describeSession(codex, [T0, T0 + 60_000])).toBe('[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 1m actual · gpt-5.5 via codex');
+    const old = JSON.parse(JSON.stringify(session())) as WorkSession;
+    expect(describeSession(old, [T0, T0 + 60_000])).toBe('[Build] Ada · acme/shop #12 / PR #34 · Add a cart · 1m actual · claude-opus-5-5 via claude');
+  });
+
+  it('keeps the tokens and cost for the first span of a split session', () => {
+    const s = session({ tokens: { input: 1, output: 1, cacheWrite: 1, cacheRead: 1 }, costUsd: 1 });
+    expect(spanSession(s, 0)).toBe(s);
+    expect(spanSession(s, 1)).not.toHaveProperty('tokens');
+    expect(spanSession(s, 1)).not.toHaveProperty('costUsd');
+    expect(spanSession(s, 1)).toMatchObject({ key: s.key, agentName: 'Ada' });
+  });
+});
+
+describe('shortCount', () => {
+  it('writes counts as they are under a thousand, in k, then in M with one decimal', () => {
+    expect(shortCount(0)).toBe('0');
+    expect(shortCount(999)).toBe('999');
+    expect(shortCount(1_000)).toBe('1k');
+    expect(shortCount(820_400)).toBe('820k');
+    expect(shortCount(999_499)).toBe('999k');
+    expect(shortCount(999_500)).toBe('1.0M');
+    expect(shortCount(1_234_567)).toBe('1.2M');
+    expect(shortCount(13_100_000)).toBe('13.1M');
   });
 });
 

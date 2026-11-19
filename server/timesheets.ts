@@ -20,6 +20,18 @@ export interface WorkSession {
   begin: number;
   end: number;
   cutOff?: boolean; // ended by an office restart: end is when the office last saved its state
+  /** The session's tokens, when its CLI reports them (Claude in the SDK runtime). Absent on older entries. */
+  tokens?: SessionTokens;
+  /** The session's API-equivalent cost in USD, when its CLI reports one. Absent on older entries. */
+  costUsd?: number;
+}
+
+/** A session's token counts, as Claude reports them. */
+export interface SessionTokens {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
 }
 
 /** What POST /api/timesheets gets. begin and end are local times in the Kimai user's zone, to the second. */
@@ -86,17 +98,46 @@ export function workSpans(begin: number, end: number, waits: { from: number; to:
   return spans.filter(([s, e]) => e - s >= Math.max(1000, minMs));
 }
 
+/** A token count, short: 950, 820k, 13.1M. */
+export function shortCount(n: number): string {
+  const v = Math.max(0, Math.round(n));
+  if (v < 1000) return String(v);
+  if (v < 999_500) return `${Math.round(v / 1000)}k`;
+  return `${(v / 1_000_000).toFixed(1)}M`;
+}
+
+/** "820k tokens + 13.1M cache reads": input, output and cache writes, then cache reads (many, and cheap) apart. */
+function tokenText(t: SessionTokens | undefined): string {
+  if (!t) return '';
+  const main = t.input + t.output + t.cacheWrite;
+  if (main <= 0 && t.cacheRead <= 0) return '';
+  return `${shortCount(main)} tokens${t.cacheRead > 0 ? ` + ${shortCount(t.cacheRead)} cache reads` : ''}`;
+}
+
 /**
- * "[<Build|QA|Fix|Planning>] <Agent> · <repo> #<issue> / PR #<pr> · <title> · <n>m actual · <model> via <cli>". The kind
- * of work leads, since one Kimai activity may hold them all. The actual minutes are there because Kimai may round the
- * duration it shows (e.g. up to 30 minutes); the model and CLI because only the ai-agent tag is sent.
+ * The session as span `i` of a split one records it: its tokens and cost go on the first span only, so each is counted
+ * once. The entry keeps this copy, so a retry rebuilds the same description.
+ */
+export function spanSession(s: WorkSession, i: number): WorkSession {
+  if (i === 0 || (!s.tokens && s.costUsd === undefined)) return s;
+  const { tokens: _tokens, costUsd: _costUsd, ...rest } = s;
+  return rest;
+}
+
+/**
+ * "[<Build|QA|Fix|Planning>] <Agent> · <repo> #<issue> / PR #<pr> · <title> · <n>m actual · <t> tokens + <c> cache reads
+ * · $<cost> API-equivalent · <model> via <cli>". The kind of work leads, since one Kimai activity may hold them all. The
+ * actual minutes are there because Kimai may round the duration it shows (e.g. up to 30 minutes); the tokens and cost to
+ * set agents' work against what it delivered (left out when the CLI doesn't report them); the model and CLI because
+ * only the ai-agent tag is sent.
  */
 export function describe(s: WorkSession, span?: [number, number]): string {
   const refs = [s.issue ? `#${s.issue}` : '', s.pr ? `PR #${s.pr}` : ''].filter(Boolean).join(' / ');
   const where = [s.repo || (s.work === 'planning' ? 'office' : ''), refs].filter(Boolean).join(' ');
   const actual = span ? `${Math.max(1, Math.round((span[1] - span[0]) / 60_000))}m actual` : '';
+  const cost = s.costUsd && s.costUsd > 0 ? `$${s.costUsd.toFixed(2)} API-equivalent` : '';
   const how = [s.model, s.cli].filter(Boolean).join(' via ');
-  const text = [s.agentName, where, s.title?.trim() ?? '', actual, how].filter(Boolean).join(' · ');
+  const text = [s.agentName, where, s.title?.trim() ?? '', actual, tokenText(s.tokens), cost, how].filter(Boolean).join(' · ');
   return `[${WORK_LABEL[s.work]}] ${text}${s.cutOff ? ' (cut off by an office restart)' : ''}`.slice(0, 1000);
 }
 
