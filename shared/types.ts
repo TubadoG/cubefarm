@@ -398,6 +398,13 @@ export interface EmailSettings {
   digest: DigestSettings;
   inbox: boolean; // read replies to the From mailbox: the manager's own reach the CEO (server/mailInbox.ts)
   mine: string[]; // the addresses whose email counts as the manager's
+  colleagues: EmailColleague[]; // other agents or people whose email reaches the CEO as theirs, never as the manager's
+}
+
+/** Someone whose email reaches the CEO under their own name, without the manager's authority (docs/email.md). */
+export interface EmailColleague {
+  email: string; // lowercased
+  name: string;
 }
 
 /** One email the office read from its mailbox, and what it did with it. Never the body. */
@@ -406,8 +413,9 @@ export interface InboundEmailView {
   from: string;
   subject: string;
   at: number; // when it arrived
-  outcome: 'delivered' | 'ignored';
+  outcome: 'delivered' | 'colleague' | 'ignored'; // colleague: passed to the CEO as a colleague's, not the manager's
   reason?: string; // why it was ignored
+  colleague?: string; // the colleague's name (outcome colleague)
 }
 
 /** Settings → Email's inbox status. */
@@ -679,7 +687,7 @@ export interface PhoneMessage {
   voice?: Exclude<VoiceProvider, 'off'>; // who read it aloud when it arrived (absent: nobody), for the phone's ▶ replay
 }
 
-export type CeoJobKind = 'onboard' | 'plan' | 'review' | 'chat' | 'triage' | 'decision';
+export type CeoJobKind = 'onboard' | 'plan' | 'review' | 'chat' | 'triage' | 'decision' | 'colleague';
 
 export interface CeoInfo {
   queue: { kind: CeoJobKind; label: string }[]; // jobs waiting for the CEO

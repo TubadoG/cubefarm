@@ -1,8 +1,8 @@
 // Outbound email's rules (docs/email.md), shared by the server (validation, the allowlist check, the daily cap) and
 // Settings → Email. The CEO may only write to people on the manager's list; the office enforces it, not the prompt.
-import type { DigestSettings, EmailRecipient, EmailSettings, EmailView } from './types.ts';
+import type { DigestSettings, EmailColleague, EmailRecipient, EmailSettings, EmailView } from './types.ts';
 
-export type { DigestSettings, EmailRecipient, EmailSettings };
+export type { DigestSettings, EmailColleague, EmailRecipient, EmailSettings };
 
 /** Most people on the list. */
 export const MAX_RECIPIENTS = 25;
@@ -12,9 +12,11 @@ export const EMAILS_PER_DAY = 10;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const DEFAULT_DIGEST: DigestSettings = { enabled: false, hour: 8, to: '' };
-export const DEFAULT_EMAIL: EmailSettings = { enabled: false, from: '', copyTo: '', recipients: [], digest: DEFAULT_DIGEST, inbox: false, mine: [] };
+export const DEFAULT_EMAIL: EmailSettings = { enabled: false, from: '', copyTo: '', recipients: [], digest: DEFAULT_DIGEST, inbox: false, mine: [], colleagues: [] };
 /** Most addresses that count as the manager's own. */
 export const MAX_MINE = 10;
+/** Most colleagues whose email reaches the CEO. */
+export const MAX_COLLEAGUES = 10;
 
 // Deliberately plain: no quotes, spaces or brackets, a dot in the domain. Enough to catch typos, not RFC 5322.
 const ADDRESS = /^[a-z0-9._%+'-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
@@ -82,6 +84,12 @@ export function emailProblem(patch: unknown, base: EmailSettings = DEFAULT_EMAIL
     const bad = (p.mine as unknown[]).find((m) => !emailAddress(m));
     if (bad !== undefined) return `"${String(bad)}" isn't a valid email address.`;
   }
+  if (p.colleagues !== undefined) {
+    if (!Array.isArray(p.colleagues)) return 'The list of colleagues is missing.';
+    if (p.colleagues.length > MAX_COLLEAGUES) return `At most ${MAX_COLLEAGUES} colleagues fit on the list.`;
+    const bad = (p.colleagues as { email?: unknown }[]).find((c) => !emailAddress(c?.email));
+    if (bad !== undefined) return `"${String(bad?.email ?? '')}" isn't a valid email address.`;
+  }
   if (p.digest !== undefined) return digestProblem(p.digest, p.recipients, { ...DEFAULT_EMAIL, ...base, digest: { ...DEFAULT_DIGEST, ...base.digest } });
   return null;
 }
@@ -99,7 +107,38 @@ export function emailSettings(base: EmailSettings, patch: unknown): EmailSetting
   let mine = p.mine === undefined ? (b.mine ?? []) : (mineList(p.mine) ?? b.mine ?? []);
   // Switched on with nobody listed: the blind-copy address, the manager's own, counts.
   if (inbox && !b.inbox && mine.length === 0 && copyTo) mine = [copyTo];
-  return { enabled: typeof p.enabled === 'boolean' ? p.enabled : b.enabled, from, copyTo, recipients, digest: digestSettings({ ...DEFAULT_DIGEST, ...b.digest }, p.digest, recipients), inbox, mine };
+  const colleagues = p.colleagues === undefined ? (b.colleagues ?? []) : (colleagueList(p.colleagues) ?? b.colleagues ?? []);
+  return { enabled: typeof p.enabled === 'boolean' ? p.enabled : b.enabled, from, copyTo, recipients, digest: digestSettings({ ...DEFAULT_DIGEST, ...b.digest }, p.digest, recipients), inbox, mine, colleagues };
+}
+
+/** Colleagues from a saved state or a patch, or null when it isn't a valid list. A name defaults to the address's local part. */
+function colleagueList(raw: unknown): EmailColleague[] | null {
+  if (!Array.isArray(raw) || raw.length > MAX_COLLEAGUES) return null;
+  const out: EmailColleague[] = [];
+  for (const c of raw as unknown[]) {
+    const x = (c && typeof c === 'object' ? c : {}) as { email?: unknown; name?: unknown };
+    const email = emailAddress(x.email);
+    if (!email) return null;
+    if (out.some((o) => o.email === email)) continue;
+    const name = typeof x.name === 'string' ? x.name.replace(/\s+/g, ' ').trim().slice(0, MAX_NAME) : '';
+    out.push({ email, name: name || email.split('@')[0] });
+  }
+  return out;
+}
+
+/**
+ * The colleague with this address, if any. An address that is also on `mine` is the manager's: the manager wins, so it
+ * never comes back as a colleague.
+ */
+export function findColleague(s: Pick<EmailSettings, 'mine' | 'colleagues'>, addr: unknown): EmailColleague | undefined {
+  const email = emailAddress(addr);
+  if (!email || (s.mine ?? []).includes(email)) return undefined;
+  return (s.colleagues ?? []).find((c) => c.email === email);
+}
+
+/** Colleagues the CEO can't answer: not on the send list. Settings → Email warns about them. */
+export function colleaguesOffList(s: Pick<EmailSettings, 'recipients' | 'colleagues'>): EmailColleague[] {
+  return (s.colleagues ?? []).filter((c) => !s.recipients.some((r) => r.email === c.email));
 }
 
 /** The manager's own addresses from a patch, or null when it isn't a valid list. */
@@ -138,13 +177,15 @@ export function emailsToday(emails: Pick<EmailView, 'status' | 'createdAt'>[], n
 
 /**
  * What happens to a reply: it reaches the CEO (the office reads its mailbox and the recipient's address counts as the
- * manager's), the manager answers in the office instead, or nobody reads it (anyone else).
+ * manager's or a colleague's), the manager answers in the office instead, or nobody reads it (anyone else).
  */
 export type ReplyNote = 'read' | 'office' | 'unread';
 
 /** The reply note for an email to `to` under these settings. */
-export function replyNote(s: Pick<EmailSettings, 'inbox' | 'mine'>, to: string): ReplyNote {
-  const mine = (s.mine ?? []).includes(to.trim().toLowerCase());
+export function replyNote(s: Pick<EmailSettings, 'inbox' | 'mine'> & Partial<Pick<EmailSettings, 'colleagues'>>, to: string): ReplyNote {
+  const addr = to.trim().toLowerCase();
+  if ((s.colleagues ?? []).some((c) => c.email === addr) && !(s.mine ?? []).includes(addr)) return s.inbox ? 'read' : 'unread';
+  const mine = (s.mine ?? []).includes(addr);
   if (!mine) return 'unread';
   return s.inbox ? 'read' : 'office';
 }

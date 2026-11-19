@@ -2,11 +2,12 @@
 // copy, and the list of people it may write to (each sent at once, or after the manager's OK). The sender's
 // credentials are set over REST and never reach the browser: only whether they're set. The daily digest (server/digest.ts)
 // goes to one of them, once a day. Reading replies (server/mailInbox.ts) hands the manager's own emails to the mailbox
-// to the CEO; only who sent each one, its subject and what happened to it reach the browser.
+// to the CEO, and colleagues' as theirs (never with the manager's authority); only who sent each one, its subject and
+// what happened to it reach the browser.
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { EMAILS_PER_DAY, emailAddress, MAX_MINE, MAX_NAME, MAX_RECIPIENTS } from '../../../shared/email';
+import { colleaguesOffList, EMAILS_PER_DAY, emailAddress, MAX_COLLEAGUES, MAX_MINE, MAX_NAME, MAX_RECIPIENTS } from '../../../shared/email';
 import type { EmailRecipient, EmailSettings as Email } from '../../../shared/types';
 import { confirmDialog } from './Confirm';
 
@@ -17,6 +18,7 @@ export function EmailSettings() {
   const sender = useStore((s) => s.emailSender);
   const inbox = useStore((s) => s.emailInbox);
   const [mineAdd, setMineAdd] = useState('');
+  const [colleagueAdd, setColleagueAdd] = useState({ email: '', name: '' });
   const [check, setCheck] = useState<{ busy: boolean; result: string | null }>({ busy: false, result: null });
   const [from, setFrom] = useState(email.from);
   const [add, setAdd] = useState({ email: '', name: '', approve: true });
@@ -47,6 +49,9 @@ export function EmailSettings() {
   };
   const mine = email.mine ?? [];
   const mineOk = !!emailAddress(mineAdd) && !mine.includes(emailAddress(mineAdd)!) && mine.length < MAX_MINE;
+  const colleagues = email.colleagues ?? [];
+  const offList = new Set(colleaguesOffList({ recipients: email.recipients, colleagues }).map((c) => c.email));
+  const colleagueOk = !!emailAddress(colleagueAdd.email) && !colleagues.some((c) => c.email === emailAddress(colleagueAdd.email)) && colleagues.length < MAX_COLLEAGUES;
   const runCheck = async () => {
     setCheck({ busy: true, result: null });
     try {
@@ -211,7 +216,7 @@ export function EmailSettings() {
       <h4 className="notify-h">Replies</h4>
       <p className="muted small">
         When this is on, the office reads {email.from || 'the From mailbox'} every 2 minutes. Your own emails to it reach the CEO like a message from the phone, and
-        the CEO answers on the phone. Email from anyone else, auto-replies and senders that fail the checks are only listed here. Nothing is marked read or moved.
+        the CEO answers on the phone. Your colleagues' reach the CEO as theirs. Email from anyone else, auto-replies and senders that fail the checks are only listed here. Nothing is marked read or moved.
       </p>
       <div className="notify-hook">
         <label className="toggle block">
@@ -244,6 +249,44 @@ export function EmailSettings() {
             Add
           </button>
         </form>
+        <div className="small">Colleagues: other agents or people whose email reaches the CEO as theirs, not yours:</div>
+        <p className="muted small">
+          The CEO reads their email as information and requests only: it never counts as your decision or approval. It answers them by email, so put them on the list above too.
+        </p>
+        {colleagues.length === 0 && <p className="muted small">Nobody.</p>}
+        <ul className="email-list">
+          {colleagues.map((c) => (
+            <li key={c.email} className="row wrap">
+              <span className="grow small">
+                <b>{c.name}</b> <span className="muted">{c.email}</span>
+                {mine.includes(c.email) && <span className="muted"> · also yours, so it counts as yours</span>}
+                {offList.has(c.email) && (
+                  <span style={{ display: 'block', marginTop: 4 }}>
+                    <span className="chip chip-warn">⚠️ Not on the CEO's list above, so the CEO can't reply</span>
+                  </span>
+                )}
+              </span>
+              <button className="btn btn-small btn-ghost" aria-label={`Remove ${c.name}`} onClick={() => void save({ colleagues: colleagues.filter((x) => x.email !== c.email) })}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        <form
+          className="row wrap"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!colleagueOk) return;
+            void save({ colleagues: [...colleagues, { email: colleagueAdd.email.trim(), name: colleagueAdd.name.trim() }] });
+            setColleagueAdd({ email: '', name: '' });
+          }}
+        >
+          <input value={colleagueAdd.name} onChange={(e) => setColleagueAdd({ ...colleagueAdd, name: e.target.value })} placeholder="Name" aria-label="Colleague's name" maxLength={MAX_NAME} className="grow" />
+          <input type="email" value={colleagueAdd.email} onChange={(e) => setColleagueAdd({ ...colleagueAdd, email: e.target.value })} placeholder="agent@your-company.com" aria-label="Colleague's email address" autoComplete="off" className="grow" />
+          <button className="btn btn-small btn-good" disabled={!colleagueOk}>
+            Add
+          </button>
+        </form>
         <div className="row wrap">
           <span className="small grow" role="status">
             {inbox.lastCheck ? `Last checked ${new Date(inbox.lastCheck).toLocaleTimeString()}` : 'Not checked yet'}
@@ -262,7 +305,9 @@ export function EmailSettings() {
                   <b>{i.subject || '(no subject)'}</b> <span className="muted">{i.from}</span>
                 </div>
                 <div>
-                  <span className={i.outcome === 'delivered' ? 'notify-ok' : 'muted'}>{i.outcome === 'delivered' ? '✉️ Delivered' : `Ignored: ${i.reason}`}</span>
+                  <span className={i.outcome === 'ignored' ? 'muted' : 'notify-ok'}>
+                    {i.outcome === 'delivered' ? '✉️ Delivered' : i.outcome === 'colleague' ? `🤝 To the CEO as ${i.colleague ?? 'a colleague'}'s, not yours` : `Ignored: ${i.reason}`}
+                  </span>
                   <span className="muted"> · {new Date(i.at).toLocaleString()}</span>
                 </div>
               </li>
