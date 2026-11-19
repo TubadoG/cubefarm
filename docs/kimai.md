@@ -74,12 +74,19 @@ The tokens and cost are there to set an agent's hours against what it delivered:
   session's tokens and the cheapest. Under 1,000 as they are, then `820k`, then `13.1M`.
 - **API-equivalent** is what the session's tokens would cost at API prices, as Claude estimates it (the same cost
   the office's ledger records), to the cent. On a subscription nothing is billed per token.
-- Tokens come from Claude sessions in the SDK runtime (the SDK's running per-model totals, subagents included). In
-  the terminal runtime Claude Code reports its cost through the status line but not its tokens, so only the cost is
-  shown. Codex and OpenCode report neither, and a session an office restart cut off has no result: both parts are
-  left out, and so are they on entries saved before the office recorded them.
-- A resumed session's first result already carries the turns before it, so a session that picks up an earlier
-  conversation (a follow-up, QA's resume) counts those again, in its tokens and its cost alike.
+- In the terminal runtime (the default), the cost is Claude Code's status line's and the tokens are read from the
+  session's transcript when it ends (`server/transcript.ts`): the file Claude's hooks reported, else
+  `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/<desk folder, every character but A-Z a-z 0-9 as ->/<session id>.jsonl`,
+  plus that session's `subagents/*.jsonl`. Each assistant message counts once (streaming writes it on several lines),
+  and only messages stamped between the session's start and end: a follow-up or resume in the same conversation
+  doesn't count the turns before it again. It's read line by line, and if the file is missing, unreadable or takes
+  over 20 seconds, the entry is logged without tokens.
+- In the SDK runtime the tokens are the SDK's running per-model totals, subagents included. There a resumed session's
+  first result already carries the turns before it, so a follow-up or QA's resume counts those again, in its tokens
+  and its cost alike. The terminal runtime's cost can do the same, since the status line's total runs for as long as
+  the CLI does.
+- Codex and OpenCode report neither, and a session an office restart cut off has no result: both parts are left out,
+  and so are they on entries saved before the office recorded them.
 
 ## How hours are measured
 

@@ -9,6 +9,7 @@ import { browserProblem, playwrightMcp } from './browser.ts';
 import { CROSS_TURN_TOOLS, NO_SHELL, noShell } from './clis.ts';
 import { VERSION } from './config.ts';
 import type { SessionTokens } from './timesheets.ts';
+import type { TranscriptRef } from './transcript.ts';
 
 // One Claude Code instance (via the Claude Agent SDK) on one task (building an issue, testing or fixing a PR) in its own git worktree.
 // The CEO runs through here too, with the office tools instead of a shell.
@@ -59,6 +60,8 @@ export interface SessionResult {
   turns: number;
   /** The session's tokens, when the CLI reports them (Agent SDK sessions only). */
   tokens?: SessionTokens;
+  /** Claude in the terminal runtime: its transcript, where the session's tokens are read from (transcript.ts). */
+  transcript?: TranscriptRef;
   errors: string[];
   structured?: unknown;
   /** The manager interrupted the turn in the agent's terminal (Esc). */
