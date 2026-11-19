@@ -8,6 +8,8 @@ import type { AgentTerminal } from './terminal.ts';
 import { browserProblem, playwrightMcp } from './browser.ts';
 import { CROSS_TURN_TOOLS, NO_SHELL, noShell } from './clis.ts';
 import { VERSION } from './config.ts';
+import type { SessionTokens } from './timesheets.ts';
+import type { TranscriptRef } from './transcript.ts';
 
 // One Claude Code instance (via the Claude Agent SDK) on one task (building an issue, testing or fixing a PR) in its own git worktree.
 // The CEO runs through here too, with the office tools instead of a shell.
@@ -56,10 +58,34 @@ export interface SessionResult {
   text: string;
   costUsd: number;
   turns: number;
+  /** The session's tokens, when the CLI reports them (Agent SDK sessions only). */
+  tokens?: SessionTokens;
+  /** Claude in the terminal runtime: its transcript, where the session's tokens are read from (transcript.ts). */
+  transcript?: TranscriptRef;
   errors: string[];
   structured?: unknown;
   /** The manager interrupted the turn in the agent's terminal (Esc). */
   interrupted?: boolean;
+}
+
+type Usage = { input_tokens?: number | null; output_tokens?: number | null; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null };
+type ModelTotals = { inputTokens?: number; outputTokens?: number; cacheCreationInputTokens?: number; cacheReadInputTokens?: number };
+
+/**
+ * A result message's tokens, for the timesheet. modelUsage (every model the session called, subagents included) is a
+ * running total like total_cost_usd, so the latest result's is the session's: summing results would count turns twice.
+ * Without it, the main loop's usage. Undefined when the result reports no tokens at all.
+ */
+export function resultTokens(msg: { usage?: Usage | null; modelUsage?: Record<string, ModelTotals> | null }): SessionTokens | undefined {
+  const n = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const models = Object.values(msg.modelUsage ?? {});
+  const t = models.length
+    ? models.reduce<SessionTokens>(
+        (sum, m) => ({ input: sum.input + n(m.inputTokens), output: sum.output + n(m.outputTokens), cacheWrite: sum.cacheWrite + n(m.cacheCreationInputTokens), cacheRead: sum.cacheRead + n(m.cacheReadInputTokens) }),
+        { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      )
+    : { input: n(msg.usage?.input_tokens), output: n(msg.usage?.output_tokens), cacheWrite: n(msg.usage?.cache_creation_input_tokens), cacheRead: n(msg.usage?.cache_read_input_tokens) };
+  return t.input + t.output + t.cacheWrite + t.cacheRead > 0 ? t : undefined;
 }
 
 export interface SessionCallbacks {
@@ -333,6 +359,7 @@ export function startSession(opts: SessionOptions, callbacks: SessionCallbacks):
   let stopped = false;
   let lastCost = 0;
   let lastTurns = 0;
+  let lastTokens: SessionTokens | undefined;
   const toolNames = new Map<string, string>();
 
   input.push(opts.prompt);
@@ -394,6 +421,7 @@ export function startSession(opts: SessionOptions, callbacks: SessionCallbacks):
       text: msg.subtype === 'success' ? msg.result : '',
       costUsd: lastCost,
       turns: lastTurns,
+      ...(lastTokens ? { tokens: lastTokens } : {}),
       errors: msg.subtype === 'success' ? [] : msg.errors,
       structured: msg.subtype === 'success' ? msg.structured_output : undefined,
     });
@@ -494,6 +522,7 @@ export function startSession(opts: SessionOptions, callbacks: SessionCallbacks):
       case 'result': {
         lastCost = msg.total_cost_usd;
         lastTurns = msg.num_turns;
+        lastTokens = resultTokens(msg) ?? lastTokens;
         if (msg.subtype === 'success' && !msg.is_error && msg.num_turns === 0) {
           // A resumed session can first replay a turn left over from before an office restart: an empty "success"
           // that answers none of our prompts, with the real turn right behind it. Counting it ended the session
@@ -512,12 +541,12 @@ export function startSession(opts: SessionOptions, callbacks: SessionCallbacks):
     try {
       for await (const msg of query({ prompt: input, options })) handle(msg);
       if (pendingTurns > 0) {
-        cb.finished({ ok: false, text: '', costUsd: lastCost, turns: lastTurns, errors: [stopped ? 'Stopped by manager' : 'Session ended unexpectedly'] });
+        cb.finished({ ok: false, text: '', costUsd: lastCost, turns: lastTurns, ...(lastTokens ? { tokens: lastTokens } : {}), errors: [stopped ? 'Stopped by manager' : 'Session ended unexpectedly'] });
       }
     } catch (err) {
       input.close();
       const message = stopped ? 'Stopped by manager' : err instanceof Error ? err.message : String(err);
-      cb.finished({ ok: false, text: '', costUsd: lastCost, turns: lastTurns, errors: [message] });
+      cb.finished({ ok: false, text: '', costUsd: lastCost, turns: lastTurns, ...(lastTokens ? { tokens: lastTokens } : {}), errors: [message] });
     }
   })();
 

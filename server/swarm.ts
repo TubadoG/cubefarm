@@ -27,6 +27,7 @@ import { emptyKimai, KimaiSync, loadKimai, type KimaiState } from './kimai.ts';
 import { findLogo, logoProblem, removeLogo, saveLogo } from './logo.ts';
 import { emptyInbox, loadInbox, MailInbox, type InboxState } from './mailInbox.ts';
 import type { WorkSession } from './timesheets.ts';
+import { sessionTranscriptTokens } from './transcript.ts';
 import { DEFAULT_KIMAI, kimaiProblem, kimaiSettings } from '../shared/kimai.ts';
 import { reconcileStep, restartMessage, sessionStart, workState, type ReconcileStep, type RestartCounts, type WorkState } from './reconcile.ts';
 import { diagnose, finding, forget, NUDGE_WAIT_MS, nudgeText, QUIET_MS, triage, unclosedIssues, type Problem, type Remedy, type WatchAgent, type WatchMemory } from './watchdog.ts';
@@ -392,6 +393,7 @@ const MAX_ISSUE_FAILURES = 2;
 const MAX_QA_FAILURES = 2;
 // How long the office waits after Claude's usage limit is hit when Claude doesn't say when it resets.
 const LIMIT_PAUSE_MS = 15 * 60_000;
+const TRANSCRIPT_READ_MS = 20_000; // a terminal session's transcript read for its tokens: then it's logged without
 // Everyone on a floor this size or bigger busy at once is a full house (an achievement).
 const FULL_HOUSE = 4;
 // Mission control's numbers are recomputed after these events (debounced), and every half minute for the clock's sake.
@@ -2863,7 +2865,7 @@ export class Swarm {
     a.costUsd += result.costUsd;
     a.turns += result.turns;
     recordCost(this.state.ops, repo.id, result.costUsd, a.endedAt);
-    this.logWork(a, repo.id, a.task ?? 'issue', a.endedAt);
+    this.logWork(a, repo.id, a.task ?? 'issue', a.endedAt, result);
     this.ledger({ kind: 'session', agentId: a.id, key: `${a.id}:${a.startedAt}:${a.endedAt}`, costUsd: result.costUsd, turns: result.turns }, false); // emitted below
     // Dev servers the agent forgot to stop would otherwise keep its port and lock its desk folder.
     void this.releaseDesk(a, repo).catch(() => undefined);
@@ -2883,8 +2885,11 @@ export class Swarm {
 
   // ---------- time tracking ----------
 
-  /** The session that just ended (or was cut off at `end`), as time tracking records it. */
-  private workSession(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number, cutOff = false): WorkSession | null {
+  /**
+   * The session that just ended (or was cut off at `end`), as time tracking records it. `result` gives its tokens and
+   * cost, the same cost the ledger records; a cut-off session has no result, so it shows neither.
+   */
+  private workSession(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number, cutOff = false, result?: SessionResult): WorkSession | null {
     if (!a.startedAt) return null;
     const repo = repoId ? this.state.repos.find((r) => r.id === repoId) : undefined;
     return {
@@ -2902,12 +2907,20 @@ export class Swarm {
       begin: a.startedAt,
       end,
       ...(cutOff ? { cutOff } : {}),
+      ...(result?.tokens ? { tokens: result.tokens } : {}),
+      ...(result && result.costUsd > 0 ? { costUsd: result.costUsd } : {}),
     };
   }
 
-  private logWork(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number) {
-    const s = this.workSession(a, repoId, work, end);
-    if (s) this.kimai.record(s);
+  private logWork(a: PersistedAgent, repoId: string | null, work: WorkSession['work'], end: number, result?: SessionResult) {
+    const s = this.workSession(a, repoId, work, end, false, result);
+    if (!s) return;
+    // Claude in the terminal reports no tokens: they're read from its transcript, briefly, before the entry is built.
+    if (s.tokens || !result?.transcript || this.state.settings.kimai.mode === 'off') return this.kimai.record(s);
+    const timeout = new Promise<undefined>((done) => setTimeout(done, TRANSCRIPT_READ_MS));
+    void Promise.race([sessionTranscriptTokens(result.transcript, s.begin, s.end), timeout])
+      .catch(() => undefined)
+      .then((tokens) => this.kimai.record(tokens ? { ...s, tokens } : s));
   }
 
   /** A worker's session the restart cut off: logged up to the office's last state write, or shown as not logged. */
@@ -4305,7 +4318,7 @@ export class Swarm {
     a.turns += result.turns;
     recordCost(this.state.ops, '', result.costUsd, a.endedAt);
     const job = this.state.ceo.job;
-    if (this.state.settings.kimai.planning) this.logWork(a, job?.repoId ?? null, 'planning', a.endedAt);
+    if (this.state.settings.kimai.planning) this.logWork(a, job?.repoId ?? null, 'planning', a.endedAt, result);
     this.state.ceo.job = null;
     if (job?.kind === 'decision') void this.decisionAnswered(job, result.ok && !result.interrupted ? result.text : null);
     if (result.interrupted) this.interrupted(a);
@@ -4900,7 +4913,7 @@ export class Swarm {
     a.costUsd += result.costUsd;
     a.turns += result.turns;
     recordCost(this.state.ops, repoId, result.costUsd, a.endedAt);
-    if (this.state.settings.kimai.planning) this.logWork(a, repoId, 'planning', a.endedAt);
+    if (this.state.settings.kimai.planning) this.logWork(a, repoId, 'planning', a.endedAt, result);
     const l = this.state.leads[repoId];
     const job = l?.job ?? null;
     if (l) l.job = null;

@@ -5,7 +5,7 @@
 import type { KimaiEntryView, KimaiSettings, KimaiView } from '../shared/types.ts';
 import { HttpError } from './httpError.ts';
 import { mergeSecrets, readSecrets } from './secrets.ts';
-import { spanKey, timesheet, workSpans, type KimaiTimesheet, type LimitWait, type WorkSession } from './timesheets.ts';
+import { spanKey, spanSession, timesheet, workSpans, type KimaiTimesheet, type LimitWait, type WorkSession } from './timesheets.ts';
 
 export interface KimaiRequest {
   method: 'GET' | 'POST';
@@ -207,7 +207,7 @@ export class KimaiSync {
     if (k.mode === 'off' || this.skipped(s) || this.has(s.key)) return;
     const waits = this.deps.state().waits.filter((w) => w.agentId === s.agentId);
     const spans = workSpans(s.begin, s.end, waits, k.minMinutes * 60_000);
-    spans.forEach((span, i) => this.push(this.entry(s, span, spanKey(s.key, i, spans.length), k)));
+    spans.forEach((span, i) => this.push(this.entry(spanSession(s, i), span, spanKey(s.key, i, spans.length), k)));
     if (spans.length) this.changed();
     if (k.mode === 'live') void this.flush();
   }

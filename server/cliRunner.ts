@@ -353,6 +353,7 @@ export function startCliSession(opts: SessionOptions, callbacks: SessionCallback
   const launched: string[] = []; // every prompt the CLI was given, as given (Codex: finds its main thread)
   let mainThread: string | null = opts.resumeSessionId ?? null;
   let kept: string | null = opts.resumeSessionId ?? null; // the Claude session the agent has saved to resume
+  let transcript: string | null = null; // Claude's transcript file, as its hooks report it: the session's tokens
   const usageResets = new Map<string, number | null>();
   const warned = new Set<string>();
   let done = false;
@@ -402,7 +403,8 @@ export function startCliSession(opts: SessionOptions, callbacks: SessionCallback
       else endLive(l);
     }
     cb.tool(null);
-    cb.finished({ ...r, costUsd, turns });
+    const ref = cli === 'claude' ? { transcript: { file: transcript, cwd: opts.cwd, sessionId: kept } } : {};
+    cb.finished({ ...r, costUsd, turns, ...ref });
   };
 
   /** A turn ended: finished, unless the CLI picks up another prompt within the grace period. */
@@ -461,6 +463,7 @@ export function startCliSession(opts: SessionOptions, callbacks: SessionCallback
   const hook = (b: Record<string, unknown>): Record<string, unknown> => {
     const event = String(b.hook_event_name ?? '');
     const sub = typeof b.agent_id === 'string' && b.agent_id !== ''; // a subagent's call: kept off the log
+    if (cli === 'claude' && !sub && typeof b.transcript_path === 'string' && b.transcript_path) transcript = b.transcript_path;
     if (cli === 'claude' && !sub && b.session_id !== kept) {
       const id = resumableSession(b, fs.existsSync);
       if (id) {
