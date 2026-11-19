@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createDemoBackend } from './demo.ts';
 import { HttpError } from './httpError.ts';
 import { Swarm } from './swarm.ts';
@@ -17,7 +17,7 @@ async function office() {
   const swarm = new Swarm(createDemoBackend());
   (swarm as unknown as Internals).ensureCeo([]);
   await swarm.mailer.init(); // the demo's fake sender
-  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [] } });
+  swarm.updateSettings({ email: { enabled: true, from: 'ceo@co.example.com', copyTo: AUTO.email, recipients: [AUTO, ASK, BAD], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [], colleagues: [] } });
   const tools = (swarm as unknown as Internals).officeTools();
   const send = (to: string, subject = 'Weekly report') => tools.call('send_email', { to, subject, body: 'All floors are green.' });
   return { swarm, send, emails: () => swarm.snapshot().emails, messages: () => swarm.snapshot().messages };
@@ -168,11 +168,25 @@ describe('reading replies', () => {
     expect(swarm.snapshot().settings.email.mine).toEqual([AUTO.email]); // the blind-copy address counts as the manager's
     swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, mine: ['manager@demo-co.example.com'] } });
     const view = await swarm.inbox.check(true);
-    expect(view.items.map((i) => i.outcome)).toEqual(['ignored', 'ignored', 'delivered']);
+    expect(view.items.map((i) => i.outcome)).toEqual(['ignored', 'ignored', 'ignored', 'delivered']); // Nova isn't a colleague here
     const m = messages().filter((x) => x.from === 'manager');
     expect(m).toHaveLength(1);
     expect(m[0]).toMatchObject({ via: 'email', text: expect.stringMatching(/^Email from the manager\. Subject: Re: Weekly report/) });
     await swarm.inbox.check(true);
     expect(messages().filter((x) => x.from === 'manager')).toHaveLength(1);
   }, 15_000); // a whole demo office: slow when the full suite runs in parallel
+
+  it('hands a colleague’s email to the CEO as theirs: a job of its own, nothing from the manager', async () => {
+    const { swarm, messages } = await office();
+    const s = swarm.snapshot().settings.email;
+    swarm.updateSettings({ email: { ...s, inbox: true, mine: ['manager@demo-co.example.com'], colleagues: [{ email: 'nova@demo-co.example.com', name: 'Nova' }] } });
+    const toCeo = vi.spyOn(swarm, 'colleagueEmail');
+    const view = await swarm.inbox.check(true);
+    expect(view.items.find((i) => i.from === 'nova@demo-co.example.com')).toMatchObject({ outcome: 'colleague', colleague: 'Nova' });
+    const manager = messages().filter((x) => x.from === 'manager');
+    expect(manager).toHaveLength(1); // the manager's own reply only
+    expect(manager[0].text).not.toContain('Nova');
+    expect(toCeo).toHaveBeenCalledTimes(1);
+    expect(toCeo.mock.calls[0][0]).toMatch(/^Email from Nova <nova@demo-co\.example\.com> \(a colleague, not the manager/);
+  }, 15_000);
 });

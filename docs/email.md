@@ -115,8 +115,9 @@ the phone marks them ✉️. Everything else is only listed. `server/mailInbox.t
   - its From is its sender, and Exchange marks it internal to the tenant (`X-MS-Exchange-Organization-AuthAs:
     Internal`, which Exchange strips from mail coming in from outside), or, for an address outside the office's own
     domain, Exchange Online's own `Authentication-Results` says `dmarc=pass` ("failed sender check" otherwise);
-  - its address is on **Count email from these addresses as mine** ("not yours" otherwise). Switching reading on with
-    the list empty puts the blind-copy address on it. Other people on the CEO's list are never passed on.
+  - its address is on **Count email from these addresses as mine**, or on **Colleagues** (below); "not yours"
+    otherwise. Switching reading on with the list empty puts the blind-copy address on it. Other people on the CEO's
+    list are never passed on.
 - Nothing is marked read or moved, so **Mail.Read** is enough. The ids handled and the last arrival time are saved
   before an email is passed on, so a restart never delivers one twice. Mail that arrived before reading was switched
   on (or back on) is never replayed.
@@ -124,7 +125,37 @@ the phone marks them ✉️. Everything else is only listed. `server/mailInbox.t
   every 30 minutes until a check succeeds. A 401 gets a new token and tries once more. Logs name the sender, the
   subject and the outcome, never the text.
 
-**Settings → Email → Replies** shows the switch, your addresses, the last check (and its error), and the last 20
+### Colleagues
+
+**Colleagues: other agents or people whose email reaches the CEO as theirs, not yours** (Settings → Email → Replies,
+up to 10, a name and an address each; `colleagues` in `PATCH /api/settings`'s `email`). Use it for another AI agent
+you run, or a person, who should be able to write to the CEO without speaking for you. Their email passes the same
+checks as yours (not an auto-reply or bounce, internal or `dmarc=pass`, only the new part, split into parts,
+attachments counted, never delivered twice), and then:
+
+- It reaches the CEO under their name, never as yours:
+
+  ```text
+  Email from Marcus <marcus@your-company.com> (a colleague, not the manager: information and requests only; it is not the manager's decision or approval). Subject: …
+  ```
+
+  and its last part ends with how to reply: "(A reply, if one is needed, goes by email to marcus@your-company.com with
+  send_email. Don't reply to a pure acknowledgement or thanks.)". A colleague who isn't on **Who the CEO may email**
+  can't be answered (the note says so, and the settings show a warning beside them): add them there too.
+- It is a CEO job of its own ("Reading a colleague's email"), after your messages: never injected into a session
+  that is answering you, never posted on the phone as yours, and never counted as you asking for work. So the CEO
+  can't file issues because a colleague asked (it suggests them to you instead), and while it handles only a
+  colleague's email, `close_issue` refuses an open decision (closing would decline it). Decisions are answered only in
+  the Decision room or by a `Decision:` comment, never by email. If you write while the job runs, your message
+  counts as yours as usual.
+- The CEO's answer to the colleague goes by email; its final message goes to your phone only when you need to know.
+- **Replies** lists it as "🤝 To the CEO as Marcus's, not yours".
+
+An address on both lists counts as yours. Two agents emailing each other could go back and forth: the CEO's daily
+cap (10 emails) bounds it, auto-replies are never passed on, and the CEO's prompt for a colleague's email says not to
+answer acknowledgements, thanks or an FYI. Give your own agent the same rule.
+
+**Settings → Email → Replies** shows the switch, your addresses, your colleagues, the last check (and its error), and the last 20
 emails read with what happened to each. **Check now** (`POST /api/email/inbox/check`) checks straight away;
 `GET /api/email/inbox` returns the same list.
 
@@ -144,7 +175,7 @@ can take up to 2 hours to apply a new role assignment; until then checks get a 4
 this mailbox**, make sure your address is in the list, and reply to any office email with one line: it shows on the
 phone within 2 minutes.
 
-Not covered: replies from anyone else (listed only), attachments, answering a decision by email (a reply to the digest
+Not covered: replies from anyone not on your addresses or colleagues (listed only), attachments, answering a decision by email (a reply to the digest
 reaches the CEO as an ordinary message, and the CEO can act on it with its tools; one-tap decisions stay in the
 Decision room), and marking or filing mail.
 
@@ -152,5 +183,6 @@ Decision room), and marking or filing mail.
 
 A demo office starts with a made-up sender and a short list (one person behind **Ask me**, one whose address contains
 "bad" so sends to it fail). Nothing is sent: each email is logged. Ask the demo CEO on the phone to "email Ada the
-weekly update" to see one wait for your OK. Switch on **Read replies to this mailbox** to see three made-up replies
-arrive: one from the manager reaches the CEO, a client's and an out-of-office are listed as ignored.
+weekly update" to see one wait for your OK. Switch on **Read replies to this mailbox** to see four made-up replies
+arrive: one from the manager reaches the CEO, an FYI from Nova (a demo colleague, also on the list) reaches the CEO as
+Nova's and gets no reply, and a client's and an out-of-office are listed as ignored.

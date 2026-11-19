@@ -114,7 +114,7 @@ Server (`server/`, Node + Express 5 + ws, run by tsx in development; esbuild bun
   `shared/notify.ts` the settings. `pwa.ts`: the installable app's service worker, served at `/sw.js`.
 - `email.ts`: the CEO's outbound email (docs/email.md): `Mailer` keeps the sender's credentials in `secrets.json`;
   `graphMail.ts` sends through Microsoft Graph (client secret, or a Key Vault-signed assertion via `az`), behind
-  `Backend.email`. `mailInbox.ts` reads replies to the mailbox: the manager's own reach the CEO. The allowlist, approvals and daily cap are the swarm's, by `shared/email.ts`'s rules.
+  `Backend.email`. `mailInbox.ts` reads replies to the mailbox: the manager's own reach the CEO, colleagues' as theirs (never the manager's). The allowlist, approvals and daily cap are the swarm's, by `shared/email.ts`'s rules.
 - `logo.ts`: the company logo (Settings → Company, `PUT /api/logo`): a PNG, JPEG or WebP the lobby sign draws beside the
   company name, in `<SWARM_HOME>/logo.*`; `settings.logoAt` says whether there is one.
 - `journal.ts`: the time-lapse journal (`<SWARM_HOME>/journal/<day>/`): records what `Swarm.broadcast` sends, a file

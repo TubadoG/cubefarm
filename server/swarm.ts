@@ -6,7 +6,7 @@ import type { Backend } from './backend.ts';
 import type { LogEntry, SessionHandle, SessionResult } from './agentRunner.ts';
 import type { PrDetails } from './github.ts';
 import { defaultProjectsDir, DESK_SWEEP_INTERVAL_MS, HOME_DIR, LOG_BUFFER, SCHEDULER_INTERVAL_MS, STATE_FILE, SYNC_INTERVAL_MS, VERSION } from './config.ts';
-import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, createOfficeTools, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type DecisionContext, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
+import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, COLLEAGUE_NO_DECISION, colleagueOnly, createOfficeTools, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type DecisionContext, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
 import { alertStep, clockStep, decisionKey, deadlineOf, defaultComment, DEFAULT_DECISION_TIMEOUT_HOURS, managerReply, parseTimeoutHours, trackDecisions, whenLabel, type DecisionRecord } from './decisionClock.ts';
 import { DECIDED_DEFAULT, findBrief, NEEDS_INPUT, OFFICE_MARK, parseBrief, renderBrief, usableBrief, type Brief } from '../shared/brief.ts';
 import { afterClose, ASK_AGAIN_MS, closedWhy, closuresHeld, forgettable, issueOpen, nameList, pullNow, stillOpen, stoppedMessage, toAsk, toHold, type Closure, type FloorState, type KnownPull, type LearnedPull } from './closeCleanup.ts';
@@ -727,7 +727,7 @@ export class Swarm {
       ready: () => this.mailer.ready,
       get: (url, fresh) => this.mailer.get(url, fresh),
       persist: () => this.writeState(),
-      deliver: (text) => this.messageCeo(text, 'email'),
+      deliver: (text, colleague) => (colleague ? this.colleagueEmail(text) : this.messageCeo(text, 'email')),
       note: (text) => this.postMessage('office', text),
       changed: (emailInbox) => {
         this.save();
@@ -4184,8 +4184,8 @@ export class Swarm {
   /** Queue a job for the CEO: one onboarding and one plan per floor, one review, and chat messages merge into one reply. */
   private enqueueCeo(job: CeoJob) {
     const q = this.state.ceo.queue;
-    const same = q.findIndex((j) => j.kind === job.kind && (job.kind === 'review' || job.kind === 'chat' || (j.repoId === job.repoId && j.prNumber === job.prNumber)));
-    if (same >= 0) q[same] = job.kind === 'chat' || job.kind === 'decision' ? { ...q[same], text: `${q[same].text}\n${job.text}` } : job;
+    const same = q.findIndex((j) => j.kind === job.kind && (job.kind === 'review' || job.kind === 'chat' || job.kind === 'colleague' || (j.repoId === job.repoId && j.prNumber === job.prNumber)));
+    if (same >= 0) q[same] = job.kind === 'chat' || job.kind === 'decision' || job.kind === 'colleague' ? { ...q[same], text: `${q[same].text}\n${job.text}` } : job;
     else q.push(job);
     this.emitCeo();
     this.save();
@@ -4205,7 +4205,7 @@ export class Swarm {
     }
     if (!a || BUSY.includes(a.status) || c.job || c.queue.length === 0) return;
     if (this.slotsFull()) return;
-    const rank: Record<CeoJob['kind'], number> = { chat: 0, decision: 0, triage: 0, onboard: 1, plan: 1, review: 2 };
+    const rank: Record<CeoJob['kind'], number> = { chat: 0, decision: 0, triage: 0, colleague: 1, onboard: 1, plan: 1, review: 2 };
     // A floor's jobs wait for its clone and first sync, so the CEO has something to read.
     const ready = (j: CeoJob) => {
       const rt = j.repoId ? this.repoRt.get(j.repoId) : undefined;
@@ -4251,6 +4251,7 @@ export class Swarm {
       { kind: 'system', text: `━━━ ${label} ━━━` },
     ]);
     if (job.kind === 'chat' || job.kind === 'decision') this.appendLog(a, [{ kind: 'manager', text: `▶ Manager: ${job.text}` }]);
+    if (job.kind === 'colleague') this.appendLog(a, [{ kind: 'system', text: `✉️ ${job.text}` }]);
     if (job.kind === 'review') {
       this.state.ceo.lastReviewAt = Date.now();
       this.state.ceo.lastFingerprint = this.fingerprint();
@@ -4360,6 +4361,16 @@ export class Swarm {
       return;
     }
     this.enqueueCeo({ kind: 'chat', text: t, at: Date.now() });
+  }
+
+  /**
+   * A colleague's email (mailInbox.ts, already framed as theirs) → the CEO, as a job of its own. Never injected into a
+   * running session, never posted as the manager's and never counted as the manager asking: a colleague can't file
+   * work through the CEO, answer a decision or approve anything (askedFor, colleagueOnly).
+   */
+  colleagueEmail(text: string) {
+    const t = text.trim().slice(0, 4000);
+    if (t) this.enqueueCeo({ kind: 'colleague', text: t, at: Date.now() });
   }
 
   requestReview() {
@@ -6845,6 +6856,7 @@ export class Swarm {
     if (!reason) throw new HttpError(400, 'Say why the issue is closing: the reason is posted on it as a comment.');
     const state = rt?.issues.some((i) => i.number === n) ? 'OPEN' : await this.backend.issueState(repo.fullName, n).catch(() => null);
     checkCloseIssue({ floor: repo.floor, number: n, state, pulls: rt?.pulls ?? [] });
+    if (colleagueOnly(this.state.ceo.job, this.ceoAsked) && this.openDecisions().some((d) => d.repoId === repo.id && d.number === n)) throw new Error(COLLEAGUE_NO_DECISION);
     await this.backend.closeIssue(repo.fullName, n, reason, 'not planned');
     this.postMessage('office', `🗂️ ${this.ceo().name} closed #${n} on floor ${repo.floor}: ${reason.split('\n')[0].slice(0, 200)}`);
     const stopped = this.learnIssueClosed(repo, n); // off the Kanban, out of the scheduler's queue, and whoever was on it stops

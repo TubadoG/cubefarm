@@ -1426,7 +1426,13 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
           ? () => scripts.plan(Number(where?.[1]), prompt.match(/"""([\s\S]*?)"""/)?.[1]?.trim() ?? '')
           : /Periodic review/.test(prompt)
             ? () => scripts.review()
-            : () => scripts.chat(prompt.split('\n').slice(1).join(' ').trim() || prompt);
+            : /^Email from a colleague/.test(prompt)
+              ? async () => {
+                  // A colleague's FYI: nothing to answer, by email or on the manager's phone (no ping-pong between agents).
+                  await think("A colleague's heads-up: nothing to answer, and nothing for the manager.");
+                  return 'NO_MESSAGE';
+                }
+              : () => scripts.chat(prompt.split('\n').slice(1).join(' ').trim() || prompt);
 
   const finish = (ok: boolean, text: string, error?: string) => {
     if (done) return;
@@ -1643,10 +1649,13 @@ const demoEmail: EmailTransport = {
       { email: 'manager@demo-co.example.com', name: 'The manager', approve: false },
       { email: 'client@acme.example.com', name: 'Ada at Acme', approve: true },
       { email: 'bad-address@acme.example.com', name: 'Broken mailbox', approve: false },
+      { email: 'nova@demo-co.example.com', name: 'Nova', approve: false },
     ],
     digest: { enabled: false, hour: 8, to: 'manager@demo-co.example.com' },
     inbox: false,
     mine: ['manager@demo-co.example.com'],
+    // Another agent the manager runs: its email reaches the CEO as Nova's, never as the manager's.
+    colleagues: [{ email: 'nova@demo-co.example.com', name: 'Nova' }],
   },
   send: async (_sender, m) => {
     await new Promise((r) => setTimeout(r, 300));
@@ -1654,8 +1663,9 @@ const demoEmail: EmailTransport = {
     console.log(`📧 demo email${ok ? '' : ' (fails: "bad" address)'} to ${m.to}${m.bcc && m.bcc !== m.to ? ` (bcc ${m.bcc})` : ''}: ${m.subject}`);
     if (!ok) throw new Error(`The demo mail server doesn't know ${m.to}.`);
   },
-  // The demo's mailbox: a reply from the manager, one from a client and an out-of-office, all "just arrived", so with
-  // reading switched on the first lands on the phone and the other two show as ignored. Fixed ids: each counts once.
+  // The demo's mailbox: a reply from the manager, a heads-up from Nova (a colleague), one from a client and an
+  // out-of-office, all "just arrived", so with reading switched on the first lands on the phone, Nova's reaches the CEO
+  // as a colleague's and the other two show as ignored. Fixed ids: each counts once.
   get: async () => {
     await new Promise((r) => setTimeout(r, 200));
     const at = new Date().toISOString();
@@ -1679,6 +1689,7 @@ const demoEmail: EmailTransport = {
       body: {
         value: [
           msg('demo-reply-manager', manager, 'Re: Weekly report', 'Thanks. Put the checkout fix first next week, please.', internal),
+          msg('demo-colleague-nova', who('nova@demo-co.example.com', 'Nova'), 'Heads-up: staging redeploys at 3 pm', 'FYI: staging redeploys at 3 pm today, for about ten minutes. No action needed.', internal),
           msg('demo-reply-client', who('client@acme.example.com', 'Ada at Acme'), 'Re: Your PR', 'Looks good to me!', [{ name: 'Authentication-Results', value: 'spf=pass; dkim=pass; dmarc=pass action=none header.from=acme.example.com' }]),
           msg('demo-reply-ooo', manager, 'Automatic reply: Weekly report', "I'm out until Monday.", [...internal, { name: 'Auto-Submitted', value: 'auto-replied' }]),
         ],

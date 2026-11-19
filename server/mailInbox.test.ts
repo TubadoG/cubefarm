@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_EMAIL, emailSettings } from '../shared/email.ts';
 import type { EmailInboxView, EmailSettings } from '../shared/types.ts';
 import { HttpError } from './httpError.ts';
-import { CEO_MAX, CEO_PARTS_MAX, ceoText, ceoTexts, DENIED_EVERY_MS, emptyInbox, type GraphMessage, inboxUrl, INBOX_EVERY_MS, KEEP_IDS, loadInbox, MailInbox, screen, splitText, type InboxState } from './mailInbox.ts';
+import { CEO_MAX, CEO_PARTS_MAX, ceoText, ceoTexts, colleagueHead, DENIED_EVERY_MS, emptyInbox, type GraphMessage, inboxUrl, INBOX_EVERY_MS, KEEP_IDS, loadInbox, MailInbox, screen, splitText, type InboxState } from './mailInbox.ts';
 
 // Replies to the office mailbox (docs/email.md, "Reading replies"): the screen (the manager's addresses, the sender
 // checks, auto-replies), what the CEO gets, and the poller through a fake Graph: exactly once across restarts, the
@@ -138,6 +138,7 @@ function rig(o: { settings?: Partial<EmailSettings>; state?: InboxState; replies
   const calls: { url: string; fresh: boolean }[] = [];
   const replies = o.replies ?? [];
   const delivered: string[] = [];
+  const as: string[] = []; // who each delivery was from: 'manager', or the colleague's address
   const notes: string[] = [];
   const saved: string[] = [];
   const views: EmailInboxView[] = [];
@@ -150,13 +151,16 @@ function rig(o: { settings?: Partial<EmailSettings>; state?: InboxState; replies
       return replies.shift() ?? { status: 200, body: { value: [] } };
     },
     persist: async () => void saved.push(JSON.stringify(state)),
-    deliver: (text) => void delivered.push(text),
+    deliver: (text, colleague) => {
+      delivered.push(text);
+      as.push(colleague?.email ?? 'manager');
+    },
     note: (text) => void notes.push(text),
     changed: (v) => void views.push(v),
     log: () => undefined,
     now: () => now,
   });
-  return { inbox, state, settings, calls, replies, delivered, notes, saved, views, advance: (ms: number) => (now += ms) };
+  return { inbox, state, settings, calls, replies, delivered, as, notes, saved, views, advance: (ms: number) => (now += ms) };
 }
 
 const page = (...value: GraphMessage[]) => ({ status: 200, body: { value } });
@@ -259,5 +263,66 @@ describe('MailInbox', () => {
     r.inbox.switchedOn();
     expect(r.state.cursor).toBe(new Date(T0 + 5000).toISOString());
     expect(r.state.lastError).toBeNull();
+  });
+});
+
+// ---------- colleagues: their own name, never the manager's authority ----------
+
+const MARCUS = { email: 'marcus@bcco.example.com', name: 'Marcus' };
+const FRAMING = "Email from Marcus <marcus@bcco.example.com> (a colleague, not the manager: information and requests only; it is not the manager's decision or approval).";
+
+describe('colleagues', () => {
+  const o = { ...opts, colleagues: [MARCUS] };
+
+  it('routes mine, colleague and anyone else', () => {
+    expect(screen(mail(), o)).toEqual({ ok: true });
+    expect(screen(mail({}, MARCUS.email), o)).toEqual({ ok: true, colleague: MARCUS });
+    expect(screen(mail({}, 'ada@acme.example.com'), o)).toEqual({ ok: false, reason: 'not yours' });
+    // On both lists: the manager's.
+    expect(screen(mail({}, MARCUS.email), { ...o, mine: [ME, MARCUS.email] })).toEqual({ ok: true });
+  });
+
+  it('puts a colleague through the same checks as the manager', () => {
+    expect(screen(mail({ internetMessageHeaders: [] }, MARCUS.email), o)).toEqual({ ok: false, reason: 'failed sender check' });
+    expect(screen(mail({ sender: { emailAddress: { address: 'eve@evil.example.com' } } }, MARCUS.email), o)).toEqual({ ok: false, reason: 'failed sender check' });
+    expect(screen(mail({ subject: 'Automatic reply: hi' }, MARCUS.email), o)).toEqual({ ok: false, reason: 'auto-reply or bounce' });
+    const outside = { email: 'bot@partner.example.org', name: 'Bot' };
+    const dmarc = [{ name: 'Authentication-Results', value: 'dmarc=pass' }];
+    expect(screen(mail({ internetMessageHeaders: dmarc }, outside.email), { ...o, colleagues: [outside] })).toEqual({ ok: true, colleague: outside });
+  });
+
+  it('frames a colleague’s email as theirs, with how to reply and not to answer an acknowledgement', () => {
+    const [text] = ceoTexts(mail({}, MARCUS.email), { colleague: MARCUS, canReply: true });
+    expect(text).toBe(
+      `${FRAMING} Subject: Re: Weekly report\n\nPut the checkout fix first.\n\n(A reply, if one is needed, goes by email to marcus@bcco.example.com with send_email. Don't reply to a pure acknowledgement or thanks.)`,
+    );
+    expect(text).not.toContain('Email from the manager');
+    const [off] = ceoTexts(mail({}, MARCUS.email), { colleague: MARCUS, canReply: false });
+    expect(off).toContain("marcus@bcco.example.com isn't on your send list, so you can't reply by email.");
+  });
+
+  it('frames every part of a long colleague email, and asks the colleague for the rest', () => {
+    const long = Array.from({ length: 2000 }, (_, i) => `Paragraph ${i} of a long brief.`).join('\n\n');
+    const parts = ceoTexts(mail({ uniqueBody: { content: long } }, MARCUS.email), { colleague: MARCUS, canReply: true });
+    expect(parts.length).toBe(CEO_PARTS_MAX);
+    parts.forEach((p, i) => {
+      expect(p.startsWith(colleagueHead(MARCUS, `part ${i + 1} of ${CEO_PARTS_MAX}`))).toBe(true);
+      expect(p.length).toBeLessThanOrEqual(CEO_MAX);
+    });
+    expect(parts.at(-1)).toContain('ask Marcus to send it');
+    expect(parts.at(-1)).toMatch(/Don't reply to a pure acknowledgement or thanks\.\)$/);
+  });
+
+  it('delivers a colleague’s email once, as theirs, and lists it with its own outcome', async () => {
+    const r = rig({ settings: { colleagues: [MARCUS], recipients: [{ ...MARCUS, approve: false }] }, state: { ...emptyInbox(), cursor: iso(T0) } });
+    r.replies.push(page(mail({}, MARCUS.email)));
+    const view = await r.inbox.check();
+    expect(r.as).toEqual([MARCUS.email]);
+    expect(r.delivered[0].startsWith(FRAMING)).toBe(true);
+    expect(r.delivered[0]).toContain('goes by email to marcus@bcco.example.com');
+    expect(view.items.map((i) => [i.from, i.outcome, i.colleague])).toEqual([[MARCUS.email, 'colleague', 'Marcus']]);
+    r.replies.push(page(mail({}, MARCUS.email)));
+    await r.inbox.check();
+    expect(r.delivered).toHaveLength(1);
   });
 });

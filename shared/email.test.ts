@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DAY_MS, DEFAULT_DIGEST, DEFAULT_EMAIL, emailAddress, emailHtml, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_MINE, MAX_NAME, MAX_RECIPIENTS, replyNote } from './email.ts';
+import { colleaguesOffList, DAY_MS, DEFAULT_DIGEST, DEFAULT_EMAIL, emailAddress, findColleague, MAX_COLLEAGUES, emailHtml, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_MINE, MAX_NAME, MAX_RECIPIENTS, replyNote } from './email.ts';
 
 const ada = { email: 'ada@acme.example.com', name: 'Ada', approve: true };
-const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada], digest: DEFAULT_DIGEST, inbox: false, mine: [] as string[] };
+const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada], digest: DEFAULT_DIGEST, inbox: false, mine: [] as string[], colleagues: [] as { email: string; name: string }[] };
 
 describe('email addresses', () => {
   it('trims and lowercases good ones', () => {
@@ -16,7 +16,7 @@ describe('email addresses', () => {
 
 describe('email settings', () => {
   it('starts off and empty', () => {
-    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [] });
+    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [], colleagues: [] });
   });
 
   it('cleans the list: lowercased, deduped, names trimmed and capped, asking by default', () => {
@@ -156,5 +156,53 @@ describe('emailHtml', () => {
     expect(html).toContain('<p>Hi</p>');
     expect(html).toContain("Sent by the CEO of A&lt;B's office".replace("'", '&#39;'));
     expect(html).toContain('Replies to this address aren&#39;t read.');
+  });
+});
+
+describe('colleagues', () => {
+  const marcus = { email: 'marcus@co.example.com', name: 'Marcus' };
+
+  it('cleans the list like the others: lowercased, trimmed, deduped, a name from the address when there is none', () => {
+    const s = emailSettings(base, { colleagues: [{ email: ' Marcus@CO.example.com ', name: '  Marcus \n the agent ' }, { email: 'marcus@co.example.com', name: 'Again' }, { email: 'ops@co.example.com' }] });
+    expect(s.colleagues).toEqual([
+      { email: 'marcus@co.example.com', name: 'Marcus the agent' },
+      { email: 'ops@co.example.com', name: 'ops' },
+    ]);
+  });
+
+  it('refuses a bad address or too many, and keeps the old list', () => {
+    const s = emailSettings(base, { colleagues: [marcus] });
+    expect(emailProblem({ colleagues: [{ email: 'nope', name: 'X' }] })).toBe('"nope" isn\'t a valid email address.');
+    expect(emailProblem({ colleagues: 'marcus' })).toBe('The list of colleagues is missing.');
+    const many = Array.from({ length: MAX_COLLEAGUES + 1 }, (_, i) => ({ email: `a${i}@co.example.com`, name: '' }));
+    expect(emailProblem({ colleagues: many })).toBe(`At most ${MAX_COLLEAGUES} colleagues fit on the list.`);
+    expect(emailProblem({ colleagues: [marcus] })).toBeNull();
+    expect(emailSettings(s, { colleagues: [{ email: 'nope' }] }).colleagues).toEqual([marcus]);
+    expect(emailSettings(s, { colleagues: many }).colleagues).toEqual([marcus]);
+    expect(emailSettings(s, { colleagues: [] }).colleagues).toEqual([]);
+  });
+
+  it('migrates a saved state without the field to an empty list, and keeps the list through other patches', () => {
+    const { colleagues: _, ...old } = base;
+    expect(emailSettings(DEFAULT_EMAIL, old).colleagues).toEqual([]);
+    const s = emailSettings(base, { colleagues: [marcus] });
+    expect(emailSettings(s, { enabled: false }).colleagues).toEqual([marcus]);
+  });
+
+  it('lets the manager win: an address on both lists is theirs', () => {
+    const s = { mine: ['marcus@co.example.com'], colleagues: [marcus] };
+    expect(findColleague(s, 'marcus@co.example.com')).toBeUndefined();
+    expect(findColleague({ mine: [], colleagues: [marcus] }, ' MARCUS@co.example.com')).toEqual(marcus);
+    expect(findColleague({ mine: [], colleagues: [marcus] }, 'ada@acme.example.com')).toBeUndefined();
+  });
+
+  it('names the colleagues the CEO can’t answer: not on the send list', () => {
+    expect(colleaguesOffList({ recipients: [ada], colleagues: [marcus] })).toEqual([marcus]);
+    expect(colleaguesOffList({ recipients: [ada, { ...marcus, approve: false }], colleagues: [marcus] })).toEqual([]);
+  });
+
+  it('promises a colleague that a reply is read only while the office reads its mailbox', () => {
+    expect(replyNote({ inbox: true, mine: [], colleagues: [marcus] }, marcus.email)).toBe('read');
+    expect(replyNote({ inbox: false, mine: [], colleagues: [marcus] }, marcus.email)).toBe('unread');
   });
 });
