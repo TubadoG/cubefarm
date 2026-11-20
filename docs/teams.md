@@ -42,6 +42,7 @@ Every message in the channel, including replies inside threads, is sorted by who
 | **You**: a person whose Entra object id is on **Count messages from these people as mine** | It reaches the CEO as your message, like the phone. The phone shows it with 💬. If you @mention someone else (another agent) and not the CEO, it's theirs to answer and the CEO doesn't get it. |
 | **A colleague bot**: an app on **Colleague bots** (by app id, or by name if you didn't give one) | It reaches the CEO as theirs, never yours, but only when it @mentions the CEO and isn't just an acknowledgement. |
 | **The CEO's own bot** | Skipped. |
+| **Teams itself**: system events (any `messageType` but `message`), and the "I added a tab at the top of this channel. Check it out!" post Teams puts under the name of whoever added the tab (only when that is the whole message) | Listed as ignored, "Teams system post", in the channel and in direct chats; never delivered. |
 | **Anyone or anything else**: other people (even one with your name), bots that aren't colleagues | Only listed in Settings → Teams, with the reason. |
 
 What the CEO gets for **your** message (the thread id is the root message's id):

@@ -14,6 +14,7 @@ import {
   directText,
   emptyTeams,
   isAck,
+  isSystemPost,
   loadTeams,
   looksLikeDecision,
   managerText,
@@ -22,6 +23,8 @@ import {
   messageText,
   postRequest,
   repliesUrl,
+  SYSTEM_POST,
+  TAB_ADDED_TEXT,
   TeamsChannel,
   type ChannelMessage,
   type TeamsState,
@@ -89,6 +92,31 @@ describe('the text', () => {
   it('knows a pure acknowledgement from a request', () => {
     for (const t of ['Thanks!', '@Zander thank you very much 🙏', 'ok, got it', '👍', 'Noted.', 'Sounds good']) expect(isAck(t), t).toBe(true);
     for (const t of ['Thanks, can you also check floor 2?', '@Zander which floor is busiest?', 'Staging redeploys at 3 pm']) expect(isAck(t), t).toBe(false);
+  });
+
+  it('knows Teams’ own posts from a person’s, even when Teams puts the person’s name on them', () => {
+    const html = (content: string) => msg({ body: { contentType: 'html', content } });
+    expect(TAB_ADDED_TEXT).toBe('I added a tab at the top of this channel. Check it out!');
+    for (const m of [
+      html('<p>I added a tab at the top of this channel. Check it out!</p>'),
+      html('<div><p>I added a tab at the&nbsp;top of this channel.&nbsp; Check it out!</p>\n</div>'),
+      html('<p>I added a tab at the top\nof this channel.<br>Check it out!</p>'),
+      msg({ body: { contentType: 'text', content: '  I added a tab at the top of this channel. Check it out! ' } }),
+      msg({ messageType: 'systemEventMessage', body: { contentType: 'html', content: '<systemEventMessage/>' } }),
+      msg({ messageType: 'unknownFutureValue' }),
+      msg({ messageType: 'chatEvent' }),
+      html('<systemEventMessage/>'), // a system event even where the type is missing or says "message"
+    ])
+      expect(isSystemPost(m), JSON.stringify(m.body)).toBe(true);
+    for (const m of [
+      html('<p>Hello</p>'),
+      html('<p>I added a tab at the top of this channel. Check it out! It has the Q3 numbers, @Zander can you summarise them?</p>'),
+      html('<p>FYI: I added a tab at the top of this channel. Check it out!</p>'),
+      html('<p>I added a tab at the top of this channel.</p>'),
+      html('<p>i added a tab at the top of this channel. check it out!</p>'), // typed by hand, not Teams’ text
+      msg({ messageType: undefined }),
+    ])
+      expect(isSystemPost(m), JSON.stringify(m.body)).toBe(false);
   });
 
   it('spots text that reads like a decision', () => {
@@ -174,6 +202,7 @@ function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: b
   const saved: string[] = [];
   const views: TeamsView[] = [];
   const delivered: string[] = []; // the state saved last before each delivery
+  const logs: string[] = [];
   const teams = new TeamsChannel({
     state: () => state,
     settings: () => settings,
@@ -204,10 +233,10 @@ function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: b
     },
     note: (t) => void notes.push(t),
     changed: (v) => void views.push(v),
-    log: () => undefined,
+    log: (line) => void logs.push(line),
     now: () => now,
   });
-  return { teams, state, settings, gets, pages, posts, postReplies, manager, colleague, notes, saved, views, delivered, advance: (ms: number) => (now += ms) };
+  return { teams, state, settings, gets, pages, posts, postReplies, manager, colleague, notes, saved, views, delivered, logs, advance: (ms: number) => (now += ms) };
 }
 
 const page = (...value: ChannelMessage[]): Res => ({ status: 200, body: { value: value.map((m) => ({ replies: [], ...m })) } });
@@ -244,6 +273,29 @@ describe('TeamsChannel: routing', () => {
       ['Bryan Clayton', 'delivered', undefined],
     ]);
     expect(r.state.seen).toContain(own.id);
+  });
+
+  it('lists Teams’ own posts under the manager’s name as ignored, never delivered, and still delivers a message that only mentions one', async () => {
+    const r = rig({ state: started() });
+    const tab = msg({ body: { contentType: 'html', content: '<p>I added a tab at the top of this channel.&nbsp;Check it out!</p>' }, attachments: [{ contentType: 'tabReference' }] });
+    const event = msg({ messageType: 'systemEventMessage', from: null, body: { contentType: 'html', content: '<systemEventMessage/>' } });
+    const real = msg({ body: { contentType: 'html', content: '<p>I added a tab at the top of this channel. Check it out! Please plan the work it lists.</p>' } });
+    r.pages.push(page(tab, event, real));
+    const view = await r.teams.check();
+    expect(r.manager.map((m) => m.text)).toEqual(['I added a tab at the top of this channel. Check it out! Please plan the work it lists.']);
+    expect(r.colleague).toEqual([]);
+    expect(view.items.map((i) => [i.from, i.outcome, i.reason])).toEqual([
+      ['Bryan Clayton', 'delivered', undefined],
+      ['unknown', 'ignored', SYSTEM_POST],
+      ['Bryan Clayton', 'ignored', 'Teams system post'],
+    ]);
+    expect(r.logs.filter((l) => l.includes('ignored'))).toEqual([`💬 teams: Bryan Clayton in thread ${tab.id}: ignored (Teams system post)`, `💬 teams: unknown in thread ${event.id}: ignored (Teams system post)`]);
+    // Seen, so never looked at again; and no thread kept for a system post.
+    expect(r.state.seen).toEqual(expect.arrayContaining([tab.id, event.id, real.id]));
+    expect(Object.keys(r.state.threads)).toEqual([real.id]);
+    r.pages.push(page(tab, event, real));
+    await r.teams.check();
+    expect(r.manager).toHaveLength(1);
   });
 
   it('leaves the manager’s message to someone else (an @mention, not of the CEO) to them', async () => {
@@ -545,6 +597,20 @@ describe('direct chat: reading', () => {
     expect(r.manager).toEqual([{ text: 'How is floor 1?', framed: expect.stringMatching(/^Teams direct message from the manager, in their 1:1 chat/), via: 'teams-dm' }]);
     expect(v.items).toEqual([expect.objectContaining({ from: 'Bryan Clayton', outcome: 'delivered', source: 'direct' })]);
     expect(v.direct[0]).toEqual({ id: BRYAN, name: 'Bryan Clayton', status: 'found' });
+  });
+
+  it('lists Teams’ own posts in the chat as ignored, even under the manager’s name', async () => {
+    const tab = msg({ body: { contentType: 'html', content: '<p>I added a tab at the top of this channel. Check it out!</p>' } });
+    const event = msg({ messageType: 'systemEventMessage', body: { contentType: 'html', content: '<systemEventMessage/>' } });
+    const r = rig({ settings: DIRECT, state: directState(), chats: { [BRYAN]: [chat(tab, event, msg({ body: { contentType: 'html', content: '<p>How is floor 2?</p>' } }))] } });
+    const v = await r.teams.check();
+    expect(r.manager.map((m) => m.text)).toEqual(['How is floor 2?']);
+    expect(v.items.map((i) => [i.outcome, i.reason])).toEqual([
+      ['delivered', undefined],
+      ['ignored', 'Teams system post'],
+      ['ignored', 'Teams system post'],
+    ]);
+    expect(r.logs).toContain('💬 teams: Bryan Clayton in a direct chat with Zander: ignored (Teams system post)');
   });
 
   it('counts only that manager in their chat: anyone else is not a manager, whatever their name', async () => {
