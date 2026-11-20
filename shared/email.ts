@@ -7,12 +7,15 @@ export type { DigestSettings, EmailColleague, EmailRecipient, EmailSettings };
 /** Most people on the list. */
 export const MAX_RECIPIENTS = 25;
 export const MAX_NAME = 60;
-/** Most emails the CEO may send (or have waiting) in any 24 hours. */
-export const EMAILS_PER_DAY = 10;
+/** The daily cap until the manager changes it: most emails the office may send (or have waiting) in any 24 hours. */
+export const DEFAULT_DAILY_CAP = 20;
+/** The bounds Settings → Email allows for the daily cap. */
+export const MIN_DAILY_CAP = 1;
+export const MAX_DAILY_CAP = 100;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const DEFAULT_DIGEST: DigestSettings = { enabled: false, hour: 8, to: '' };
-export const DEFAULT_EMAIL: EmailSettings = { enabled: false, from: '', copyTo: '', recipients: [], digest: DEFAULT_DIGEST, inbox: false, mine: [], colleagues: [] };
+export const DEFAULT_EMAIL: EmailSettings = { enabled: false, from: '', copyTo: '', recipients: [], digest: DEFAULT_DIGEST, inbox: false, mine: [], colleagues: [], dailyCap: DEFAULT_DAILY_CAP };
 /** Most addresses that count as the manager's own. */
 export const MAX_MINE = 10;
 /** Most colleagues whose email reaches the CEO. */
@@ -45,6 +48,7 @@ function recipientList(raw: unknown): EmailRecipient[] | null {
 }
 
 const validHour = (h: unknown): h is number => typeof h === 'number' && Number.isInteger(h) && h >= 0 && h <= 23;
+const validCap = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= MIN_DAILY_CAP && n <= MAX_DAILY_CAP;
 
 /**
  * What's wrong with the digest part of a settings patch; null when nothing is. A newly picked recipient must be on the
@@ -90,6 +94,7 @@ export function emailProblem(patch: unknown, base: EmailSettings = DEFAULT_EMAIL
     const bad = (p.colleagues as { email?: unknown }[]).find((c) => !emailAddress(c?.email));
     if (bad !== undefined) return `"${String(bad?.email ?? '')}" isn't a valid email address.`;
   }
+  if (p.dailyCap !== undefined && !validCap(p.dailyCap)) return `The daily cap must be a whole number from ${MIN_DAILY_CAP} to ${MAX_DAILY_CAP}.`;
   if (p.digest !== undefined) return digestProblem(p.digest, p.recipients, { ...DEFAULT_EMAIL, ...base, digest: { ...DEFAULT_DIGEST, ...base.digest } });
   return null;
 }
@@ -108,7 +113,7 @@ export function emailSettings(base: EmailSettings, patch: unknown): EmailSetting
   // Switched on with nobody listed: the blind-copy address, the manager's own, counts.
   if (inbox && !b.inbox && mine.length === 0 && copyTo) mine = [copyTo];
   const colleagues = p.colleagues === undefined ? (b.colleagues ?? []) : (colleagueList(p.colleagues) ?? b.colleagues ?? []);
-  return { enabled: typeof p.enabled === 'boolean' ? p.enabled : b.enabled, from, copyTo, recipients, digest: digestSettings({ ...DEFAULT_DIGEST, ...b.digest }, p.digest, recipients), inbox, mine, colleagues };
+  return { enabled: typeof p.enabled === 'boolean' ? p.enabled : b.enabled, from, copyTo, recipients, digest: digestSettings({ ...DEFAULT_DIGEST, ...b.digest }, p.digest, recipients), inbox, mine, colleagues, dailyCap: validCap(p.dailyCap) ? p.dailyCap : dailyCap(b) };
 }
 
 /** Colleagues from a saved state or a patch, or null when it isn't a valid list. A name defaults to the address's local part. */
@@ -170,9 +175,30 @@ export function findRecipient(settings: EmailSettings, addr: unknown): EmailReci
   return email ? settings.recipients.find((r) => r.email === email) : undefined;
 }
 
-/** Emails that count toward EMAILS_PER_DAY: sent or waiting, written in the last 24 hours. */
+/** Whether an email counts toward the daily cap: sent or waiting, written in the last 24 hours (a rolling window, not a calendar day). */
+export function countsToday(e: Pick<EmailView, 'status' | 'createdAt'>, now: number): boolean {
+  return (e.status === 'sent' || e.status === 'pending') && now - e.createdAt < DAY_MS;
+}
+
+/** Emails that count toward the daily cap. */
 export function emailsToday(emails: Pick<EmailView, 'status' | 'createdAt'>[], now: number): number {
-  return emails.filter((e) => (e.status === 'sent' || e.status === 'pending') && now - e.createdAt < DAY_MS).length;
+  return emails.filter((e) => countsToday(e, now)).length;
+}
+
+/** The daily cap in force; the default for settings saved before it could be changed (or a bad value). */
+export function dailyCap(s: Partial<Pick<EmailSettings, 'dailyCap'>>): number {
+  return validCap(s.dailyCap) ? s.dailyCap : DEFAULT_DAILY_CAP;
+}
+
+/** Why another email can't go out now, or null when the cap leaves room. Worded for the CEO and the manager. */
+export function capRefusal(s: Partial<Pick<EmailSettings, 'dailyCap'>>, emails: Pick<EmailView, 'status' | 'createdAt'>[], now: number): string | null {
+  const cap = dailyCap(s);
+  return emailsToday(emails, now) >= cap ? `The office sends at most ${cap} email${cap === 1 ? '' : 's'} in any 24 hours, and they're used up.` : null;
+}
+
+/** Settings → Email's count beside the cap, e.g. "4 of 20 used in the last 24 hours". */
+export function capUsage(used: number, cap: number): string {
+  return `${used} of ${cap} used in the last 24 hours`;
 }
 
 /**

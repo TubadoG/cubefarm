@@ -400,6 +400,7 @@ export interface EmailSettings {
   inbox: boolean; // read replies to the From mailbox: the manager's own reach the CEO (server/mailInbox.ts)
   mine: string[]; // the addresses whose email counts as the manager's
   colleagues: EmailColleague[]; // other agents or people whose email reaches the CEO as theirs, never as the manager's
+  dailyCap: number; // most emails (sent or waiting) in any 24 hours: the CEO's and the digest together
 }
 
 /** Someone whose email reaches the CEO under their own name, without the manager's authority (docs/email.md). */

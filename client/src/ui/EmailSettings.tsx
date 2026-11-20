@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
-import { colleaguesOffList, EMAILS_PER_DAY, emailAddress, MAX_COLLEAGUES, MAX_MINE, MAX_NAME, MAX_RECIPIENTS } from '../../../shared/email';
+import { capUsage, colleaguesOffList, dailyCap, emailAddress, emailsToday, MAX_COLLEAGUES, MAX_DAILY_CAP, MAX_MINE, MAX_NAME, MAX_RECIPIENTS, MIN_DAILY_CAP } from '../../../shared/email';
 import type { EmailRecipient, EmailSettings as Email } from '../../../shared/types';
 import { confirmDialog } from './Confirm';
 
@@ -17,6 +17,13 @@ export function EmailSettings() {
   const email = useStore((s) => s.settings.email);
   const sender = useStore((s) => s.emailSender);
   const inbox = useStore((s) => s.emailInbox);
+  const emails = useStore((s) => s.emails);
+  // The window rolls: re-count each minute, as well as on every email event.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
   const [mineAdd, setMineAdd] = useState('');
   const [colleagueAdd, setColleagueAdd] = useState({ email: '', name: '' });
   const [check, setCheck] = useState<{ busy: boolean; result: string | null }>({ busy: false, result: null });
@@ -26,6 +33,12 @@ export function EmailSettings() {
   const [test, setTest] = useState<{ busy: boolean; result: string | null; ok: boolean }>({ busy: false, result: null, ok: false });
   const [digestRun, setDigestRun] = useState<{ busy: boolean; result: string | null; tone: string }>({ busy: false, result: null, tone: '' });
   useEffect(() => setFrom(email.from), [email.from]);
+  const cap = dailyCap(email);
+  const used = emailsToday(emails, Math.max(now, Date.now()));
+  const [capDraft, setCapDraft] = useState(String(cap));
+  useEffect(() => setCapDraft(String(cap)), [cap]);
+  const capValue = Number(capDraft);
+  const capOk = Number.isInteger(capValue) && capValue >= MIN_DAILY_CAP && capValue <= MAX_DAILY_CAP;
   const digest = email.digest;
   const direct = email.recipients.filter((r) => !r.approve);
   const save = async (patch: Partial<Email>) => {
@@ -74,7 +87,7 @@ export function EmailSettings() {
     <div className="card notify-settings">
       <h3>📧 Email</h3>
       <p className="muted small">
-        The CEO can email people on this list, and only them, at most {EMAILS_PER_DAY} a day. Emails to anyone marked “Ask me” wait for your OK in Approvals.
+        The CEO can email people on this list, and only them, at most {cap} in any 24 hours. Emails to anyone marked “Ask me” wait for your OK in Approvals.
       </p>
       <label className="toggle block">
         <input type="checkbox" checked={email.enabled} onChange={(e) => void save({ enabled: e.target.checked })} />
@@ -123,6 +136,30 @@ export function EmailSettings() {
             </span>
           )}
         </div>
+        <label className="field">
+          <span>Most emails in any 24 hours</span>
+          <span className="row wrap">
+            <input
+              type="number"
+              min={MIN_DAILY_CAP}
+              max={MAX_DAILY_CAP}
+              step={1}
+              value={capDraft}
+              onChange={(e) => setCapDraft(e.target.value)}
+              onBlur={() => (capOk ? capValue !== cap && void save({ dailyCap: capValue }) : setCapDraft(String(cap)))}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+              aria-describedby="email-cap-help"
+              style={{ width: '6em' }}
+            />
+            <span className={`small ${used >= cap ? 'term-error' : 'muted'}`} role="status">
+              {capUsage(used, cap)}
+            </span>
+          </span>
+        </label>
+        <p id="email-cap-help" className="muted small">
+          Counts the CEO's emails and the digest, sent or waiting for your OK, over the last 24 hours, not since midnight. A change applies at once. Set it
+          below what's used and nothing more goes out until older emails pass 24 hours.
+        </p>
       </div>
       <h4 className="notify-h">Who the CEO may email</h4>
       {email.recipients.length === 0 && <p className="muted small">Nobody yet.</p>}
@@ -174,7 +211,7 @@ export function EmailSettings() {
       <h4 className="notify-h">Daily digest</h4>
       <p className="muted small">
         Once a day, one email with every PR and issue waiting for you on each floor, and what merged in the last 24 hours. Built by the office, not the CEO; sent only
-        when there's something to say, and it counts toward the {EMAILS_PER_DAY} a day.
+        when there's something to say, and it counts toward the cap above.
       </p>
       <div className="notify-hook">
         <label className="field">

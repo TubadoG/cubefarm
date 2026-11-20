@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { colleaguesOffList, DAY_MS, DEFAULT_DIGEST, DEFAULT_EMAIL, emailAddress, findColleague, MAX_COLLEAGUES, emailHtml, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_MINE, MAX_NAME, MAX_RECIPIENTS, replyNote } from './email.ts';
+import { capRefusal, capUsage, colleaguesOffList, dailyCap, DAY_MS, DEFAULT_DAILY_CAP, MAX_DAILY_CAP, DEFAULT_DIGEST, DEFAULT_EMAIL, emailAddress, findColleague, MAX_COLLEAGUES, emailHtml, emailFooter, emailProblem, emailSettings, emailsToday, emailText, findRecipient, MAX_MINE, MAX_NAME, MAX_RECIPIENTS, replyNote } from './email.ts';
 
 const ada = { email: 'ada@acme.example.com', name: 'Ada', approve: true };
-const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada], digest: DEFAULT_DIGEST, inbox: false, mine: [] as string[], colleagues: [] as { email: string; name: string }[] };
+const base = { enabled: true, from: 'ceo@co.example.com', copyTo: '', recipients: [ada], digest: DEFAULT_DIGEST, inbox: false, mine: [] as string[], colleagues: [] as { email: string; name: string }[], dailyCap: 20 };
 
 describe('email addresses', () => {
   it('trims and lowercases good ones', () => {
@@ -16,7 +16,7 @@ describe('email addresses', () => {
 
 describe('email settings', () => {
   it('starts off and empty', () => {
-    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [], colleagues: [] });
+    expect(emailSettings(DEFAULT_EMAIL, {})).toEqual({ enabled: false, from: '', copyTo: '', recipients: [], digest: { enabled: false, hour: 8, to: '' }, inbox: false, mine: [], colleagues: [], dailyCap: 20 });
   });
 
   it('cleans the list: lowercased, deduped, names trimmed and capped, asking by default', () => {
@@ -54,7 +54,26 @@ describe('email settings', () => {
     expect(emailSettings(copied, { recipients: [] }).copyTo).toBe('');
   });
 
+  it('keeps a daily cap from 1 to 100; anything else keeps the old one', () => {
+    expect(emailSettings(base, { dailyCap: 25 }).dailyCap).toBe(25);
+    expect(emailSettings(base, { dailyCap: 1 }).dailyCap).toBe(1);
+    expect(emailSettings(base, { dailyCap: MAX_DAILY_CAP }).dailyCap).toBe(MAX_DAILY_CAP);
+    const set = { ...base, dailyCap: 35 };
+    for (const bad of [0, -3, 101, 2.5, '30', null, NaN]) expect(emailSettings(set, { dailyCap: bad }).dailyCap).toBe(35);
+    expect(emailSettings(set, { enabled: false }).dailyCap).toBe(35);
+  });
+
+  it('gives settings saved before the cap could change the default of 20', () => {
+    const { dailyCap: _, ...old } = { ...base, dailyCap: 0 };
+    expect(emailSettings(DEFAULT_EMAIL, old).dailyCap).toBe(DEFAULT_DAILY_CAP);
+    expect(DEFAULT_DAILY_CAP).toBe(20);
+    expect(dailyCap({})).toBe(20);
+    expect(dailyCap({ dailyCap: 500 })).toBe(20);
+  });
+
   it('says what is wrong with a patch', () => {
+    for (const bad of [0, 101, 2.5, '30']) expect(emailProblem({ dailyCap: bad })).toBe('The daily cap must be a whole number from 1 to 100.');
+    expect(emailProblem({ dailyCap: 40 })).toBeNull();
     expect(emailProblem({ from: 'nope' })).toMatch(/From address/);
     expect(emailProblem({ recipients: [{ email: 'bad' }] })).toBe('"bad" isn\'t a valid email address.');
     expect(emailProblem({ recipients: Array.from({ length: 26 }, (_, i) => ({ email: `p${i}@x.example.com` })) })).toMatch(/At most 25/);
@@ -73,6 +92,19 @@ describe('the allowlist and the daily cap', () => {
     const now = 10 * DAY_MS;
     const at = (status: 'sent' | 'pending' | 'declined' | 'failed', ago: number) => ({ status, createdAt: now - ago });
     expect(emailsToday([at('sent', 1000), at('pending', 5000), at('declined', 1000), at('failed', 1000), at('sent', DAY_MS + 1)], now)).toBe(2);
+  });
+
+  it('refuses at the configured cap, and says so with its number', () => {
+    const now = 10 * DAY_MS;
+    const three = [1, 2, 3].map((i) => ({ status: 'sent' as const, createdAt: now - i * 1000 }));
+    expect(capRefusal({ dailyCap: 4 }, three, now)).toBeNull();
+    expect(capRefusal({ dailyCap: 3 }, three, now)).toBe("The office sends at most 3 emails in any 24 hours, and they're used up.");
+    expect(capRefusal({ dailyCap: 1 }, three, now)).toBe("The office sends at most 1 email in any 24 hours, and they're used up.");
+    expect(capRefusal({ dailyCap: 3 }, three, now + DAY_MS)).toBeNull(); // the window rolled on
+  });
+
+  it('shows the count beside the cap', () => {
+    expect(capUsage(4, 20)).toBe('4 of 20 used in the last 24 hours');
   });
 });
 
