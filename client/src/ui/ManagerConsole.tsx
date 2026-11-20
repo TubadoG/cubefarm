@@ -16,6 +16,7 @@ import { NotifySettings } from './NotifySettings';
 import { EmailSettings } from './EmailSettings';
 import { TeamsSettings } from './TeamsSettings';
 import { TimeTrackingSettings } from './TimeTrackingSettings';
+import { DecisionConnectorSettings } from './DecisionConnectorSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { Panel } from './Overlays';
 import { Resume } from './Phone';
@@ -919,6 +920,7 @@ function SettingsTab() {
       <EmailSettings />
       <TeamsSettings />
       <TimeTrackingSettings />
+      <DecisionConnectorSettings />
       <ThemeSettings />
     </div>
   );

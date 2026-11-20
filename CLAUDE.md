@@ -122,6 +122,11 @@ Server (`server/`, Node + Express 5 + ws, run by tsx in development; esbuild bun
   the CEO as theirs, colleague bots' as theirs (never the manager's); no decision is answered in Teams; bot loops,
   the daily cap and no-replay are enforced there and in `shared/teams.ts` (settings). The Teams app package is
   `teams-app/`, zipped by `scripts/teamsApp.ts` (`npm run teams-app`).
+- `decisionConnector.ts`: the decision connector (docs/decision-connector.md): Room cards answered by voice through an
+  Azure MCP server. The office pushes the open cards to Azure Table storage and pulls queued answers (outbound only, a
+  table SAS in `secrets.json`), re-checks each and applies it through `answerDecision` / `retryQaViaConnector` with
+  `via: 'connector'`, writes the result back and emails a receipt (its own cap). Pure rules (quiet hours, poll
+  schedule) in `shared/decisionConnector.ts`; `decisionAudit.ts` is the JSONL audit of every answer, Room or connector.
 - `logo.ts`: the company logo (Settings → Company, `PUT /api/logo`): a PNG, JPEG or WebP the lobby sign draws beside the
   company name, in `<SWARM_HOME>/logo.*`; `settings.logoAt` says whether there is one.
 - `journal.ts`: the time-lapse journal (`<SWARM_HOME>/journal/<day>/`): records what `Swarm.broadcast` sends, a file

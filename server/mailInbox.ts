@@ -8,6 +8,7 @@
 // are saved before delivery, so a restart never delivers an email twice.
 import type { EmailColleague, EmailInboxView, EmailSettings, InboundEmailView } from '../shared/types.ts';
 import { emailAddress, findColleague } from '../shared/email.ts';
+import { RECEIPT_SUBJECT } from '../shared/decisionConnector.ts';
 import { HttpError } from './httpError.ts';
 
 export const INBOX_EVERY_MS = 2 * 60_000;
@@ -77,6 +78,8 @@ export function screen(m: GraphMessage, o: { mine: string[]; colleagues?: EmailC
   const from = addr(m.from);
   const auto = headerValues(m, 'Auto-Submitted').some((v) => v.trim().toLowerCase() !== 'no') || headerValues(m, 'X-Auto-Response-Suppress').length > 0;
   if (auto || AUTO_SENDER.test(from) || AUTO_SUBJECT.test((m.subject ?? '').trim())) return { ok: false, reason: 'auto-reply or bounce' };
+  // The decision connector's receipts are one-way: a reply to one is never read, let alone taken as an answer.
+  if (RECEIPT_SUBJECT.test(m.subject ?? '')) return { ok: false, reason: 'reply to a decision receipt' };
   if (!from || from !== addr(m.sender)) return { ok: false, reason: 'failed sender check' };
   // Exchange strips X-MS-Exchange-Organization-* from mail that comes in from outside, so only it can say Internal.
   const internal = headerValues(m, 'X-MS-Exchange-Organization-AuthAs').some((v) => v.trim().toLowerCase() === 'internal');

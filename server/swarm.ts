@@ -65,7 +65,10 @@ import { capRefusal, countsToday, dailyCap, DEFAULT_EMAIL, emailHtml, emailProbl
 import { Mailer } from './email.ts';
 import { briefAlert, decisionNote, stuckPickView, stuckPrDecision, waitsOnDecision } from './decision.ts';
 import { businessHold, closeComment, MAX_REBUILDS, giveUpStep, REBUILD_RETRY_MS, issueComment, parkBrief, parkDue, parkedComment, rebuildIssue, rebuildNote, rebuildSlug } from './rebuild.ts';
-import { answerPlan } from './decisionAnswer.ts';
+import { answerPlan, type AnswerOptions } from './decisionAnswer.ts';
+import { DecisionAudit } from './decisionAudit.ts';
+import { DecisionConnector, emptyConnector, loadConnector, snapshotCard, type ConnectorState, type SnapshotCard } from './decisionConnector.ts';
+import { DEFAULT_DECISION_CONNECTOR, decisionConnectorProblem, decisionConnectorSettings } from '../shared/decisionConnector.ts';
 import { decisionKeyOf, decisionLink, MAX_DECISION_TEXT, parseDecisionChoice, type DecisionMessage, type DecisionReason, type DecisionView } from '../shared/decisions.ts';
 import { buildDigest, digestDay, digestDue, excerpt, MERGED_WINDOW_MS, mergedSince, needsInputIssues, waitingPulls, type DecisionInfo, type DigestFloor } from './digest.ts';
 import { agentActivity, lineActivity, sameActivity, type SeenActivity } from '../shared/activity.ts';
@@ -269,6 +272,7 @@ interface Persisted {
   kimai: KimaiState; // time tracking's outbox (kimai.ts)
   emailInbox: InboxState; // replies read from the office mailbox (mailInbox.ts)
   teams: TeamsState; // the Teams channel: what was read, the CEO's posts and threads (teamsChannel.ts)
+  decisionConnector: ConnectorState; // the decision connector's snapshot version, results and receipts (decisionConnector.ts)
 }
 
 /** A Decision room card's own state: its thread with the CEO, and the manager's answer. */
@@ -557,6 +561,7 @@ export class Swarm {
       email: emailSettings(DEFAULT_EMAIL, {}),
       kimai: kimaiSettings(DEFAULT_KIMAI, {}),
       teams: teamsSettings(DEFAULT_TEAMS, {}),
+      decisionConnector: decisionConnectorSettings(DEFAULT_DECISION_CONNECTOR, {}),
       lead: { ...DEFAULT_LEAD_SETTINGS },
     },
     repos: [],
@@ -582,6 +587,7 @@ export class Swarm {
     kimai: emptyKimai(),
     emailInbox: emptyInbox(),
     teams: emptyTeams(),
+    decisionConnector: emptyConnector(),
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -688,6 +694,10 @@ export class Swarm {
   readonly inbox: MailInbox;
   /** The CEO in one Teams channel (docs/teams.md): the manager's messages reach it, colleague bots' as theirs. The demo's are made up. */
   readonly teams: TeamsChannel;
+  /** Room cards answered by voice through Azure (docs/decision-connector.md). The demo's tables are in memory. */
+  readonly connector: DecisionConnector;
+  /** Every answer applied or refused, from the Room or the connector (decisionAudit.ts). */
+  private readonly audit: DecisionAudit;
   private emailSeq = 0;
   private sendingEmails = new Set<string>(); // ids the manager approved that are on their way
   private toldStuck = new Set<string>(); // `${agentId}:${endedAt}`: agents in an error the manager was notified about
@@ -773,6 +783,27 @@ export class Swarm {
         this.save();
         this.broadcast({ type: 'kimai', kimai });
       },
+      log: (line) => console.warn(line),
+    });
+    this.audit = new DecisionAudit(path.join(HOME_DIR, backend.demo ? 'demo-decision-audit.jsonl' : 'decision-audit.jsonl'));
+    this.connector = new DecisionConnector({
+      transport: backend.tables,
+      secretsFile: path.join(HOME_DIR, backend.demo ? 'demo-secrets.json' : 'secrets.json'),
+      state: () => this.state.decisionConnector,
+      settings: () => this.state.settings.decisionConnector,
+      cards: () => this.connectorCards(),
+      answer: async (repoId, number, body, opts) => {
+        const out = await this.applyAnswer(repoId, number, body, opts);
+        const pr = out.plan.pr;
+        return { answer: out.answer, effect: pr?.do === 'merge' ? 'merge' : pr?.do === 'send-back' ? 'send_back' : 'unblock', note: pr?.do === 'send-back' ? pr.note : null, headSha: out.headSha };
+      },
+      retryQa: (repoId, number, sha) => this.retryQaViaConnector(repoId, number, sha),
+      answeredAt: (repoId, number) => this.decisionAnsweredAt(repoId, number),
+      receiptTo: () => this.receiptTo(),
+      send: (msg) => this.mailer.send(msg),
+      audit: (row) => void this.audit.write(row),
+      persist: () => this.save(),
+      changed: (decisionConnector) => this.broadcast({ type: 'decisionConnector', decisionConnector }),
       log: (line) => console.warn(line),
     });
     this.previews = new Previews(backend, {
@@ -868,6 +899,7 @@ export class Swarm {
         kimai: loadKimai(loaded.kimai),
         emailInbox: loadInbox(loaded.emailInbox),
         teams: loadTeams(loaded.teams),
+        decisionConnector: loadConnector(loaded.decisionConnector),
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -909,6 +941,7 @@ export class Swarm {
       // Offices from before Teams start with it off; a demo office with its made-up channel (off too).
       this.state.settings.teams = teamsSettings(DEFAULT_TEAMS, loaded.settings?.teams ?? this.backend.email.demoTeams);
       teamsSaved = true;
+      this.state.settings.decisionConnector = decisionConnectorSettings(DEFAULT_DECISION_CONNECTOR, loaded.settings?.decisionConnector);
       // Offices that were set up before the setup wizard existed skip it.
       if (loaded.settings && loaded.settings.setupDone === undefined && this.state.repos.length > 0) {
         Object.assign(this.state.settings, { setupDone: true, tutorialStep: -1 });
@@ -921,6 +954,7 @@ export class Swarm {
     await this.notifier.init();
     await this.mailer.init();
     await this.kimai.init();
+    await this.connector.init();
     const cutOffAt = this.state.kimai.aliveAt; // the last state write before this start: when cut-off sessions ended
     if (!emailSaved && this.backend.email.demoSettings) {
       this.state.settings.email = emailSettings(DEFAULT_EMAIL, this.backend.email.demoSettings);
@@ -1028,6 +1062,7 @@ export class Swarm {
     setTimeout(() => this.inbox.tick(), 10_000);
     setInterval(() => this.teams.tick(), TEAMS_TICK_MS);
     setInterval(() => void this.decisionTick(), DECISION_TICK_MS);
+    this.connector.start();
     void this.backend
       .detectClis()
       .then((clis) => {
@@ -1289,6 +1324,7 @@ export class Swarm {
       kimai: this.kimai.view(),
       emailInbox: this.inbox.view(),
       teams: this.teams.view(),
+      decisionConnector: this.connector.view(),
       version: VERSION,
       officeCommit: this.officeHead?.slice(0, 7) ?? null,
       officeUpdate: this.officeHead ? this.officeUpdateView() : undefined,
@@ -1350,7 +1386,7 @@ export class Swarm {
 
   /** Values the journal must never write: the ElevenLabs key and secret-looking environment variables. */
   private secrets(): string[] {
-    return [...this.envSecrets, this.voice.secret(), this.kimai.secret()].filter((x): x is string => !!x);
+    return [...this.envSecrets, this.voice.secret(), this.kimai.secret(), this.connector.secret()].filter((x): x is string => !!x);
   }
 
   /** POST /api/journal/sample (demo only): writes a made-up working day as yesterday's journal, to replay. */
@@ -2004,6 +2040,7 @@ export class Swarm {
    */
   async shutdown(restart = false): Promise<void> {
     this.kimai.stop();
+    this.connector.stop();
     await this.writeState().catch((err) => console.warn('could not save the state', err));
     await this.journal.close().catch((err) => console.warn('could not write the journal', err));
     await this.backend.releaseClis(restart); // before the terminals are saved: whatever they print next waits in the keeper
@@ -3662,6 +3699,16 @@ export class Swarm {
       if (next.mode === 'live' && !next.url) throw new HttpError(400, 'Set the Kimai URL before you switch to live.');
       s.kimai = next;
       setTimeout(() => void this.kimai.flush(), 200);
+    }
+    if (patch.decisionConnector !== undefined) {
+      const problem = decisionConnectorProblem(patch.decisionConnector);
+      if (problem) throw new HttpError(400, problem);
+      const prev = s.decisionConnector;
+      const next = decisionConnectorSettings(prev, patch.decisionConnector);
+      if (next.enabled && !prev.enabled && !next.tableEndpoint) throw new HttpError(400, 'Set the table endpoint before you switch the connector on.');
+      if (next.enabled && !prev.enabled && !this.connector.view().sasSet) throw new HttpError(400, 'Save the SAS token before you switch the connector on.');
+      s.decisionConnector = next;
+      this.connector.settingsChanged(prev);
     }
     this.save();
     this.broadcast({ type: 'settings', settings: s });
@@ -6254,6 +6301,7 @@ export class Swarm {
     if (json === this.lastDecisions) return;
     this.lastDecisions = json;
     this.broadcast({ type: 'decisions', decisions });
+    this.connector.decisionsChanged();
   }
 
   /** One open decision, or a 404 the card can show. */
@@ -6264,13 +6312,52 @@ export class Swarm {
     return { repo, item };
   }
 
+  /** Cards an answer is being applied to right now (decisionKeyOf): a second answer meanwhile is refused. */
+  private answering = new Set<string>();
+
+  /** The PR's head commit on GitHub now, for an answer that names the head it was given. */
+  private async decisionHead(repo: PersistedRepo, number: number): Promise<string> {
+    try {
+      return (await this.backend.prDetails(repo.fullName, number)).headSha;
+    } catch (err) {
+      throw new HttpError(502, `GitHub couldn't be asked for PR #${number}'s head: ${oneLine(err)}`);
+    }
+  }
+
+  /** Refuses when the PR's head moved since the snapshot the answer was given on; returns the head. */
+  private async checkHead(repo: PersistedRepo, number: number, expected: string): Promise<string> {
+    const actual = await this.decisionHead(repo, number);
+    if (!expected || actual.toLowerCase() !== expected.trim().toLowerCase()) {
+      const err = new HttpError(409, `PR #${number} changed since the snapshot: its head is ${actual.slice(0, 7)}, the answer was given on ${expected ? expected.slice(0, 7) : 'no head'}.`);
+      throw Object.assign(err, { headSha: actual }); // for the connector's audit row
+    }
+    return actual;
+  }
+
   /**
    * The manager's answer from a card (decisionAnswer.ts answerPlan): an explicit "Decision:" comment on GitHub, then the
    * issue's labels (or its close), or the PR's merge, send-back or close through the office's own actions. The 48-hour
-   * clock stops.
+   * clock stops. One answer per card at a time: a second while the first is applied is refused ("already answered").
+   * `opts.via` names the source in the sign-off and the audit; `opts.expectedHeadSha` refuses a PR whose head moved.
+   * The connector (decisionConnector.ts) writes its own audit row, with its answer id and times.
    */
-  async answerDecision(repoId: string, number: number, body: unknown) {
+  async answerDecision(repoId: string, number: number, body: unknown, opts: AnswerOptions = {}) {
+    const via = opts.via ?? 'room';
+    const choice = (body as { choice?: unknown } | null)?.choice;
+    try {
+      const out = await this.applyAnswer(repoId, number, body, opts);
+      if (via === 'room') void this.audit.write({ at: new Date().toISOString(), via, tool: String(choice ?? ''), repo: repoId, number, choice: out.answer, result: 'applied', detail: out.answer, expectedHeadSha: opts.expectedHeadSha ?? null, actualHeadSha: out.headSha });
+      return { ok: true, answer: out.answer };
+    } catch (err) {
+      if (via === 'room') void this.audit.write({ at: new Date().toISOString(), via, tool: String(choice ?? ''), repo: repoId, number, choice: String(choice ?? ''), result: 'refused', detail: oneLine(err), expectedHeadSha: opts.expectedHeadSha ?? null });
+      throw err;
+    }
+  }
+
+  private async applyAnswer(repoId: string, number: number, body: unknown, opts: AnswerOptions) {
     const { repo, item } = this.openDecision(repoId, number);
+    const key = decisionKeyOf(repo.id, number);
+    if (this.answering.has(key)) throw new HttpError(409, `#${number} on ${repo.fullName} is already answered: another answer is being applied.`);
     let choice;
     try {
       choice = parseDecisionChoice(body);
@@ -6280,31 +6367,90 @@ export class Swarm {
     const brief = this.briefs.get(decisionKey(item)) ?? null;
     let plan;
     try {
-      plan = answerPlan({ kind: item.kind, reason: item.reason, brief: usableBrief(brief) ? brief : null, by: this.state.settings.managerName || 'the manager' }, choice);
+      plan = answerPlan({ kind: item.kind, reason: item.reason, brief: usableBrief(brief) ? brief : null, by: this.state.settings.managerName || 'the manager', via: opts.via }, choice);
     } catch (err) {
       throw new HttpError(409, (err as Error).message);
     }
-    await this.backend.commentIssue(repo.fullName, number, plan.comment);
-    this.answered(repo.id, item.kind, number, plan.summary);
-    const rt = this.repoRt.get(repo.id);
-    if (plan.issue && 'close' in plan.issue) await this.closeIssueByManager(repo.id, number);
-    else if (plan.issue) {
-      const { add, remove } = plan.issue.labels;
-      await this.backend.editIssue(repo.fullName, number, { addLabels: add, removeLabels: remove });
-      const issue = rt?.issues.find((i) => i.number === number);
-      if (issue) issue.labels = [...issue.labels.filter((l) => !remove.includes(l.toLowerCase()) && !add.includes(l)), ...add];
-      this.emitRepo(repo);
-      setTimeout(() => this.schedule(), 200);
-    } else if (plan.pr?.do === 'merge') await this.mergePull(repo.id, number);
-    else if (plan.pr?.do === 'close') await this.closePull(repo.id, number);
-    else if (plan.pr?.do === 'send-back') {
-      const rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === number);
-      if (rec?.status === 'passed') this.returnHeldPr(rec, `From the manager: ${plan.pr.note}`);
-      else await this.sendBackToDev(repo.id, number, plan.pr.note);
+    this.answering.add(key); // taken before the first await, so a second answer can't slip in
+    try {
+      const headSha = item.kind === 'pr' && opts.expectedHeadSha !== undefined ? await this.checkHead(repo, number, opts.expectedHeadSha) : null;
+      await this.backend.commentIssue(repo.fullName, number, plan.comment);
+      this.answered(repo.id, item.kind, number, plan.summary);
+      const rt = this.repoRt.get(repo.id);
+      if (plan.issue && 'close' in plan.issue) await this.closeIssueByManager(repo.id, number);
+      else if (plan.issue) {
+        const { add, remove } = plan.issue.labels;
+        await this.backend.editIssue(repo.fullName, number, { addLabels: add, removeLabels: remove });
+        const issue = rt?.issues.find((i) => i.number === number);
+        if (issue) issue.labels = [...issue.labels.filter((l) => !remove.includes(l.toLowerCase()) && !add.includes(l)), ...add];
+        this.emitRepo(repo);
+        setTimeout(() => this.schedule(), 200);
+      } else if (plan.pr?.do === 'merge') await this.mergePull(repo.id, number);
+      else if (plan.pr?.do === 'close') await this.closePull(repo.id, number);
+      else if (plan.pr?.do === 'send-back') {
+        const rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === number);
+        if (rec?.status === 'passed') this.returnHeldPr(rec, `From the manager: ${plan.pr.note}`);
+        else await this.sendBackToDev(repo.id, number, plan.pr.note);
+      }
+      this.postMessage('office', `🧭 Decision on ${item.kind === 'pr' ? 'PR ' : ''}#${number} on ${repo.fullName}: you ${plan.summary}${opts.via === 'connector' ? ' (via the decision connector)' : ''}`);
+      this.emitDecisions();
+      return { answer: plan.summary, plan, headSha };
+    } finally {
+      this.answering.delete(key);
     }
-    this.postMessage('office', `🧭 Decision on ${item.kind === 'pr' ? 'PR ' : ''}#${number} on ${repo.fullName}: you ${plan.summary}`);
-    this.emitDecisions();
-    return { ok: true, answer: plan.summary };
+  }
+
+  /**
+   * Retry QA through the decision connector: the Room's sendToQa on an open PR card, after the same per-card lock and
+   * head check as an answer, plus what sendToQa doesn't do: a short comment on the PR. The connector audits it.
+   */
+  async retryQaViaConnector(repoId: string, number: number, expectedHeadSha: string): Promise<{ headSha: string; commented: boolean }> {
+    const { repo, item } = this.openDecision(repoId, number);
+    if (item.kind !== 'pr') throw new HttpError(409, `#${number} on ${repo.fullName} is an issue: Retry QA is only for PRs.`);
+    const key = decisionKeyOf(repo.id, number);
+    if (this.answering.has(key)) throw new HttpError(409, `#${number} on ${repo.fullName} is already answered: another answer is being applied.`);
+    this.answering.add(key);
+    try {
+      const headSha = await this.checkHead(repo, number, expectedHeadSha);
+      await this.sendToQa(repo.id, number);
+      const by = this.state.settings.managerName || 'the manager';
+      const commented = await this.backend
+        .commentIssue(repo.fullName, number, `Retry QA requested by ${by} via the connector.\n${OFFICE_MARK}`)
+        .then(() => true)
+        .catch((err) => (console.warn(`could not comment the connector's Retry QA on ${repo.fullName}#${number}: ${oneLine(err)}`), false));
+      this.postMessage('office', `🧭 PR #${number} on ${repo.fullName} goes back to QA: you asked via the decision connector.`);
+      this.emitDecisions();
+      return { headSha, commented };
+    } finally {
+      this.answering.delete(key);
+    }
+  }
+
+  /** Whether the manager answered this card already (the Room, the connector or a "Decision:" comment). */
+  decisionAnsweredAt(repoId: string, number: number): number | null {
+    return this.state.decisionNotes[decisionKeyOf(repoId, number)]?.answeredAt ?? this.state.decisions.find((d) => d.repoId === repoId && d.number === number)?.answeredAt ?? null;
+  }
+
+  /**
+   * Where the connector's receipts go: the manager's own address (Settings → Email: the first of "your addresses", else
+   * the blind copy), from the office's sender. Not the CEO's allowlist or daily cap: receipts have their own.
+   */
+  private receiptTo(): { from: string; to: string; toName: string; company: string } | string {
+    const e = this.state.settings.email;
+    if (!e.from || !this.mailer.ready) return 'no email sender is set up (Settings → Email)';
+    const to = e.mine?.[0] || e.copyTo;
+    if (!to) return "Settings → Email lists no address of yours (Your addresses, or the copy-to)";
+    return { from: e.from, to, toName: this.state.settings.managerName, company: this.state.settings.companyName };
+  }
+
+  /** The open cards as the decision connector's snapshot has them: each option's effect by the Room's own answerPlan. */
+  connectorCards(): SnapshotCard[] {
+    const by = this.state.settings.managerName || 'the manager';
+    return this.decisionViews().map((v) => {
+      const pull = v.kind === 'pr' ? this.repoRt.get(v.repoId)?.pulls.find((p) => p.number === v.number) : undefined;
+      const rec = this.state.decisions.find((d) => d.repoId === v.repoId && d.kind === v.kind && d.number === v.number);
+      return snapshotCard(v, { headSha: pull?.headSha ?? null, openedAt: rec?.firstSeen ?? null, by });
+    });
   }
 
   /** A held (passed) PR goes back to a developer with these instructions, as a send-back from Approvals would. */

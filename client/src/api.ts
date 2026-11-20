@@ -1,7 +1,7 @@
 import { useStore } from './store';
 import type { PongResult } from '../../shared/pong';
 import type { AgentStyle } from '../../shared/looks';
-import type { AgentCli, AgentPromptView, AgentView, BoardChangeView, DoctorFinding, DoctorFix, EffortLevel, EmailInboxView, EmailView, GhRepoSummary, KimaiView, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, TeamsView, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
+import type { AgentCli, AgentPromptView, AgentView, BoardChangeView, DecisionConnectorView, DoctorFinding, DoctorFix, EffortLevel, EmailInboxView, EmailView, GhRepoSummary, KimaiView, NotifyChannel, NotifyChannelsView, NotifyWebhook, OfficeUpdateView, PreviewView, ProjectFolderView, PrPreviewView, RepoView, SwarmSettings, TeamsView, UsageView, VoiceCacheView, VoiceOption } from '../../shared/types';
 import type { JournalChunk, JournalDayView } from '../../shared/journal';
 import type { DecorItem, ProgressView } from '../../shared/progress';
 import type { DecisionChoice } from '../../shared/decisions';
@@ -168,6 +168,10 @@ export const api = {
   setKimaiToken: (token: string) => (token ? call<KimaiView>('PUT', '/api/kimai/token', { token }, false) : call<KimaiView>('DELETE', '/api/kimai/token', undefined, false)),
   testKimai: () => call<{ version: string; user: string }>('POST', '/api/kimai/test', undefined, false),
   retryKimai: () => call<KimaiView>('POST', '/api/kimai/retry', undefined, false),
+  /** Settings → Decision connector: the table SAS token (write-only; '' removes it) and a check now. No toasts: the page shows the outcome. */
+  setDecisionConnectorSas: (sas: string) =>
+    sas ? call<DecisionConnectorView>('PUT', '/api/decision-connector/sas', { sas }, false) : call<DecisionConnectorView>('DELETE', '/api/decision-connector/sas', undefined, false),
+  checkDecisionConnector: () => call<DecisionConnectorView>('POST', '/api/decision-connector/check', undefined, false),
   /** Demo office only: the CEO asks for a new agent (or for one to leave) on demand. */
   demoPropose: (kind: 'hire' | 'let-go', floor?: number) => call<{ text: string }>('POST', '/api/demo/proposals', { kind, floor }),
   /** Saves (or with '' removes) the ElevenLabs key. No toast: the settings show why a key was rejected. */

@@ -18,14 +18,29 @@ export interface AnswerPlan {
 
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
+/** Where an answer came from: a Room card, or Bryan's voice Claude through the decision connector (docs/decision-connector.md). */
+export type AnswerVia = 'room' | 'connector';
+
+/** How swarm.ts answerDecision is asked: the source, and (for PRs) the head the answer was given on. */
+export interface AnswerOptions {
+  via?: AnswerVia;
+  /** Refuse if the PR's head on GitHub isn't this commit any more. The connector always sends it; the Room may. */
+  expectedHeadSha?: string;
+}
+
+/** The sign-off under the "Decision:" comment, naming where the answer came from. */
+export function signOff(by: string, via: AnswerVia = 'room'): string {
+  return via === 'connector' ? `_Answered by ${by} via the cubefarm decision connector._` : `_Answered by ${by} in the cubefarm Decision room._`;
+}
+
 /**
  * What a choice does. Issues: an answer drops needs-input for decided:manager, so the issue can be built; declining
  * closes it. PRs: approving or picking an option merges it when that option is "merge" as it is (recommendsMerge),
  * otherwise it goes back to a developer with the choice as the note; send back and close do just that.
  * Throws a message the manager can act on (no brief, an option that isn't there).
  */
-export function answerPlan(d: { kind: 'issue' | 'pr'; reason: DecisionReason; brief: Brief | null; by: string }, c: DecisionChoice): AnswerPlan {
-  const sign = `\n\n_Answered by ${d.by} in the cubefarm Decision room._\n${OFFICE_MARK}`;
+export function answerPlan(d: { kind: 'issue' | 'pr'; reason: DecisionReason; brief: Brief | null; by: string; via?: AnswerVia }, c: DecisionChoice): AnswerPlan {
+  const sign = `\n\n${signOff(d.by, d.via)}\n${OFFICE_MARK}`;
   let chosen: string; // the words of the choice
   let summary: string;
   if (c.choice === 'approve') {

@@ -119,6 +119,9 @@ left before the office applies the recommendation. Its buttons record your answe
 - **Send back** (PR) or **Answer** (issue) with your note in your own words.
 - **Close PR** / **Decline**: the PR closes; the issue closes as not planned.
 
+The same cards can be answered by voice from Claude through the **decision connector** (approve, an option, or retry QA
+only; off by default): see [decision-connector.md](decision-connector.md).
+
 Every answer stops the clock. **Ask** sends your question to the CEO as a job with the card's context (the issue or PR,
 its brief, the clone); the answer appears on the card's thread (kept in `state.json`) and as a GitHub comment, and
 the CEO rewrites the brief with `write_brief` when your question shows it was unclear. REST:
