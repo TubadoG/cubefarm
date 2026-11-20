@@ -17,6 +17,7 @@ import type { WeatherApi } from './weather.ts';
 import type { NotifyTransport } from './notifier.ts';
 import type { EmailTransport } from './graphMail.ts';
 import type { KimaiTransport } from './kimai.ts';
+import { memoryTables } from './decisionConnector.ts';
 import { DEFAULT_KIMAI } from '../shared/kimai.ts';
 
 // `npm run demo`: a fake GitHub and fake Claude Code sessions, so the office (including the
@@ -938,6 +939,8 @@ export function createDemoBackend(scale: DemoScale | null = null): Backend {
     notify: demoNotify,
     email: demoEmail,
     kimai: demoKimai,
+    // No network: the decision connector's tables in memory, which nothing on Azure ever answers.
+    tables: memoryTables(),
     seedOps: (ids, at) => demoPastWeek(ids, at),
     demoTeam: (floor) => demoTeam(scale, floor),
     simulateUsage: demoUsage,

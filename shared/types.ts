@@ -351,6 +351,7 @@ export interface SwarmSettings {
   email: EmailSettings; // Settings → Email: whom the CEO may email (docs/email.md)
   kimai: KimaiSettings; // Settings → Time tracking: agents' working time as Kimai timesheets (docs/kimai.md)
   teams: TeamsSettings; // Settings → Teams: the CEO in one Microsoft Teams channel (docs/teams.md)
+  decisionConnector: DecisionConnectorSettings; // Settings → Decision connector: Room cards answered by voice through Azure (docs/decision-connector.md)
   lead: LeadSettings; // the floor leads' models (docs/floor-lead.md)
 }
 
@@ -431,6 +432,45 @@ export interface EmailInboxView {
 export interface TeamsColleague {
   name: string; // as Teams shows the bot
   appId: string; // its Entra app (bot) id, lowercased; '' = matched by name only
+}
+
+/**
+ * Settings → Decision connector (docs/decision-connector.md, shared/decisionConnector.ts). The table SAS token lives in
+ * the secrets file, never here. Quiet hours are fixed (midnight to 5 am Eastern).
+ */
+export interface DecisionConnectorSettings {
+  enabled: boolean; // off by default: the office neither pushes nor polls
+  tableEndpoint: string; // https://<account>.table.core.windows.net ('' = not set)
+  receiptsPerDay: number; // receipt emails in any 24 hours, apart from the CEO's daily email cap
+}
+
+/** One connector answer the office picked up, and what it did with it. */
+export interface DecisionConnectorResultView {
+  answerId: string;
+  key: string; // "<repo>#<number>"
+  tool: string;
+  choice: string; // what was asked, in words
+  status: 'applied' | 'refused';
+  detail: string; // what the office did, or why it refused
+  askedAt: number | null;
+  at: number; // when the office applied or refused it
+  receipt: string; // 'sent', or why no receipt went out
+}
+
+/** Settings → Decision connector's status. Never the SAS token, only whether it's set. */
+export interface DecisionConnectorView {
+  sasSet: boolean;
+  quiet: boolean; // in quiet hours now
+  lastPush: number | null; // the last snapshot written (a change)
+  lastHeartbeat: number | null;
+  lastPoll: number | null;
+  lastError: string | null;
+  nextPollAt: number | null; // null: not polling (off, or not set up)
+  pickedToday: number; // answers picked up in the last 24 hours
+  appliedToday: number;
+  refusedToday: number;
+  receiptsToday: number;
+  results: DecisionConnectorResultView[]; // the latest 20, newest first
 }
 
 /** Settings → Teams (shared/teams.ts): the channel the CEO reads and posts in, and whose messages count. */
@@ -789,6 +829,7 @@ export interface WorldSnapshot {
   kimai?: KimaiView; // Settings → Time tracking (absent in old journals)
   emailInbox?: EmailInboxView; // Settings → Email's inbox status (absent in old journals)
   teams?: TeamsView; // Settings → Teams' status (absent in old journals)
+  decisionConnector?: DecisionConnectorView; // Settings → Decision connector's status (absent in old journals)
   progress: ProgressView; // coins, decorations and achievements (#210)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   decisions?: DecisionView[]; // the Decision room's cards: every open decision on every floor (absent in old journals)
@@ -844,6 +885,7 @@ export type ServerEvent =
   | { type: 'kimai'; kimai: KimaiView }
   | { type: 'emailInbox'; emailInbox: EmailInboxView }
   | { type: 'teams'; teams: TeamsView }
+  | { type: 'decisionConnector'; decisionConnector: DecisionConnectorView }
   | { type: 'ceo'; ceo: CeoInfo }
   | { type: 'message'; message: PhoneMessage }
   | { type: 'phoneRead'; at: number }

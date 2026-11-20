@@ -304,6 +304,10 @@ app.put('/api/kimai/token', route((req) => swarm.kimai.setToken(req.body ?? {}))
 app.delete('/api/kimai/token', route(() => swarm.kimai.removeToken()));
 app.post('/api/kimai/test', route(() => swarm.kimai.test()));
 app.post('/api/kimai/retry', route(() => swarm.kimai.retryFailed()));
+// The decision connector (docs/decision-connector.md): its table SAS token (write-only) and a check now.
+app.put('/api/decision-connector/sas', route((req) => swarm.connector.setSas(req.body ?? {})));
+app.delete('/api/decision-connector/sas', route(() => swarm.connector.removeSas()));
+app.post('/api/decision-connector/check', route(() => swarm.connector.checkNow()));
 // The Decision room (shared/decisions.ts): the manager's answer on a card, and questions for the CEO.
 app.post('/api/decisions/:repo/:n/answer', route((req) => swarm.answerDecision(repoId(req), num(req.params.n), req.body)));
 app.post('/api/decisions/:repo/:n/ask', route((req) => swarm.askDecision(repoId(req), num(req.params.n), req.body)));
