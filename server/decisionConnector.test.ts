@@ -4,7 +4,7 @@ import { NEEDS_INPUT, type Brief } from '../shared/brief.ts';
 import { DECIDED_MANAGER, type DecisionView } from '../shared/decisions.ts';
 import type { PullInfo } from '../shared/types.ts';
 import type { AuditRow } from './decisionAudit.ts';
-import { azureTables, decisionsJson, DECISIONS_MAX_CHARS, receiptEmail, redactSas, snapshotCard, type MemoryTables, type SnapshotCard } from './decisionConnector.ts';
+import { azureTables, decisionsJson, DECISIONS_MAX_CHARS, receiptEmail, redactSas, resultsJson, RESULTS_MAX_CHARS, snapshotCard, type MemoryTables, type SnapshotCard, type SnapshotResult } from './decisionConnector.ts';
 import { createDemoBackend } from './demo.ts';
 import { screen } from './mailInbox.ts';
 import { Swarm } from './swarm.ts';
@@ -125,7 +125,7 @@ async function office(opts: { on?: boolean; pr?: boolean } = {}) {
   const answer = (id: string) => tables.read('answers', 'answer', id)!;
   const snapshot = () => {
     const row = tables.read('snapshot', 'office', 'current');
-    return row ? { ...row, decisions: JSON.parse(String(row.decisions)) as SnapshotCard[] } : null;
+    return row ? { ...row, decisions: JSON.parse(String(row.decisions)) as SnapshotCard[], results: JSON.parse(String(row.results ?? '[]')) as SnapshotResult[] } : null;
   };
   const labels = async () => (await backend.listIssues(REPO)).find((i) => i.number === n)?.labels ?? [];
   const comments = async (num = n) => (await backend.discussion(REPO, num)).comments.map((c) => c.body);
@@ -150,7 +150,8 @@ describe('the snapshot', () => {
     const snap = snapshot()!;
     expect(snap).toMatchObject({ version: 1, enabled: true, writtenAt: new Date(NOON).toISOString(), heartbeatAt: new Date(NOON).toISOString() });
     const card = snap.decisions.find((d) => d.number === n)!;
-    expect(card).toMatchObject({ key: `${REPO}#${n}`, repo: REPO, kind: 'issue', recommendation: '60: it protects the free tier.', headSha: null, lastResult: null });
+    expect(card).toMatchObject({ key: `${REPO}#${n}`, repo: REPO, kind: 'issue', recommendation: '60: it protects the free tier.', recommendationEffect: 'unblock', recommendationNote: null, headSha: null, lastResult: null });
+    expect(snap.results).toEqual([]);
     expect(card.options).toEqual([
       { label: '60: safe', effect: 'unblock', note: null },
       { label: '600: generous', effect: 'unblock', note: null },
@@ -169,11 +170,48 @@ describe('the snapshot', () => {
     const { swarm, snapshot } = await office({ pr: true });
     await swarm.connector.tick();
     const card = snapshot()!.decisions.find((d) => d.number === PR)!;
-    expect(card).toMatchObject({ kind: 'pr', headSha: HEAD, recommendation: 'Merge it as it is.' });
+    expect(card).toMatchObject({ kind: 'pr', headSha: HEAD, recommendation: 'Merge it as it is.', recommendationEffect: 'merge', recommendationNote: null });
     expect(card.options).toEqual([
       { label: 'Merge it as it is.', effect: 'merge', note: null },
       { label: 'Wait for the pricing review first.', effect: 'send_back', note: 'The manager chose option 2: Wait for the pricing review first.' },
     ]);
+  });
+
+  it("says what approving does, by the same answerPlan: send back with the note, or nothing to approve", () => {
+    const pr = (brief: Brief): DecisionView => ({ key: `${REPO}#${PR}`, repoId: REPO, floor: 1, kind: 'pr', reason: 'held', number: PR, title: 'Bill per request', url: '', briefRead: true, deadline: null, answeredAt: null, answer: null, thread: [], asking: false, brief });
+    const back = snapshotCard(pr({ ...PR_BRIEF, recommendation: 'Wait for the pricing review first.' }), { headSha: HEAD, openedAt: null, by: 'Bryan' });
+    expect(back).toMatchObject({ recommendationEffect: 'send_back', recommendationNote: 'The manager approved the recommendation: Wait for the pricing review first.' });
+    expect(back.options[1]).toMatchObject({ effect: 'send_back' });
+    const none = snapshotCard(pr({ ...PR_BRIEF, recommendation: '' }), { headSha: HEAD, openedAt: null, by: 'Bryan' });
+    expect(none).toMatchObject({ recommendation: '', recommendationEffect: null, recommendationNote: null });
+  });
+
+  it('lists the last results, newest first, and a new result alone is a change worth a push', async () => {
+    const { swarm, queue, snapshot, n } = await office();
+    await swarm.connector.tick();
+    expect(snapshot()).toMatchObject({ version: 1, results: [] });
+    const nowhere = queue({ tool: 'approve_recommendation', number: 9999 }); // no card: only the results change
+    await swarm.connector.tick();
+    expect(snapshot()).toMatchObject({ version: 2 });
+    expect(snapshot()!.results).toEqual([{ answerId: nowhere, key: `${REPO}#9999`, tool: 'approve_recommendation', status: 'refused', detail: 'This card no longer waits for a decision.', at: new Date(NOON).toISOString() }]);
+    const applied = queue({ tool: 'approve_recommendation', askedAt: Date.now() + 1 });
+    await swarm.connector.tick();
+    const snap = snapshot()!;
+    expect(snap.decisions.find((d) => d.number === n)).toBeUndefined(); // the card closed with the answer…
+    expect(snap.results.map((r) => [r.answerId, r.status])).toEqual([
+      [applied, 'applied'], // …and its result still shows, newest first
+      [nowhere, 'refused'],
+    ]);
+  });
+
+  it('keeps results to 20 and 6,000 characters', () => {
+    const many: SnapshotResult[] = Array.from({ length: 30 }, (_, i) => ({ answerId: `a${i}`, key: `${REPO}#${i}`, tool: 'choose_option', status: 'refused', detail: 'x'.repeat(900), at: NOON }));
+    const json = resultsJson(many);
+    expect(json.length).toBeLessThanOrEqual(RESULTS_MAX_CHARS);
+    const list = JSON.parse(json) as SnapshotResult[];
+    expect(list.length).toBeLessThanOrEqual(20);
+    expect(list[0].answerId).toBe('a0'); // the newest kept
+    expect((JSON.parse(resultsJson(many.slice(0, 3).map((r) => ({ ...r, detail: 'short' })))) as SnapshotResult[]).length).toBe(3);
   });
 
   it('fits a big office into the property, shortening briefs first', () => {

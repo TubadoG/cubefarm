@@ -60,6 +60,9 @@ export interface SnapshotCard {
   title: string;
   brief: string; // at most BRIEF_CHARS
   recommendation: string; // '' when the brief has none
+  /** What approving does, by the same answerPlan as the options; null when there is no recommendation to approve. */
+  recommendationEffect: Effect | null;
+  recommendationNote: string | null; // the send-back note
   options: SnapshotOption[];
   headSha: string | null;
   openedAt: string | null;
@@ -86,6 +89,14 @@ export function snapshotCard(v: DecisionView, o: { headSha: string | null; opene
     const plan = answerPlan({ kind: v.kind, reason: v.reason, brief, by: o.by, via: 'connector' }, { choice: 'option', option: i + 1 });
     return { label: oneLine(label), ...effectOf(plan) };
   });
+  let rec: { effect: Effect | null; note: string | null } = { effect: null, note: null };
+  if (brief?.recommendation) {
+    try {
+      rec = effectOf(answerPlan({ kind: v.kind, reason: v.reason, brief, by: o.by, via: 'connector' }, { choice: 'approve' }));
+    } catch {
+      // no recommendation to approve: approving is refused, and the snapshot says so with null
+    }
+  }
   const text = brief ? [brief.decision, brief.background ? `Background: ${brief.background}` : ''].filter(Boolean).join(' ') : '';
   return {
     key: `${v.repoId}#${v.number}`,
@@ -95,6 +106,8 @@ export function snapshotCard(v: DecisionView, o: { headSha: string | null; opene
     title: v.title,
     brief: cut(oneLine(text), BRIEF_CHARS),
     recommendation: brief ? oneLine(brief.recommendation) : '',
+    recommendationEffect: rec.effect,
+    recommendationNote: rec.note,
     options,
     headSha: v.kind === 'pr' ? o.headSha : null,
     openedAt: o.openedAt ? iso(o.openedAt) : null,
@@ -113,9 +126,35 @@ export function decisionsJson(cards: SnapshotCard[], max = DECISIONS_MAX_CHARS):
     brief: '',
     title: cut(c.title, 120),
     recommendation: cut(c.recommendation, 200),
+    recommendationNote: c.recommendationNote === null ? null : cut(c.recommendationNote, 200),
     options: c.options.map((x) => ({ ...x, label: cut(x.label, 200), note: x.note === null ? null : cut(x.note, 200) })),
     lastResult: c.lastResult && { ...c.lastResult, detail: cut(c.lastResult.detail, 200) },
   }));
+  while (list.length && JSON.stringify(list).length > max) list = list.slice(0, -1);
+  return JSON.stringify(list);
+}
+
+/** One office result in `snapshot.results` (contract.md), so an applied answer shows after its card has closed. */
+export interface SnapshotResult {
+  answerId: string;
+  key: string;
+  tool: string;
+  status: 'applied' | 'refused';
+  detail: string;
+  at: string;
+}
+
+export const RESULTS_SHOWN = 20;
+export const RESULTS_MAX_CHARS = 6_000;
+
+/** `results` as written: the newest RESULTS_SHOWN, newest first, details shortened, then the oldest dropped, to fit. */
+export function resultsJson(results: SnapshotResult[], max = RESULTS_MAX_CHARS): string {
+  let list = results.slice(0, RESULTS_SHOWN);
+  for (const n of [Infinity, 300, 120]) {
+    const json = JSON.stringify(list.map((r) => ({ ...r, detail: n === Infinity ? r.detail : cut(r.detail, n) })));
+    if (json.length <= max) return json;
+  }
+  list = list.map((r) => ({ ...r, detail: cut(r.detail, 120) }));
   while (list.length && JSON.stringify(list).length > max) list = list.slice(0, -1);
   return JSON.stringify(list);
 }
@@ -607,7 +646,7 @@ export class DecisionConnector {
     const now = this.now();
     try {
       const tables = this.deps.transport.open(this.deps.settings().tableEndpoint, this.sas!);
-      await tables.upsert('snapshot', { PartitionKey: 'office', RowKey: 'current', version: st.version + 1, writtenAt: iso(now), heartbeatAt: iso(now), enabled: false, decisions: '[]' });
+      await tables.upsert('snapshot', { PartitionKey: 'office', RowKey: 'current', version: st.version + 1, writtenAt: iso(now), heartbeatAt: iso(now), enabled: false, decisions: '[]', results: '[]' });
       Object.assign(st, { version: st.version + 1, offWritten: true, hash: '', lastPushAt: now, lastError: null });
     } catch (err) {
       this.error(`Couldn't tell the connector it is off: ${oneLine(err)}`);
@@ -628,10 +667,15 @@ export class DecisionConnector {
     const cards = this.deps.cards();
     this.open = cards.length;
     const decisions = decisionsJson(cards.map((c) => ({ ...c, lastResult: this.lastResult(c.key) })));
-    const hash = crypto.createHash('sha256').update(decisions).digest('hex');
+    const results = resultsJson(
+      [...st.results]
+        .reverse()
+        .map((r) => ({ answerId: r.answerId, key: r.key, tool: r.tool, status: r.status, detail: r.detail, at: iso(r.at) })),
+    );
+    const hash = crypto.createHash('sha256').update(decisions).update('\u0000').update(results).digest('hex'); // a new result is a change too
     if (hash !== st.hash) {
       const version = st.version + 1;
-      await tables.upsert('snapshot', { PartitionKey: 'office', RowKey: 'current', version, writtenAt: iso(now), heartbeatAt: iso(now), enabled: true, decisions });
+      await tables.upsert('snapshot', { PartitionKey: 'office', RowKey: 'current', version, writtenAt: iso(now), heartbeatAt: iso(now), enabled: true, decisions, results });
       Object.assign(st, { version, hash, lastPushAt: now, lastHeartbeatAt: now });
     } else if (st.lastHeartbeatAt === null || now - st.lastHeartbeatAt >= HEARTBEAT_MS) {
       if (await tables.merge('snapshot', { PartitionKey: 'office', RowKey: 'current', heartbeatAt: iso(now) }, '*')) st.lastHeartbeatAt = now;

@@ -20,7 +20,9 @@ Three tools, nothing else:
 
 On an issue an answer unblocks it (`needs-input` → `decided:manager`); on a PR, a choice to merge as it is merges it
 and any other choice sends it back to a developer with the choice as the note, exactly as `answerPlan` does in the
-Room. The snapshot tells Claude each option's effect before you choose. **Hold**, **Merge in order**, **Close** and
+Room. The snapshot tells Claude what approving and each option will do (merge, send back with this note, or unblock)
+before you choose, computed by that same `answerPlan`, and lists the office's last 20 results, newest first, so an
+answer whose card closed still shows what happened. **Hold**, **Merge in order**, **Close** and
 **Send back** with your own note stay in the Room; an answer row asking for anything else is refused.
 
 The GitHub comment is the Room's `Decision: …`, signed "Answered by <you> via the cubefarm decision connector."
@@ -45,7 +47,7 @@ Refused answers are audited and get a receipt like applied ones, and the reason 
   "decisions are paused overnight" from its own clock; an answer asked in quiet hours is refused when picked up.
 - **On**: every 5 minutes with no open decisions, every 30 seconds with some, every 3 seconds while you're talking
   to Claude (the connector's "session active" row is under 10 minutes old), then back to 30 seconds.
-- The snapshot is written only when it changes (the open cards, a head SHA or a result), plus a heartbeat every hour,
+- The snapshot is written only when it changes (the open cards, a head SHA or a new result), plus a heartbeat every hour,
   so Claude can say "the office hasn't checked in since …" if the office is down.
 
 ## Receipts
