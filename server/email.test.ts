@@ -82,7 +82,7 @@ describe('send_email', () => {
   it(`stops at ${DEFAULT_DAILY_CAP} by default, counting the ones waiting`, async () => {
     const { send, emails } = await office();
     for (let i = 0; i < DEFAULT_DAILY_CAP; i++) expect(await send(ASK.email, `Report ${i}`)).toMatch(/^Waiting/);
-    expect(await send(ASK.email)).toMatch(/^Refused: The office sends at most 10 emails in any 24 hours/);
+    expect(await send(ASK.email)).toMatch(new RegExp(`^Refused: The office sends at most ${DEFAULT_DAILY_CAP} emails in any 24 hours`));
     expect(emails()).toHaveLength(DEFAULT_DAILY_CAP);
   });
 
@@ -172,8 +172,8 @@ describe('the daily digest', () => {
     const { swarm, send, digest } = await withFloor();
     digest({ to: AUTO.email });
     for (let i = 0; i < DEFAULT_DAILY_CAP; i++) await send(ASK.email, `Report ${i}`);
-    await expect(swarm.sendDigest()).rejects.toThrow(/at most 10 emails in any 24 hours/);
-    swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, dailyCap: 11 } });
+    await expect(swarm.sendDigest()).rejects.toThrow(`at most ${DEFAULT_DAILY_CAP} emails in any 24 hours`);
+    swarm.updateSettings({ email: { ...swarm.snapshot().settings.email, dailyCap: DEFAULT_DAILY_CAP + 1 } });
     expect(await swarm.sendDigest()).toMatchObject({ sent: true });
   });
 

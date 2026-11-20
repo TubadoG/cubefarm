@@ -8,7 +8,7 @@ export type { DigestSettings, EmailColleague, EmailRecipient, EmailSettings };
 export const MAX_RECIPIENTS = 25;
 export const MAX_NAME = 60;
 /** The daily cap until the manager changes it: most emails the office may send (or have waiting) in any 24 hours. */
-export const DEFAULT_DAILY_CAP = 10;
+export const DEFAULT_DAILY_CAP = 20;
 /** The bounds Settings → Email allows for the daily cap. */
 export const MIN_DAILY_CAP = 1;
 export const MAX_DAILY_CAP = 100;
@@ -196,7 +196,7 @@ export function capRefusal(s: Partial<Pick<EmailSettings, 'dailyCap'>>, emails: 
   return emailsToday(emails, now) >= cap ? `The office sends at most ${cap} email${cap === 1 ? '' : 's'} in any 24 hours, and they're used up.` : null;
 }
 
-/** Settings → Email's count beside the cap, e.g. "4 of 10 used in the last 24 hours". */
+/** Settings → Email's count beside the cap, e.g. "4 of 20 used in the last 24 hours". */
 export function capUsage(used: number, cap: number): string {
   return `${used} of ${cap} used in the last 24 hours`;
 }

@@ -19,10 +19,10 @@ past it.
   (pocket mode, and the phone's Team tab) with **Send** and **Decline** (with a note the CEO reads). Without it, the
   email goes out at once and the phone says so.
 
-- **Most emails in any 24 hours**: the daily cap, 10 unless you change it (a whole number from 1 to 100;
+- **Most emails in any 24 hours**: the daily cap, 20 unless you change it (a whole number from 1 to 100;
   `dailyCap` in `PATCH /api/settings`'s `email`). It counts the CEO's emails and the digest, sent or waiting for your
   OK, created in the last 24 hours: a rolling window, not a calendar day. Beside it, Settings shows how many are used
-  ("4 of 10 used in the last 24 hours"), updated live. A change applies at once, with no restart, so you can raise it
+  ("4 of 20 used in the last 24 hours"), updated live. A change applies at once, with no restart, so you can raise it
   mid-day and the next email goes out. Set it below what's used and nothing more goes out until older emails pass 24
   hours. When it's reached, `send_email` and the digest are refused with the cap in the reason. The office keeps every
   email that still counts, so a high cap is never overrun.
@@ -159,7 +159,7 @@ attachments counted, never delivered twice), and then:
 - **Replies** lists it as "🤝 To the CEO as Marcus's, not yours".
 
 An address on both lists counts as yours. Two agents emailing each other could go back and forth: the CEO's daily
-cap (10 emails in 24 hours unless you change it) bounds it, auto-replies are never passed on, and the CEO's prompt for a colleague's email says not to
+cap (20 emails in 24 hours unless you change it) bounds it, auto-replies are never passed on, and the CEO's prompt for a colleague's email says not to
 answer acknowledgements, thanks or an FYI. Give your own agent the same rule.
 
 **Settings → Email → Replies** shows the switch, your addresses, your colleagues, the last check (and its error), and the last 20
