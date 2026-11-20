@@ -1326,6 +1326,37 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
       const prs = s.floors.reduce((n, f) => n + f.pullRequests.length, 0);
       return `All ${s.floors.length} floors look healthy: ${issues} open issues and ${prs} pull requests in flight. No changes needed.`;
     },
+    /**
+     * Teams messages (docs/teams.md), one job's worth: each answered in its own thread through the real post_teams. A
+     * message that reads like a decision is pointed to the Decision room; a colleague's FYI gets no answer.
+     */
+    async teams(prompt: string, fromManager: boolean) {
+      const parts = prompt.split(/(?=^Teams message from )/m).filter((p) => /^Teams message from /.test(p));
+      for (const part of parts) {
+        const root = part.match(/\(thread (\d+)\)/)?.[1];
+        const manager = fromManager && /^Teams message from the manager/.test(part);
+        if (!root) continue;
+        if (manager && /reads like an answer to a decision/.test(part)) {
+          await think('That reads like a decision. Decisions are answered in the Decision room, never in Teams.');
+          await use('post_teams', { root_id: root, text: "I can't take decisions here: they're answered in the Decision room, where one tap settles it. I've left it as it is." });
+          continue;
+        }
+        if (!manager && !/\?/.test(part.split('\n\n').slice(1, -1).join('\n'))) {
+          await think("A colleague's heads-up: nothing to answer.");
+          continue;
+        }
+        const s = await status();
+        const busiest = [...s.floors].sort((a, b) => b.capacity.issuesReadyToStart - a.capacity.issuesReadyToStart)[0];
+        const out = await use('post_teams', {
+          root_id: root,
+          text: busiest
+            ? `${plural(s.floors.length, 'floor')} at work. Floor ${busiest.floor} (${busiest.repo}) has the most waiting: ${plural(busiest.capacity.issuesReadyToStart, 'issue')} ready to start, ${plural(busiest.team.size, 'agent')} on it.`
+            : 'No floors yet: nothing to report.',
+        });
+        if (out.startsWith('Refused')) return `I couldn't answer in Teams: ${refused(out)}`;
+      }
+      return 'NO_MESSAGE';
+    },
     async chat(text: string) {
       const s = await status();
       await think('Reading your message.');
@@ -1426,13 +1457,17 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
           ? () => scripts.plan(Number(where?.[1]), prompt.match(/"""([\s\S]*?)"""/)?.[1]?.trim() ?? '')
           : /Periodic review/.test(prompt)
             ? () => scripts.review()
-            : /^Email from a colleague/.test(prompt)
-              ? async () => {
-                  // A colleague's FYI: nothing to answer, by email or on the manager's phone (no ping-pong between agents).
-                  await think("A colleague's heads-up: nothing to answer, and nothing for the manager.");
-                  return 'NO_MESSAGE';
-                }
-              : () => scripts.chat(prompt.split('\n').slice(1).join(' ').trim() || prompt);
+            : /^Message from a colleague/.test(prompt) && /^Teams message from /m.test(prompt)
+              ? () => scripts.teams(prompt, false)
+              : /^Email from a colleague/.test(prompt)
+                ? async () => {
+                    // A colleague's FYI: nothing to answer, by email or on the manager's phone (no ping-pong between agents).
+                    await think("A colleague's heads-up: nothing to answer, and nothing for the manager.");
+                    return 'NO_MESSAGE';
+                  }
+                : /^Teams message from the manager/m.test(prompt)
+                  ? () => scripts.teams(prompt, true)
+                  : () => scripts.chat(prompt.split('\n').slice(1).join(' ').trim() || prompt);
 
   const finish = (ok: boolean, text: string, error?: string) => {
     if (done) return;
@@ -1460,6 +1495,8 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
       timers.push(
         setTimeout(() => {
           if (stopped || done) return;
+          // The manager wrote in Teams while the CEO was busy: answered in its thread, as a job of its own would be.
+          if (/^Teams message from the manager/m.test(text)) return void scripts.teams(text, true).catch(() => undefined);
           const said = text.split('\n').slice(1).join(' ').trim() || text;
           cb.log([{ kind: 'text', text: `● Noted: "${short(said, 70)}"` }]);
           cb.turn?.(`Noted, I'll factor that in: "${short(said, 90)}"`);
@@ -1635,12 +1672,17 @@ const demoNotify: NotifyTransport = {
 
 // ---------- email ----------
 
+// The demo's Teams people (docs/teams.md): the manager's Entra id, Nova's bot, and the CEO's own bot (the demo sender's app).
+const DEMO_MANAGER_ID = '00000000-0000-4000-8000-0000000000a1';
+const DEMO_NOVA_APP = '00000000-0000-4000-8000-0000000000b2';
+const DEMO_CEO_APP = '00000000-0000-4000-8000-00000000d3e0'; // the demo sender's app: the CEO's bot
+
 /**
  * Nothing is sent: each email is logged. A demo office starts with a made-up sender and a short allowlist (one person
  * whose emails wait for the manager's OK); an address containing "bad" fails, like the chat apps.
  */
 const demoEmail: EmailTransport = {
-  demoSender: { tenantId: 'demo-co.example.com', clientId: '00000000-0000-4000-8000-00000000d3e0', clientSecret: 'demo-not-a-secret' },
+  demoSender: { tenantId: 'demo-co.example.com', clientId: DEMO_CEO_APP, clientSecret: 'demo-not-a-secret' },
   demoSettings: {
     enabled: true,
     from: 'ceo@demo-co.example.com',
@@ -1657,6 +1699,23 @@ const demoEmail: EmailTransport = {
     // Another agent the manager runs: its email reaches the CEO as Nova's, never as the manager's.
     colleagues: [{ email: 'nova@demo-co.example.com', name: 'Nova' }],
   },
+  // A made-up channel, switched off: switched on, the demo's channel (demoTeamsMessages) is read.
+  demoTeams: {
+    enabled: false,
+    teamId: '00000000-0000-4000-8000-0000000000c1',
+    channelId: '19:demochannel0000000000000000@thread.tacv2',
+    serviceUrl: 'https://smba.trafficmanager.net/amer/',
+    pollSeconds: 60,
+    managers: [DEMO_MANAGER_ID],
+    colleagues: [{ name: 'Nova', appId: DEMO_NOVA_APP }],
+    postsPerDay: 40,
+  },
+  botPost: async (_sender, url, body) => {
+    await new Promise((r) => setTimeout(r, 200));
+    const text = (body as { text?: string; activity?: { text?: string } }).text ?? (body as { activity?: { text?: string } }).activity?.text ?? '';
+    console.log(`💬 demo Teams post ${url.includes('messageid%3D') ? 'in a thread' : 'as a new post'}: ${text.replace(/\n/g, ' ⏎ ').slice(0, 200)}`);
+    return { status: 201, body: { id: `demo-${Date.now()}` } };
+  },
   send: async (_sender, m) => {
     await new Promise((r) => setTimeout(r, 300));
     const ok = !/bad/i.test(m.to);
@@ -1666,8 +1725,9 @@ const demoEmail: EmailTransport = {
   // The demo's mailbox: a reply from the manager, a heads-up from Nova (a colleague), one from a client and an
   // out-of-office, all "just arrived", so with reading switched on the first lands on the phone, Nova's reaches the CEO
   // as a colleague's and the other two show as ignored. Fixed ids: each counts once.
-  get: async () => {
+  get: async (_sender, url) => {
     await new Promise((r) => setTimeout(r, 200));
+    if (url.includes('/teams/')) return { status: 200, body: { value: demoTeamsMessages() } };
     const at = new Date().toISOString();
     const who = (address: string, name: string) => ({ emailAddress: { address, name } });
     const internal = [{ name: 'X-MS-Exchange-Organization-AuthAs', value: 'Internal' }];
@@ -1697,6 +1757,45 @@ const demoEmail: EmailTransport = {
     };
   },
 };
+
+// ---------- Teams ----------
+
+/**
+ * The demo's Teams channel (docs/teams.md), all "just written", so with Teams switched on: the manager's question
+ * reaches the CEO, who answers in its thread; their "Decision: …" gets pointed to the Decision room; Nova's @mention
+ * reaches the CEO as Nova's and gets an answer, while Nova's thanks, Nova's post without a mention, a guest's message
+ * and the CEO's own post are only listed (or skipped). Fixed ids: each counts once.
+ */
+function demoTeamsMessages() {
+  const at = new Date().toISOString();
+  const user = (id: string, displayName: string) => ({ user: { id, displayName }, application: null });
+  const bot = (id: string, displayName: string) => ({ user: null, application: { id, displayName, applicationIdentityType: 'bot' } });
+  const atCeo = [{ id: 0, mentionText: 'CEO', mentioned: { application: { id: DEMO_CEO_APP, displayName: 'CEO' } } }];
+  const msg = (id: string, from: object, html: string, o: { replyToId?: string; mentions?: object[] } = {}) => ({
+    id,
+    replyToId: o.replyToId ?? null,
+    messageType: 'message',
+    createdDateTime: at,
+    lastModifiedDateTime: at,
+    deletedDateTime: null,
+    from,
+    body: { contentType: 'html', content: html },
+    mentions: o.mentions ?? [],
+    attachments: [],
+  });
+  const manager = user(DEMO_MANAGER_ID, 'The manager');
+  const nova = bot(DEMO_NOVA_APP, 'Nova');
+  return [
+    { ...msg('1763600000001', manager, '<p>Which floor is busiest right now?</p>'), replies: [msg('1763600000007', bot(DEMO_CEO_APP, 'CEO'), '<p>Looking now.</p>', { replyToId: '1763600000001' })] },
+    { ...msg('1763600000002', manager, '<p>Decision: approve #3, ship it.</p>'), replies: [] },
+    {
+      ...msg('1763600000003', nova, '<p><at id="0">CEO</at> which floor has the most work waiting?</p>', { mentions: atCeo }),
+      replies: [msg('1763600000004', nova, '<p><at id="0">CEO</at> Thanks!</p>', { replyToId: '1763600000003', mentions: atCeo })],
+    },
+    { ...msg('1763600000005', nova, '<p>Staging redeploys at 3 pm today.</p>'), replies: [] },
+    { ...msg('1763600000006', user('00000000-0000-4000-8000-0000000000f6', 'Sam (guest)'), '<p>Hi all, who should I ask about access?</p>'), replies: [] },
+  ];
+}
 
 // ---------- time tracking ----------
 

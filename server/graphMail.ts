@@ -1,10 +1,11 @@
 // Email through Microsoft Graph (docs/email.md): an app-only token (client credentials, with a client secret or a
 // certificate whose private key stays in Azure Key Vault), then POST /users/{from}/sendMail to send, and GETs of the
-// mailbox's Inbox to read replies (mailInbox.ts). The pure parts (the
+// mailbox's Inbox to read replies (mailInbox.ts). The same app reads the Teams channel through Graph and posts in it as
+// its bot through the Bot Framework (teamsChannel.ts, docs/teams.md): one identity, a token per scope. The pure parts (the
 // client assertion's JWT, the request body, base64url) are exported for tests. Tokens, assertions and secrets are
 // never logged or put in an error message.
 import { createHash, randomUUID } from 'node:crypto';
-import type { EmailSettings } from '../shared/types.ts';
+import type { EmailSettings, TeamsSettings } from '../shared/types.ts';
 import { run } from './exec.ts';
 
 /** The sender's credentials, from secrets.json's `email`. */
@@ -28,10 +29,14 @@ export interface EmailTransport {
   send(sender: EmailSender, msg: OutgoingEmail): Promise<void>;
   /** A Graph GET, bodies as text. `fresh`: drop the cached token first (after a 401). Throws only on network errors. */
   get(sender: EmailSender, url: string, fresh?: boolean): Promise<{ status: number; body: unknown }>;
+  /** A Bot Framework POST as the app's bot (Teams posts), JSON in and out. `fresh` as for get. Throws only on network errors. */
+  botPost(sender: EmailSender, url: string, body: unknown, fresh?: boolean): Promise<{ status: number; body: unknown }>;
   /** A fake sender a demo office starts with (never used for anything real). */
   demoSender?: EmailSender;
   /** The demo office's made-up email settings, for an office that has none saved. */
   demoSettings?: EmailSettings;
+  /** The demo office's made-up Teams settings (switched off), for an office that has none saved. */
+  demoTeams?: TeamsSettings;
 }
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -125,13 +130,17 @@ async function vaultSign(keyId: string, digest: string): Promise<string> {
   return sig;
 }
 
-const tokenKey = (s: EmailSender) => `${s.tenantId}/${s.clientId}/${senderMode(s)}`;
+export const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
+/** The Bot Framework's scope: a single-tenant bot gets its token from its own tenant, like Graph's. */
+export const BOT_SCOPE = 'https://api.botframework.com/.default';
 
-async function accessToken(s: EmailSender): Promise<string> {
-  const key = tokenKey(s);
+const tokenKey = (s: EmailSender, scope: string) => `${s.tenantId}/${s.clientId}/${senderMode(s)}/${scope}`;
+
+async function accessToken(s: EmailSender, scope = GRAPH_SCOPE): Promise<string> {
+  const key = tokenKey(s, scope);
   const hit = tokens.get(key);
   if (hit && hit.until > Date.now()) return hit.token;
-  const form = new URLSearchParams({ client_id: s.clientId, scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' });
+  const form = new URLSearchParams({ client_id: s.clientId, scope, grant_type: 'client_credentials' });
   if ('clientSecret' in s) form.set('client_secret', s.clientSecret);
   else {
     const input = assertionInput({ tenantId: s.tenantId, clientId: s.clientId, x5tHex: s.x5tHex, now: Date.now(), jti: randomUUID() });
@@ -159,16 +168,27 @@ export const graphTransport: EmailTransport = {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.status === 202 || res.ok) return;
-    if (res.status === 401) tokens.delete(tokenKey(sender));
+    if (res.status === 401) tokens.delete(tokenKey(sender, GRAPH_SCOPE));
     const err = (await res.json().catch(() => ({}))) as { error?: { code?: string; message?: string } };
     const why = res.status === 403 ? ` The app may lack Mail.Send for ${msg.from} (see docs/email.md).` : '';
     throw new Error(`Graph refused the email (HTTP ${res.status}${err.error?.code ? `, ${err.error.code}` : ''}): ${(err.error?.message ?? '').slice(0, 200)}${why}`);
   },
   async get(sender, url, fresh) {
-    if (fresh) tokens.delete(tokenKey(sender));
+    if (fresh) tokens.delete(tokenKey(sender, GRAPH_SCOPE));
     const token = await accessToken(sender);
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', Prefer: 'outlook.body-content-type="text"' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    return { status: res.status, body: await res.json().catch(() => null) };
+  },
+  async botPost(sender, url, body, fresh) {
+    if (fresh) tokens.delete(tokenKey(sender, BOT_SCOPE));
+    const token = await accessToken(sender, BOT_SCOPE);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     return { status: res.status, body: await res.json().catch(() => null) };

@@ -14,6 +14,7 @@ import { MicButton } from './MicButton';
 import { OpsTab } from './MissionConsole';
 import { NotifySettings } from './NotifySettings';
 import { EmailSettings } from './EmailSettings';
+import { TeamsSettings } from './TeamsSettings';
 import { TimeTrackingSettings } from './TimeTrackingSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { Panel } from './Overlays';
@@ -916,6 +917,7 @@ function SettingsTab() {
       <OutsideSettings />
       <NotifySettings />
       <EmailSettings />
+      <TeamsSettings />
       <TimeTrackingSettings />
       <ThemeSettings />
     </div>

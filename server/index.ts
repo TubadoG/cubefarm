@@ -296,6 +296,9 @@ app.post('/api/email/test', route(() => swarm.testEmail()));
 app.post('/api/email/digest', route(() => swarm.sendDigest()));
 app.get('/api/email/inbox', route(() => swarm.inbox.view()));
 app.post('/api/email/inbox/check', route(() => swarm.inbox.check(true)));
+// The CEO in Teams (docs/teams.md): the channel's status, and a check now.
+app.get('/api/teams', route(() => swarm.teams.view()));
+app.post('/api/teams/check', route(() => swarm.teams.check(true)));
 // Time tracking (docs/kimai.md): the Kimai token (write-only), a connection test, and retrying parked entries.
 app.put('/api/kimai/token', route((req) => swarm.kimai.setToken(req.body ?? {})));
 app.delete('/api/kimai/token', route(() => swarm.kimai.removeToken()));

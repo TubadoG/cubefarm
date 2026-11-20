@@ -57,6 +57,17 @@ export class Mailer {
     await this.deps.transport.send(this.sender, msg);
   }
 
+  /** The app's ids (never its secret): the Teams bot is the same app (teamsChannel.ts). Null when no sender is set. */
+  get app(): { appId: string; tenantId: string } | null {
+    return this.sender ? { appId: this.sender.clientId.toLowerCase(), tenantId: this.sender.tenantId } : null;
+  }
+
+  /** A Bot Framework POST as the app's bot (teamsChannel.ts), or throws when no sender is set. */
+  async botPost(url: string, body: unknown, fresh = false): Promise<{ status: number; body: unknown }> {
+    if (!this.sender) throw new Error('No email sender is set up on the office.');
+    return this.deps.transport.botPost(this.sender, url, body, fresh);
+  }
+
   /** A Graph GET as the sender (mailInbox.ts), or throws when none is set. */
   async get(url: string, fresh = false): Promise<{ status: number; body: unknown }> {
     if (!this.sender) throw new Error('No email sender is set up on the office.');

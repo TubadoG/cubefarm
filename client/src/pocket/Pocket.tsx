@@ -8,6 +8,7 @@ import { officeUpdateChip } from '../officeUpdate';
 import { KanbanView } from '../ui/KanbanView';
 import { NotifySettings } from '../ui/NotifySettings';
 import { EmailSettings } from '../ui/EmailSettings';
+import { TeamsSettings } from '../ui/TeamsSettings';
 import { AccessibilitySettings } from '../ui/AccessibilitySettings';
 import { Panel } from '../ui/Panel';
 import { Chat } from '../ui/Phone';
@@ -214,6 +215,7 @@ function Settings({ onClose }: { onClose: () => void }) {
     <Panel title="⚙️ This device and notifications" onClose={onClose} className="pk-settings">
       <NotifySettings />
       <EmailSettings />
+      <TeamsSettings />
       <AccessibilitySettings pocket />
       <div className="card">
         <h3>📱 Pocket mode</h3>

@@ -6,7 +6,7 @@ import type { Backend } from './backend.ts';
 import type { LogEntry, SessionHandle, SessionResult } from './agentRunner.ts';
 import type { PrDetails } from './github.ts';
 import { defaultProjectsDir, DESK_SWEEP_INTERVAL_MS, HOME_DIR, LOG_BUFFER, SCHEDULER_INTERVAL_MS, STATE_FILE, SYNC_INTERVAL_MS, VERSION } from './config.ts';
-import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, COLLEAGUE_NO_DECISION, colleagueOnly, createOfficeTools, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type DecisionContext, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
+import { askedFor, ceoJobPrompt, ceoReply, ceoSystemPrompt, checkCloseIssue, COLLEAGUE_NO_DECISION, colleagueOnly, createOfficeTools, TEAMS_NO_DECISION, floorCapacity, IssueCap, jobLabel, mayFileIssue, NOT_ASKED, parseMinReady, planDependencies, plannedSize, planReviewDue, scalePlan, DEFAULT_MIN_READY, type CeoJob, type DecisionContext, type OfficeTools, type ReviewInput, type TeamNow } from './ceo.ts';
 import { alertStep, clockStep, decisionKey, deadlineOf, defaultComment, DEFAULT_DECISION_TIMEOUT_HOURS, managerReply, parseTimeoutHours, trackDecisions, whenLabel, type DecisionRecord } from './decisionClock.ts';
 import { DECIDED_DEFAULT, findBrief, NEEDS_INPUT, OFFICE_MARK, parseBrief, renderBrief, usableBrief, type Brief } from '../shared/brief.ts';
 import { afterClose, ASK_AGAIN_MS, closedWhy, closuresHeld, forgettable, issueOpen, nameList, pullNow, stillOpen, stoppedMessage, toAsk, toHold, type Closure, type FloorState, type KnownPull, type LearnedPull } from './closeCleanup.ts';
@@ -26,6 +26,8 @@ import { followKeptCli, resumeNote, resumesAfterRestart } from './restartRecover
 import { emptyKimai, KimaiSync, loadKimai, type KimaiState } from './kimai.ts';
 import { findLogo, logoProblem, removeLogo, saveLogo } from './logo.ts';
 import { emptyInbox, loadInbox, MailInbox, type InboxState } from './mailInbox.ts';
+import { emptyTeams, loadTeams, TeamsChannel, type TeamsState } from './teamsChannel.ts';
+import { DEFAULT_TEAMS, postsToday, teamsProblem, teamsSettings } from '../shared/teams.ts';
 import type { WorkSession } from './timesheets.ts';
 import { sessionTranscriptTokens } from './transcript.ts';
 import { DEFAULT_KIMAI, kimaiProblem, kimaiSettings } from '../shared/kimai.ts';
@@ -266,6 +268,7 @@ interface Persisted {
   order: Record<string, number[]>; // each floor's backlog order set by its lead (reorder_backlog), by repo id
   kimai: KimaiState; // time tracking's outbox (kimai.ts)
   emailInbox: InboxState; // replies read from the office mailbox (mailInbox.ts)
+  teams: TeamsState; // the Teams channel: what was read, the CEO's posts and threads (teamsChannel.ts)
 }
 
 /** A Decision room card's own state: its thread with the CEO, and the manager's answer. */
@@ -399,6 +402,7 @@ const FULL_HOUSE = 4;
 // Mission control's numbers are recomputed after these events (debounced), and every half minute for the clock's sake.
 const OPS_EVENTS = new Set<ServerEvent['type']>(['repo', 'repoRemoved', 'agent', 'agentRemoved', 'qa', 'qaRemoved', 'ceo']);
 const OPS_TICK_MS = 30_000;
+const TEAMS_TICK_MS = 15_000; // the Teams channel checks whether a read is due (teamsChannel.ts: every 30 s or more)
 const INBOX_TICK_MS = 30_000; // the inbox checks whether a read is due (mailInbox.ts: every 2 minutes, 30 after a 403)
 const DIGEST_TICK_MS = 60_000; // the daily digest checks whether it is due (server/digest.ts digestDue)
 const DECISION_TICK_MS = 5 * 60_000; // the decision clock reads briefs and replies, and applies defaults (decisionClock.ts)
@@ -552,6 +556,7 @@ export class Swarm {
       notify: notifySettings(DEFAULT_NOTIFY, {}),
       email: emailSettings(DEFAULT_EMAIL, {}),
       kimai: kimaiSettings(DEFAULT_KIMAI, {}),
+      teams: teamsSettings(DEFAULT_TEAMS, {}),
       lead: { ...DEFAULT_LEAD_SETTINGS },
     },
     repos: [],
@@ -576,6 +581,7 @@ export class Swarm {
     order: {},
     kimai: emptyKimai(),
     emailInbox: emptyInbox(),
+    teams: emptyTeams(),
   };
   /**
    * The CEO's office tools. Every session gets its own server: one can only be connected to one session at a time, so
@@ -593,6 +599,7 @@ export class Swarm {
       setDependencies: (a) => this.setDependencies(a),
       closeIssue: (a) => this.closeIssue(a),
       sendEmail: (a) => this.ceoEmail(a),
+      postTeams: (a) => this.teams.post(a),
     });
   }
 
@@ -618,6 +625,7 @@ export class Swarm {
     });
   }
   private ceoIssues = new IssueCap(MAX_ISSUES_PER_JOB); // issues filed during the current CEO job
+  private ceoTeams = false; // a Teams message is in the current CEO job: no decision is closed in it (TEAMS_NO_DECISION)
   private ceoAsked = false; // the manager asked for work in the current CEO job (a plan, or a message): only then are issues filed
   private planIdle = new Set<string>(); // autoPlan floors a review left without new issues: no forced review until something changes
   private reviewPlanning: string[] = []; // autoPlan floors the running review was asked to stock
@@ -678,6 +686,8 @@ export class Swarm {
   readonly kimai: KimaiSync;
   /** Replies to the office mailbox (docs/email.md): the manager's own reach the CEO. The demo's are made up. */
   readonly inbox: MailInbox;
+  /** The CEO in one Teams channel (docs/teams.md): the manager's messages reach it, colleague bots' as theirs. The demo's are made up. */
+  readonly teams: TeamsChannel;
   private emailSeq = 0;
   private sendingEmails = new Set<string>(); // ids the manager approved that are on their way
   private toldStuck = new Set<string>(); // `${agentId}:${endedAt}`: agents in an error the manager was notified about
@@ -735,6 +745,24 @@ export class Swarm {
       },
       log: (line) => console.log(line),
     });
+    this.teams = new TeamsChannel({
+      state: () => this.state.teams,
+      settings: () => this.state.settings.teams,
+      app: () => this.mailer.app,
+      ceoName: () => this.ceo().name,
+      managerName: () => this.state.settings.managerName,
+      get: (url, fresh) => this.mailer.get(url, fresh),
+      post: (url, body, fresh) => this.mailer.botPost(url, body, fresh),
+      persist: () => this.writeState(),
+      deliverManager: (text, framed) => this.messageCeo(text, 'teams', framed),
+      deliverColleague: (framed) => this.colleagueTeams(framed),
+      note: (text) => this.postMessage('office', text),
+      changed: (teams) => {
+        this.save();
+        this.broadcast({ type: 'teams', teams });
+      },
+      log: (line) => console.log(line),
+    });
     this.kimai = new KimaiSync({
       transport: backend.kimai,
       secretsFile: path.join(HOME_DIR, backend.demo ? 'demo-secrets.json' : 'secrets.json'),
@@ -764,6 +792,7 @@ export class Swarm {
   async init() {
     let emailSaved = false;
     let kimaiSaved = false;
+    let teamsSaved = false;
     try {
       const raw = await fs.readFile(STATE_FILE, 'utf8');
       const loaded = JSON.parse(raw) as Partial<Persisted>;
@@ -838,6 +867,7 @@ export class Swarm {
         order: loaded.order && typeof loaded.order === 'object' ? loaded.order : {},
         kimai: loadKimai(loaded.kimai),
         emailInbox: loadInbox(loaded.emailInbox),
+        teams: loadTeams(loaded.teams),
       };
       for (const m of this.state.messages) this.messageSeq = Math.max(this.messageSeq, m.id + 1);
       if (!EFFORTS.includes(this.state.settings.defaultEffort)) this.state.settings.defaultEffort = 'medium';
@@ -876,6 +906,9 @@ export class Swarm {
       emailSaved = true;
       this.state.settings.kimai = kimaiSettings(DEFAULT_KIMAI, loaded.settings?.kimai);
       kimaiSaved = loaded.settings?.kimai !== undefined;
+      // Offices from before Teams start with it off; a demo office with its made-up channel (off too).
+      this.state.settings.teams = teamsSettings(DEFAULT_TEAMS, loaded.settings?.teams ?? this.backend.email.demoTeams);
+      teamsSaved = true;
       // Offices that were set up before the setup wizard existed skip it.
       if (loaded.settings && loaded.settings.setupDone === undefined && this.state.repos.length > 0) {
         Object.assign(this.state.settings, { setupDone: true, tutorialStep: -1 });
@@ -892,6 +925,7 @@ export class Swarm {
     if (!emailSaved && this.backend.email.demoSettings) {
       this.state.settings.email = emailSettings(DEFAULT_EMAIL, this.backend.email.demoSettings);
     }
+    if (!teamsSaved && this.backend.email.demoTeams) this.state.settings.teams = teamsSettings(DEFAULT_TEAMS, this.backend.email.demoTeams);
     for (const r of this.state.repos) if (r.localPath) this.backend.setLocalPath(r.fullName, r.localPath);
     const interrupted: PersistedAgent[] = [];
     for (const a of this.state.agents) {
@@ -992,6 +1026,7 @@ export class Swarm {
     setInterval(() => void this.digestTick(), DIGEST_TICK_MS);
     setInterval(() => this.inbox.tick(), INBOX_TICK_MS);
     setTimeout(() => this.inbox.tick(), 10_000);
+    setInterval(() => this.teams.tick(), TEAMS_TICK_MS);
     setInterval(() => void this.decisionTick(), DECISION_TICK_MS);
     void this.backend
       .detectClis()
@@ -1253,6 +1288,7 @@ export class Swarm {
       emailSender: this.mailer.view(),
       kimai: this.kimai.view(),
       emailInbox: this.inbox.view(),
+      teams: this.teams.view(),
       version: VERSION,
       officeCommit: this.officeHead?.slice(0, 7) ?? null,
       officeUpdate: this.officeHead ? this.officeUpdateView() : undefined,
@@ -3609,6 +3645,14 @@ export class Swarm {
       s.email = emailSettings(s.email, patch.email);
       if (s.email.inbox && !wasReading) this.inbox.switchedOn();
     }
+    if (patch.teams !== undefined) {
+      const problem = teamsProblem(patch.teams, s.teams);
+      if (problem) throw new HttpError(400, problem);
+      const was = s.teams;
+      s.teams = teamsSettings(s.teams, patch.teams);
+      // Switched on, or pointed at another channel: what was written there before is never replayed.
+      if (s.teams.enabled && (!was.enabled || was.teamId !== s.teams.teamId || was.channelId !== s.teams.channelId)) this.teams.switchedOn();
+    }
     if (patch.kimai !== undefined) {
       const problem = kimaiProblem(patch.kimai);
       if (problem) throw new HttpError(400, problem);
@@ -4185,7 +4229,9 @@ export class Swarm {
   private enqueueCeo(job: CeoJob) {
     const q = this.state.ceo.queue;
     const same = q.findIndex((j) => j.kind === job.kind && (job.kind === 'review' || job.kind === 'chat' || job.kind === 'colleague' || (j.repoId === job.repoId && j.prNumber === job.prNumber)));
-    if (same >= 0) q[same] = job.kind === 'chat' || job.kind === 'decision' || job.kind === 'colleague' ? { ...q[same], text: `${q[same].text}\n${job.text}` } : job;
+    if (same >= 0)
+      q[same] =
+        job.kind === 'chat' || job.kind === 'decision' || job.kind === 'colleague' ? { ...q[same], text: `${q[same].text}\n${job.text}`, ...(q[same].teams || job.teams ? { teams: true } : {}) } : job;
     else q.push(job);
     this.emitCeo();
     this.save();
@@ -4236,6 +4282,7 @@ export class Swarm {
       maxAgents: s.maxAgents,
       scaling: s.scaling,
       email: s.email.enabled,
+      teams: s.teams.enabled,
       autoPlan: this.state.repos.some((r) => r.autoPlan),
     };
   }
@@ -4259,6 +4306,7 @@ export class Swarm {
     } else this.reviewPlanning = [];
     this.ceoIssues = new IssueCap(MAX_ISSUES_PER_JOB);
     this.ceoAsked = askedFor(job);
+    this.ceoTeams = !!job.teams;
     this.emitAgent(a);
     this.emitCeo();
     this.save();
@@ -4346,21 +4394,26 @@ export class Swarm {
     setTimeout(() => this.schedule(), 300);
   }
 
-  /** The manager's phone (or an email of theirs) → the CEO. Injected into a running session, otherwise the CEO picks it up next. */
-  async messageCeo(text: string, via?: 'email') {
+  /**
+   * The manager's phone (or an email or Teams message of theirs) → the CEO. Injected into a running session, otherwise
+   * the CEO picks it up next. `framed`: what the CEO gets instead of the phone's text (a Teams message's thread and rules).
+   */
+  async messageCeo(text: string, via?: 'email' | 'teams', framed?: string) {
     const t = text.trim().slice(0, 4000);
     if (!t) throw new HttpError(400, 'Empty message');
+    const forCeo = (framed ?? t).trim().slice(0, 4000);
     const a = this.ceo();
     this.postMessage('manager', t, undefined, undefined, via);
     const rt = this.agentRt.get(a.id)!;
     if (rt.session) {
-      this.appendLog(a, [{ kind: 'manager', text: `▶ Manager: ${t}` }]);
+      this.appendLog(a, [{ kind: 'manager', text: `▶ Manager: ${forCeo}` }]);
       this.ceoIssues.managerMessage(); // a new request: the issue cap counts from here
       this.ceoAsked = true;
-      rt.session.send(`Message from the manager (they read your reply on their phone, so keep it short):\n${t}`);
+      if (via === 'teams') this.ceoTeams = true; // from here on, this job closes no decision
+      rt.session.send(`Message from the manager (they read your reply on their phone, so keep it short):\n${forCeo}`);
       return;
     }
-    this.enqueueCeo({ kind: 'chat', text: t, at: Date.now() });
+    this.enqueueCeo({ kind: 'chat', text: forCeo, at: Date.now(), ...(via === 'teams' ? { teams: true } : {}) });
   }
 
   /**
@@ -4371,6 +4424,12 @@ export class Swarm {
   colleagueEmail(text: string) {
     const t = text.trim().slice(0, 4000);
     if (t) this.enqueueCeo({ kind: 'colleague', text: t, at: Date.now() });
+  }
+
+  /** A colleague bot's Teams message (teamsChannel.ts, framed as theirs) → the CEO: a colleague job, like their email. */
+  colleagueTeams(text: string) {
+    const t = text.trim().slice(0, 4000);
+    if (t) this.enqueueCeo({ kind: 'colleague', text: t, at: Date.now(), teams: true });
   }
 
   requestReview() {
@@ -5718,7 +5777,7 @@ export class Swarm {
 
   // ---------- the phone ----------
 
-  private postMessage(from: PhoneMessage['from'], text: string, requestId?: string, emailId?: string, via?: 'email') {
+  private postMessage(from: PhoneMessage['from'], text: string, requestId?: string, emailId?: string, via?: PhoneMessage['via']) {
     const m: PhoneMessage = { id: this.messageSeq++, from, text: text.trim().slice(0, 6000), at: Date.now(), ...(requestId ? { requestId } : {}), ...(emailId ? { emailId } : {}), ...(via ? { via } : {}) };
     const v = this.state.settings.voice;
     if (v.provider !== 'off' && speaks(m, v)) m.voice = v.provider; // what the phone's ▶ replays it with
@@ -6764,6 +6823,7 @@ export class Swarm {
             recent: this.state.emails.slice(-5).map((e) => ({ to: e.to, subject: e.subject, status: e.status, ...(e.note ? { managerNote: e.note } : {}) })),
           },
         }),
+        ...(s.teams.enabled && { teams: { postsToday: `${postsToday(this.state.teams.posts, Date.now())} of ${s.teams.postsPerDay}` } }),
       },
       null,
       1,
@@ -6856,7 +6916,10 @@ export class Swarm {
     if (!reason) throw new HttpError(400, 'Say why the issue is closing: the reason is posted on it as a comment.');
     const state = rt?.issues.some((i) => i.number === n) ? 'OPEN' : await this.backend.issueState(repo.fullName, n).catch(() => null);
     checkCloseIssue({ floor: repo.floor, number: n, state, pulls: rt?.pulls ?? [] });
-    if (colleagueOnly(this.state.ceo.job, this.ceoAsked) && this.openDecisions().some((d) => d.repoId === repo.id && d.number === n)) throw new Error(COLLEAGUE_NO_DECISION);
+    const decision = this.openDecisions().some((d) => d.repoId === repo.id && d.number === n);
+    if (decision && colleagueOnly(this.state.ceo.job, this.ceoAsked)) throw new Error(COLLEAGUE_NO_DECISION);
+    // Decisions are never answered through Teams, by anyone: the Decision room (or a Decision: comment) only.
+    if (decision && (this.ceoTeams || this.state.ceo.job?.teams)) throw new Error(TEAMS_NO_DECISION);
     await this.backend.closeIssue(repo.fullName, n, reason, 'not planned');
     this.postMessage('office', `🗂️ ${this.ceo().name} closed #${n} on floor ${repo.floor}: ${reason.split('\n')[0].slice(0, 200)}`);
     const stopped = this.learnIssueClosed(repo, n); // off the Kanban, out of the scheduler's queue, and whoever was on it stops

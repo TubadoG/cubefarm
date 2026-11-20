@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Office CEO</title>
+    <!-- The team tab Teams requires of a team-installed app: one Save, nothing else. Host it with content.html (docs/teams.md). -->
+    <script src="https://res.cdn.office.net/teams-js/2.24.0/js/MicrosoftTeams.min.js" crossorigin="anonymous"></script>
+    <style>
+      body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #242424; }
+    </style>
+  </head>
+  <body>
+    <h3>Office CEO</h3>
+    <p>Lets the office's CEO (an AI agent) read messages in this team only, and reply in threads as its own bot. Click Save.</p>
+    <script>
+      microsoftTeams.app.initialize().then(function () {
+        microsoftTeams.pages.config.registerOnSaveHandler(function (evt) {
+          var base = location.href.replace(/config\.html.*$/, '');
+          microsoftTeams.pages.config
+            .setConfig({ entityId: 'cubefarm-ceo', suggestedDisplayName: 'Office CEO', contentUrl: base + 'content.html', websiteUrl: base + 'content.html' })
+            .then(function () {
+              evt.notifySuccess();
+            });
+        });
+        microsoftTeams.pages.config.setValidityState(true);
+      });
+    </script>
+  </body>
+</html>
