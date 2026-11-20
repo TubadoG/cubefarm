@@ -117,7 +117,8 @@ Server (`server/`, Node + Express 5 + ws, run by tsx in development; esbuild bun
   `graphMail.ts` sends through Microsoft Graph (client secret, or a Key Vault-signed assertion via `az`), behind
   `Backend.email`. `mailInbox.ts` reads replies to the mailbox: the manager's own reach the CEO, colleagues' as theirs (never the manager's). The allowlist, approvals and daily cap are the swarm's, by `shared/email.ts`'s rules.
 - `teamsChannel.ts`: the CEO in one Teams channel (docs/teams.md), with the email sender's app: polls Graph (RSC), posts
-  as its bot through the Bot Framework (`post_teams`), outbound only. The manager's messages (by Entra object id) reach
+  as its bot through the Bot Framework (`post_teams`), outbound only. Direct chat: each manager's 1:1 chat with the app
+  (Chat.Read.WhereInstalled, a fixed chat id), answered through a proactive 1:1 conversation (`direct_to`). The manager's messages (by Entra object id) reach
   the CEO as theirs, colleague bots' as theirs (never the manager's); no decision is answered in Teams; bot loops,
   the daily cap and no-replay are enforced there and in `shared/teams.ts` (settings). The Teams app package is
   `teams-app/`, zipped by `scripts/teamsApp.ts` (`npm run teams-app`).

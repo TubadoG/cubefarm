@@ -442,6 +442,7 @@ export interface TeamsSettings {
   managers: string[]; // Entra object ids whose messages count as the manager's, lowercased
   colleagues: TeamsColleague[];
   postsPerDay: number; // the CEO's posts in any 24 hours, apart from email's cap
+  direct: boolean; // also read (and answer) each manager's 1:1 chat with the CEO's app, apart from the channel
 }
 
 /** One Teams message the office read, and what it did with it. Never the text. */
@@ -452,6 +453,15 @@ export interface TeamsMessageView {
   outcome: 'delivered' | 'colleague' | 'ignored';
   reason?: string; // why it was ignored
   colleague?: string; // the colleague's name (outcome colleague)
+  source?: 'channel' | 'direct'; // where it was written (absent: the channel, saved before direct chats)
+}
+
+/** One manager's 1:1 chat with the CEO's app: found, or the app isn't added for them yet (docs/teams.md). */
+export interface TeamsDirectView {
+  id: string; // the manager's Entra object id
+  name: string | null; // as Teams showed them, once they wrote
+  status: 'unknown' | 'found' | 'not-added' | 'error';
+  error?: string;
 }
 
 /** Settings → Teams' status. */
@@ -460,6 +470,7 @@ export interface TeamsView {
   lastError: string | null;
   items: TeamsMessageView[]; // the latest 20, newest first
   postsToday: number; // the CEO's posts in the last 24 hours
+  direct: TeamsDirectView[]; // each manager's direct chat, while Direct chat is on
 }
 
 /** Time tracking's mode: off, dry-run (every entry built and shown, nothing sent) or live (posted to Kimai). */
@@ -720,7 +731,7 @@ export interface PhoneMessage {
   at: number;
   requestId?: string; // a hire / let-go proposal this message is about
   emailId?: string; // an email waiting for the manager's OK
-  via?: 'email' | 'teams'; // the manager's message came in by email (the office mailbox) or in the Teams channel
+  via?: 'email' | 'teams' | 'teams-dm'; // the manager's message came in by email (the office mailbox), in the Teams channel or in their Teams direct chat
   voice?: Exclude<VoiceProvider, 'off'>; // who read it aloud when it arrived (absent: nobody), for the phone's ▶ replay
 }
 

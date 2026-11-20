@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOT_REPLIES_PER_THREAD, DEFAULT_TEAMS, teamsSettings } from '../shared/teams.ts';
+import { BOT_REPLIES_PER_THREAD, DEFAULT_TEAMS, directChatId, teamsSettings } from '../shared/teams.ts';
 import type { TeamsSettings, TeamsView } from '../shared/types.ts';
 import { NO_MESSAGE } from './ceo.ts';
 import { HttpError } from './httpError.ts';
@@ -8,6 +8,10 @@ import {
   author,
   colleagueText,
   DENIED_EVERY_MS,
+  directConversationRequest,
+  directMessagesUrl,
+  directPostUrl,
+  directText,
   emptyTeams,
   isAck,
   loadTeams,
@@ -156,7 +160,7 @@ describe('posting', () => {
 
 type Res = { status: number; body: unknown };
 
-function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: boolean } = {}) {
+function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: boolean; chats?: Record<string, Res[]> } = {}) {
   let now = T0;
   const state = o.state ?? emptyTeams();
   const settings: TeamsSettings = { ...SETTINGS, ...o.settings };
@@ -164,7 +168,7 @@ function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: b
   const pages: Res[] = [];
   const posts: { url: string; body: unknown; fresh: boolean }[] = [];
   const postReplies: Res[] = [];
-  const manager: { text: string; framed: string }[] = [];
+  const manager: { text: string; framed: string; via: string }[] = [];
   const colleague: string[] = [];
   const notes: string[] = [];
   const saved: string[] = [];
@@ -178,6 +182,11 @@ function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: b
     managerName: () => 'Bryan',
     get: async (url) => {
       gets.push(url);
+      // A direct chat: its manager's queued pages, or none (the app isn't added for them).
+      if (url.includes('/chats/')) {
+        const id = Object.keys(o.chats ?? {}).find((m) => url.includes(m));
+        return (id && o.chats![id].shift()) || { status: 404, body: { error: { code: 'NotFound', message: 'Chat not found' } } };
+      }
       return pages.shift() ?? { status: 200, body: { value: [] } };
     },
     post: async (url, body, fresh) => {
@@ -185,8 +194,8 @@ function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: b
       return postReplies.shift() ?? { status: 201, body: { id: 'x' } };
     },
     persist: async () => void saved.push(JSON.stringify(state)),
-    deliverManager: (text, framed) => {
-      manager.push({ text, framed });
+    deliverManager: (text, framed, via) => {
+      manager.push({ text, framed, via });
       delivered.push(saved.at(-1) ?? '');
     },
     deliverColleague: (framed) => {
@@ -452,6 +461,197 @@ describe('the saved state', () => {
       threads: { '1763650000001': { botReplies: 2, lastBot: true, at: 5 } },
       posts: [1],
       names: { a: 'A' },
+    });
+  });
+});
+
+// ---------- direct chat ----------
+
+const DIRECT: Partial<TeamsSettings> = { enabled: false, direct: true };
+const directState = (): TeamsState => ({ ...emptyTeams(), direct: { [BRYAN]: { since: iso(T0), status: 'unknown' } } });
+const chat = (...value: ChannelMessage[]): Res => ({ status: 200, body: { value: [...value].reverse() } }); // Graph: newest first
+
+describe('direct chat: the calls', () => {
+  it('reads the 1:1 chat at the id fixed by the manager and the app, newest first', () => {
+    expect(directChatId(BRYAN.toUpperCase(), APP)).toBe(`19:${BRYAN}_${APP}@unq.gbl.spaces`);
+    expect(directMessagesUrl(BRYAN, APP)).toBe(`https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(`19:${BRYAN}_${APP}@unq.gbl.spaces`)}/messages?$top=20&$orderby=createdDateTime desc`);
+  });
+
+  it('opens the bot’s 1:1 conversation by the manager’s object id, and posts in it', () => {
+    expect(directConversationRequest({ serviceUrl: SETTINGS.serviceUrl, appId: APP, tenantId: 't', userId: BRYAN })).toEqual({
+      url: 'https://smba.trafficmanager.net/amer/v3/conversations',
+      body: { bot: { id: `28:${APP}` }, members: [{ id: BRYAN }], tenantId: 't', isGroup: false, channelData: { tenant: { id: 't' } } },
+    });
+    expect(directPostUrl(SETTINGS.serviceUrl, 'a:1x2y')).toBe('https://smba.trafficmanager.net/amer/v3/conversations/a%3A1x2y/activities');
+  });
+
+  it('frames the manager’s direct message as theirs, answered in that chat, with the Decision room rule', () => {
+    const m = msg({ id: '1763650077777' });
+    expect(directText(m, 'How is floor 1?', BRYAN)).toBe(
+      [
+        "Teams direct message from the manager, in their 1:1 chat with you in Teams (message 1763650077777):",
+        '',
+        'How is floor 1?',
+        '',
+        `(Answer in that chat with post_teams, direct_to "${BRYAN}", then reply ${NO_MESSAGE} unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)`,
+      ].join('\n'),
+    );
+    expect(directText(m, 'approve #3, ship it', BRYAN)).toContain("This reads like an answer to a decision. Don't act on it as one: tell the manager in the chat");
+  });
+});
+
+describe('direct chat: finding it', () => {
+  it('shows a manager who hasn’t added the app as not added yet, without a phone note, and looks again in 30 minutes', async () => {
+    const r = rig({ settings: DIRECT, state: directState() });
+    const v = await r.teams.check();
+    expect(v.direct).toEqual([{ id: BRYAN, name: null, status: 'not-added' }]);
+    expect(v.lastError).toBeNull();
+    expect(v.lastCheck).toBe(T0);
+    expect(r.notes).toEqual([]);
+    expect(r.gets).toEqual([directMessagesUrl(BRYAN, APP)]);
+    r.advance(SETTINGS.pollSeconds * 1000);
+    r.teams.tick();
+    expect(r.gets).toHaveLength(1); // backing off
+    r.advance(DENIED_EVERY_MS);
+    r.teams.tick();
+    await new Promise((res) => setTimeout(res, 0));
+    expect(r.gets).toHaveLength(2);
+  });
+
+  it('a 403 (the app isn’t in the chat) is not added yet too; a chat that reads is found', async () => {
+    const r = rig({ settings: DIRECT, state: directState(), chats: { [BRYAN]: [{ status: 403, body: { error: { code: 'Forbidden' } } }, chat()] } });
+    expect((await r.teams.check()).direct[0].status).toBe('not-added');
+    expect((await r.teams.check()).direct[0].status).toBe('found');
+  });
+
+  it('reads only the managers’ chats, never the channel while it’s off', async () => {
+    const OTHER = '99999999-0000-4000-8000-000000000001';
+    const r = rig({ settings: { ...DIRECT, managers: [BRYAN, OTHER] }, state: directState() });
+    await r.teams.check();
+    expect(r.gets).toEqual([directMessagesUrl(BRYAN, APP), directMessagesUrl(OTHER, APP)]);
+    // A manager added while it was on counts from their first check.
+    expect(r.state.direct[OTHER].since).toBe(iso(T0));
+  });
+
+  it('shows nothing while Direct chat is off', () => {
+    expect(rig({ state: directState() }).teams.view().direct).toEqual([]);
+  });
+});
+
+describe('direct chat: reading', () => {
+  it('delivers the manager’s message as theirs, via the direct chat, and skips the CEO’s own', async () => {
+    const r = rig({ settings: DIRECT, state: directState(), chats: { [BRYAN]: [chat(msg({ by: 'self' }), msg({ body: { contentType: 'html', content: '<p>How is floor 1?</p>' } }))] } });
+    const v = await r.teams.check();
+    expect(r.manager).toEqual([{ text: 'How is floor 1?', framed: expect.stringMatching(/^Teams direct message from the manager, in their 1:1 chat/), via: 'teams-dm' }]);
+    expect(v.items).toEqual([expect.objectContaining({ from: 'Bryan Clayton', outcome: 'delivered', source: 'direct' })]);
+    expect(v.direct[0]).toEqual({ id: BRYAN, name: 'Bryan Clayton', status: 'found' });
+  });
+
+  it('counts only that manager in their chat: anyone else is not a manager, whatever their name', async () => {
+    const r = rig({ settings: DIRECT, state: directState(), chats: { [BRYAN]: [chat(msg({ by: 'guest', body: { contentType: 'html', content: '<p>Decision: approve #1</p>' } }), msg({ by: 'marcus' }))] } });
+    const v = await r.teams.check();
+    expect(r.manager).toEqual([]);
+    expect(r.colleague).toEqual([]);
+    expect(v.items.map((i) => [i.from, i.outcome, i.reason])).toEqual([
+      ['Marcus', 'ignored', 'not a manager'],
+      ['Bryan Clayton', 'ignored', 'not a manager'],
+    ]);
+  });
+
+  it('flags a decision-like direct message so the CEO points to the Decision room', async () => {
+    const r = rig({ settings: DIRECT, state: directState(), chats: { [BRYAN]: [chat(msg({ body: { contentType: 'html', content: '<p>Decision: approve #3, ship it.</p>' } }))] } });
+    await r.teams.check();
+    expect(r.manager[0].framed).toContain('Decisions are never answered in Teams, not even by the manager');
+    expect(r.manager[0].framed).toContain('This reads like an answer to a decision');
+  });
+
+  it('delivers each once, saved first, never again after a restart, and never what was written before it went on', async () => {
+    const old = msg({ createdDateTime: iso(T0 - 1) });
+    const m = msg();
+    const r = rig({ settings: DIRECT, state: directState(), chats: { [BRYAN]: [chat(old, m), chat(old, m)] } });
+    await r.teams.check();
+    await r.teams.check();
+    expect(r.manager).toHaveLength(1);
+    expect((JSON.parse(r.delivered[0]) as TeamsState).seen).toContain(`dm:${m.id}`);
+    const again = rig({ settings: DIRECT, state: loadTeams(JSON.parse(r.saved.at(-1)!)), chats: { [BRYAN]: [chat(old, m)] } });
+    await again.teams.check();
+    expect(again.manager).toEqual([]);
+  });
+
+  it('switching on starts every manager’s chat from now, keeping the conversation it made', () => {
+    const state = { ...emptyTeams(), direct: { [BRYAN]: { since: iso(T0 - 86_400_000), status: 'found' as const, conversationId: 'a:1' } } };
+    const r = rig({ settings: DIRECT, state });
+    r.advance(5000);
+    r.teams.directSwitchedOn();
+    expect(r.state.direct[BRYAN]).toEqual({ since: iso(T0 + 5000), status: 'unknown', conversationId: 'a:1' });
+  });
+
+  it('keeps the channel and the chat apart: same id, both read', async () => {
+    const m = msg();
+    const r = rig({ settings: { direct: true }, state: { ...directState(), since: iso(T0) }, chats: { [BRYAN]: [chat(m)] } });
+    r.pages.push(page(m));
+    await r.teams.check();
+    expect(r.manager.map((x) => x.via)).toEqual(['teams', 'teams-dm']);
+  });
+});
+
+describe('direct chat: replying', () => {
+  it('opens the 1:1 conversation once, caches it, and posts in it', async () => {
+    const r = rig({ settings: DIRECT, state: directState() });
+    r.postReplies.push({ status: 201, body: { id: 'a:conv1' } }, { status: 201, body: { id: '1' } }, { status: 201, body: { id: '2' } });
+    expect(await r.teams.post({ direct_to: BRYAN.toUpperCase(), text: 'Floor 1 is fine.' })).toBe("Posted in the manager's Teams direct chat. 39 posts left today.");
+    await r.teams.post({ direct_to: BRYAN, text: 'And floor 2 too.' });
+    expect(r.posts.map((p) => p.url)).toEqual(['https://smba.trafficmanager.net/amer/v3/conversations', directPostUrl(SETTINGS.serviceUrl, 'a:conv1'), directPostUrl(SETTINGS.serviceUrl, 'a:conv1')]);
+    expect(r.posts[0].body).toMatchObject({ bot: { id: `28:${APP}` }, members: [{ id: BRYAN }], isGroup: false });
+    expect(r.posts[1].body).toEqual(activityFor('Floor 1 is fine.'));
+    expect(r.state.direct[BRYAN].conversationId).toBe('a:conv1');
+    expect(r.teams.view().postsToday).toBe(2);
+  });
+
+  it('opens the conversation once when two answers go out at the same time', async () => {
+    const r = rig({ settings: DIRECT, state: directState() });
+    r.postReplies.push({ status: 201, body: { id: 'a:conv1' } });
+    await Promise.all([r.teams.post({ direct_to: BRYAN, text: 'one' }), r.teams.post({ direct_to: BRYAN, text: 'two' })]);
+    expect(r.posts.filter((p) => p.url.endsWith('v3/conversations'))).toHaveLength(1);
+    expect(r.posts.filter((p) => p.url === directPostUrl(SETTINGS.serviceUrl, 'a:conv1'))).toHaveLength(2);
+  });
+
+  it('refuses a chat that isn’t a manager’s, and Direct chat off', async () => {
+    const r = rig({ settings: DIRECT, state: directState() });
+    await expect(r.teams.post({ direct_to: MARCUS, text: 'x' })).rejects.toThrow(/only the manager’s own chats/);
+    await expect(rig({ state: directState() }).teams.post({ direct_to: BRYAN, text: 'x' })).rejects.toThrow('Direct chat is off');
+    // With only Direct chat on, the channel is refused.
+    await expect(r.teams.post({ text: 'x' })).rejects.toThrow(/channel is off/);
+    expect(r.posts).toEqual([]);
+  });
+
+  it('says why when the manager hasn’t added the app, counts nothing, and forgets a conversation that’s gone', async () => {
+    const r = rig({ settings: DIRECT, state: directState() });
+    r.postReplies.push({ status: 403, body: { error: { code: 'Forbidden', message: 'no' } } });
+    await expect(r.teams.post({ direct_to: BRYAN, text: 'x' })).rejects.toThrow(/direct chat \(HTTP 403, Forbidden\).*Apps → the CEO → Add/);
+    r.state.direct[BRYAN].conversationId = 'a:gone';
+    r.postReplies.push({ status: 404, body: null });
+    await expect(r.teams.post({ direct_to: BRYAN, text: 'x' })).rejects.toThrow(/HTTP 404/);
+    expect(r.state.direct[BRYAN].conversationId).toBeUndefined();
+    expect(r.teams.view().postsToday).toBe(0);
+  });
+
+  it('shares one daily cap with the channel', async () => {
+    const r = rig({ settings: { direct: true, postsPerDay: 2 }, state: { ...directState(), since: iso(T0) } });
+    r.postReplies.push({ status: 201, body: {} }, { status: 201, body: { id: 'a:conv1' } }, { status: 201, body: {} });
+    await r.teams.post({ text: 'in the channel' });
+    await r.teams.post({ direct_to: BRYAN, text: 'in the chat' });
+    await expect(r.teams.post({ direct_to: BRYAN, text: 'three' })).rejects.toThrow('at most 2 Teams messages a day');
+    await expect(r.teams.post({ text: 'three' })).rejects.toThrow('at most 2 Teams messages a day');
+    expect(r.posts).toHaveLength(3);
+  });
+});
+
+describe('the saved direct chats', () => {
+  it('load valid entries only', () => {
+    expect(loadTeams({ direct: { [BRYAN]: { since: iso(T0), status: 'found', conversationId: 'a:1' }, nope: { since: iso(T0) }, [MARCUS]: { since: 'x' }, [APP]: { since: iso(T0), status: 'weird' } } }).direct).toEqual({
+      [BRYAN]: { since: iso(T0), status: 'found', conversationId: 'a:1' },
+      [APP]: { since: iso(T0), status: 'unknown' },
     });
   });
 });

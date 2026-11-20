@@ -349,6 +349,11 @@ function Bubble({ m, ceoName }: { m: PhoneMessage; ceoName: string }) {
               💬{' '}
             </span>
           )}
+          {m.via === 'teams-dm' && (
+            <span className="bubble-via" title="Sent in a Teams direct message" aria-label="Sent in a Teams direct message">
+              💬 Teams DM{' '}
+            </span>
+          )}
           {clock(m.at)}
         </div>
       </div>

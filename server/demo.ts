@@ -1327,18 +1327,21 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
       return `All ${s.floors.length} floors look healthy: ${issues} open issues and ${prs} pull requests in flight. No changes needed.`;
     },
     /**
-     * Teams messages (docs/teams.md), one job's worth: each answered in its own thread through the real post_teams. A
-     * message that reads like a decision is pointed to the Decision room; a colleague's FYI gets no answer.
+     * Teams messages (docs/teams.md), one job's worth: each answered where it came (its thread, or the manager's direct
+     * chat) through the real post_teams. A message that reads like a decision is pointed to the Decision room; a
+     * colleague's FYI gets no answer.
      */
     async teams(prompt: string, fromManager: boolean) {
-      const parts = prompt.split(/(?=^Teams message from )/m).filter((p) => /^Teams message from /.test(p));
+      const parts = prompt.split(/(?=^Teams (?:direct )?message from )/m).filter((p) => /^Teams (?:direct )?message from /.test(p));
       for (const part of parts) {
+        const directTo = fromManager && /^Teams direct message from the manager/.test(part) ? part.match(/direct_to "([^"]+)"/)?.[1] : undefined;
         const root = part.match(/\(thread (\d+)\)/)?.[1];
-        const manager = fromManager && /^Teams message from the manager/.test(part);
-        if (!root) continue;
+        const where = directTo ? { direct_to: directTo } : { root_id: root };
+        const manager = fromManager && /^Teams (?:direct )?message from the manager/.test(part);
+        if (!root && !directTo) continue;
         if (manager && /reads like an answer to a decision/.test(part)) {
           await think('That reads like a decision. Decisions are answered in the Decision room, never in Teams.');
-          await use('post_teams', { root_id: root, text: "I can't take decisions here: they're answered in the Decision room, where one tap settles it. I've left it as it is." });
+          await use('post_teams', { ...where, text: "I can't take decisions here: they're answered in the Decision room, where one tap settles it. I've left it as it is." });
           continue;
         }
         if (!manager && !/\?/.test(part.split('\n\n').slice(1, -1).join('\n'))) {
@@ -1348,7 +1351,7 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
         const s = await status();
         const busiest = [...s.floors].sort((a, b) => b.capacity.issuesReadyToStart - a.capacity.issuesReadyToStart)[0];
         const out = await use('post_teams', {
-          root_id: root,
+          ...where,
           text: busiest
             ? `${plural(s.floors.length, 'floor')} at work. Floor ${busiest.floor} (${busiest.repo}) has the most waiting: ${plural(busiest.capacity.issuesReadyToStart, 'issue')} ready to start, ${plural(busiest.team.size, 'agent')} on it.`
             : 'No floors yet: nothing to report.',
@@ -1465,7 +1468,7 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
                     await think("A colleague's heads-up: nothing to answer, and nothing for the manager.");
                     return 'NO_MESSAGE';
                   }
-                : /^Teams message from the manager/m.test(prompt)
+                : /^Teams (?:direct )?message from the manager/m.test(prompt)
                   ? () => scripts.teams(prompt, true)
                   : () => scripts.chat(prompt.split('\n').slice(1).join(' ').trim() || prompt);
 
@@ -1496,7 +1499,7 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
         setTimeout(() => {
           if (stopped || done) return;
           // The manager wrote in Teams while the CEO was busy: answered in its thread, as a job of its own would be.
-          if (/^Teams message from the manager/m.test(text)) return void scripts.teams(text, true).catch(() => undefined);
+          if (/^Teams (?:direct )?message from the manager/m.test(text)) return void scripts.teams(text, true).catch(() => undefined);
           const said = text.split('\n').slice(1).join(' ').trim() || text;
           cb.log([{ kind: 'text', text: `● Noted: "${short(said, 70)}"` }]);
           cb.turn?.(`Noted, I'll factor that in: "${short(said, 90)}"`);
@@ -1709,11 +1712,17 @@ const demoEmail: EmailTransport = {
     managers: [DEMO_MANAGER_ID],
     colleagues: [{ name: 'Nova', appId: DEMO_NOVA_APP }],
     postsPerDay: 40,
+    direct: false,
   },
   botPost: async (_sender, url, body) => {
     await new Promise((r) => setTimeout(r, 200));
+    // The bot's 1:1 conversation with the manager (direct chat): made up, nothing is created.
+    if ((body as { isGroup?: boolean }).isGroup === false) {
+      console.log('💬 demo Teams direct chat: conversation with the manager');
+      return { status: 201, body: { id: 'a:demo-direct-conversation' } };
+    }
     const text = (body as { text?: string; activity?: { text?: string } }).text ?? (body as { activity?: { text?: string } }).activity?.text ?? '';
-    console.log(`💬 demo Teams post ${url.includes('messageid%3D') ? 'in a thread' : 'as a new post'}: ${text.replace(/\n/g, ' ⏎ ').slice(0, 200)}`);
+    console.log(`💬 demo Teams post ${url.includes('demo-direct-conversation') ? 'in the direct chat' : url.includes('messageid%3D') ? 'in a thread' : 'as a new post'}: ${text.replace(/\n/g, ' ⏎ ').slice(0, 200)}`);
     return { status: 201, body: { id: `demo-${Date.now()}` } };
   },
   send: async (_sender, m) => {
@@ -1728,6 +1737,7 @@ const demoEmail: EmailTransport = {
   get: async (_sender, url) => {
     await new Promise((r) => setTimeout(r, 200));
     if (url.includes('/teams/')) return { status: 200, body: { value: demoTeamsMessages() } };
+    if (url.includes('/chats/')) return url.includes(DEMO_MANAGER_ID) ? { status: 200, body: { value: demoDirectMessages() } } : { status: 404, body: { error: { code: 'NotFound', message: 'No such chat.' } } };
     const at = new Date().toISOString();
     const who = (address: string, name: string) => ({ emailAddress: { address, name } });
     const internal = [{ name: 'X-MS-Exchange-Organization-AuthAs', value: 'Internal' }];
@@ -1794,6 +1804,22 @@ function demoTeamsMessages() {
     },
     { ...msg('1763600000005', nova, '<p>Staging redeploys at 3 pm today.</p>'), replies: [] },
     { ...msg('1763600000006', user('00000000-0000-4000-8000-0000000000f6', 'Sam (guest)'), '<p>Hi all, who should I ask about access?</p>'), replies: [] },
+  ];
+}
+
+/**
+ * The manager's direct chat with the demo CEO (docs/teams.md), newest first as Graph returns it, all "just written": with
+ * Direct chat switched on, the question reaches the CEO, which answers in the chat; the "approve #2" gets pointed to the
+ * Decision room; the CEO's own message is skipped. Fixed ids: each counts once.
+ */
+function demoDirectMessages() {
+  const at = new Date().toISOString();
+  const msg = (id: string, from: object, html: string) => ({ id, messageType: 'message', createdDateTime: at, deletedDateTime: null, from, body: { contentType: 'html', content: html }, mentions: [], attachments: [] });
+  const manager = { user: { id: DEMO_MANAGER_ID, displayName: 'The manager' }, application: null };
+  return [
+    msg('1763600000103', { user: null, application: { id: DEMO_CEO_APP, displayName: 'CEO', applicationIdentityType: 'bot' } }, '<p>Hi! Ask me anything here.</p>'),
+    msg('1763600000102', manager, '<p>Just between us: approve #2, go ahead.</p>'),
+    msg('1763600000101', manager, '<p>Quick one: how many pull requests are open?</p>'),
   ];
 }
 

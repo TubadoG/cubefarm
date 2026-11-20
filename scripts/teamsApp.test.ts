@@ -39,13 +39,15 @@ describe('the Teams app package', () => {
     expect(manifestIdFor(APP)).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
-  it('is manifest v1.25 with RSC to read channel messages, a team bot and a team tab, all on the one app id', () => {
+  it('is manifest v1.25 with RSC to read channel messages, a team and personal bot and a team tab, all on the one app id', () => {
     const m = JSON.parse(fillManifest(TEMPLATE, o));
     expect(m.manifestVersion).toBe('1.25');
     expect(m.supportsChannelFeatures).toBe('tier1');
     expect(m.webApplicationInfo).toEqual({ id: APP, resource: 'https://RscPermission' });
     expect(m.authorization.permissions.resourceSpecific).toEqual([{ name: 'ChannelMessage.Read.Group', type: 'Application' }]);
-    expect(m.bots).toEqual([expect.objectContaining({ botId: APP, scopes: ['team'] })]);
+    // The bot in the team's channel and in a person's 1:1 chat (direct chat).
+    expect(m.bots).toEqual([expect.objectContaining({ botId: APP, scopes: ['team', 'personal'] })]);
+    expect(m.version).toBe('1.1.0');
     expect(m.configurableTabs).toEqual([expect.objectContaining({ configurationUrl: 'https://tabs.example.net/office-ceo/config.html', scopes: ['team'] })]);
     expect(m.validDomains).toEqual(['tabs.example.net']);
     expect(m.name.short).toBe('Zander');

@@ -1,6 +1,7 @@
 // Settings → Teams' rules (docs/teams.md), shared by the server (validation, the daily cap) and the settings card. The
-// office reads one Teams channel and the CEO posts in it as its own bot; who counts as the manager, which bots are
-// colleagues and how often the CEO may post are checked by the office, not by the prompt.
+// office reads one Teams channel and, when Direct chat is on, each manager's 1:1 chat with the CEO's app; the CEO posts
+// in both as its own bot. Who counts as the manager, which bots are colleagues and how often the CEO may post are checked
+// by the office, not by the prompt.
 import type { TeamsColleague, TeamsSettings } from './types.ts';
 
 export type { TeamsColleague, TeamsSettings };
@@ -29,6 +30,7 @@ export const DEFAULT_TEAMS: TeamsSettings = {
   managers: [],
   colleagues: [],
   postsPerDay: DEFAULT_POSTS_PER_DAY,
+  direct: false,
 };
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -104,6 +106,7 @@ function colleagueList(raw: unknown): TeamsColleague[] | null {
 export function teamsProblem(patch: unknown, base: TeamsSettings = DEFAULT_TEAMS): string | null {
   const p = (patch && typeof patch === 'object' ? patch : {}) as Partial<Record<keyof TeamsSettings, unknown>>;
   if (p.enabled !== undefined && typeof p.enabled !== 'boolean') return 'Teams is on or off.';
+  if (p.direct !== undefined && typeof p.direct !== 'boolean') return 'Direct chat is on or off.';
   if (p.teamId !== undefined && p.teamId !== '' && !guid(p.teamId)) return "The team id must be the team's group id, e.g. 44ffe347-85e3-4917-88c2-176352e79788.";
   if (p.channelId !== undefined && p.channelId !== '' && !channelId(p.channelId)) return 'The channel id looks like 19:…@thread.tacv2 (from “Get link to channel”).';
   if (p.serviceUrl !== undefined && !serviceUrl(p.serviceUrl)) return 'The service URL must be a Bot Framework address on a Microsoft host, e.g. https://smba.trafficmanager.net/amer/.';
@@ -125,6 +128,7 @@ export function teamsProblem(patch: unknown, base: TeamsSettings = DEFAULT_TEAMS
   }
   const next = teamsSettings(base, patch);
   if (p.enabled === true && (!next.teamId || !next.channelId)) return 'Set the team id and the channel id first.';
+  if (p.direct === true && next.managers.length === 0) return 'Add your Entra object id first: only your direct chats are read.';
   return null;
 }
 
@@ -134,7 +138,7 @@ export function teamsSettings(base: TeamsSettings | undefined, patch: unknown): 
   const b = { ...DEFAULT_TEAMS, ...base };
   const teamId = p.teamId === '' ? '' : (guid(p.teamId) ?? b.teamId);
   const channel = p.channelId === '' ? '' : (channelId(p.channelId) ?? b.channelId);
-  return {
+  const out: TeamsSettings = {
     enabled: (typeof p.enabled === 'boolean' ? p.enabled : b.enabled) && !!teamId && !!channel,
     teamId,
     channelId: channel,
@@ -143,8 +147,21 @@ export function teamsSettings(base: TeamsSettings | undefined, patch: unknown): 
     managers: p.managers === undefined ? (managerList(b.managers) ?? []) : (managerList(p.managers) ?? managerList(b.managers) ?? []),
     colleagues: p.colleagues === undefined ? (colleagueList(b.colleagues) ?? []) : (colleagueList(p.colleagues) ?? colleagueList(b.colleagues) ?? []),
     postsPerDay: wholeIn(p.postsPerDay, 1, MAX_POSTS_PER_DAY) ? p.postsPerDay : wholeIn(b.postsPerDay, 1, MAX_POSTS_PER_DAY) ? b.postsPerDay : DEFAULT_POSTS_PER_DAY,
+    direct: false,
   };
+  // Direct chat needs someone to chat with: off when the last manager id goes.
+  out.direct = (typeof p.direct === 'boolean' ? p.direct : b.direct === true) && out.managers.length > 0;
+  return out;
 }
+
+/**
+ * The Graph id of the 1:1 chat between a person and the CEO's app (bot): fixed by the two ids, so it needs no lookup and
+ * no permission beyond reading the chat (Chat.Read.WhereInstalled). It exists once the person has added the app.
+ */
+export const directChatId = (userId: string, appId: string) => `19:${userId.toLowerCase()}_${appId.toLowerCase()}@unq.gbl.spaces`;
+
+/** Whether the office reads anything in Teams: the channel, or the managers' direct chats. */
+export const teamsOn = (s: TeamsSettings) => s.enabled || s.direct;
 
 /** The CEO's posts that count toward the daily cap: those in the last 24 hours. */
 export function postsToday(posts: readonly number[], now: number): number {

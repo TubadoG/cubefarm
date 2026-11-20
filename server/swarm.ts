@@ -27,7 +27,7 @@ import { emptyKimai, KimaiSync, loadKimai, type KimaiState } from './kimai.ts';
 import { findLogo, logoProblem, removeLogo, saveLogo } from './logo.ts';
 import { emptyInbox, loadInbox, MailInbox, type InboxState } from './mailInbox.ts';
 import { emptyTeams, loadTeams, TeamsChannel, type TeamsState } from './teamsChannel.ts';
-import { DEFAULT_TEAMS, postsToday, teamsProblem, teamsSettings } from '../shared/teams.ts';
+import { DEFAULT_TEAMS, postsToday, teamsOn, teamsProblem, teamsSettings } from '../shared/teams.ts';
 import type { WorkSession } from './timesheets.ts';
 import { sessionTranscriptTokens } from './transcript.ts';
 import { DEFAULT_KIMAI, kimaiProblem, kimaiSettings } from '../shared/kimai.ts';
@@ -754,7 +754,7 @@ export class Swarm {
       get: (url, fresh) => this.mailer.get(url, fresh),
       post: (url, body, fresh) => this.mailer.botPost(url, body, fresh),
       persist: () => this.writeState(),
-      deliverManager: (text, framed) => this.messageCeo(text, 'teams', framed),
+      deliverManager: (text, framed, via) => this.messageCeo(text, via, framed),
       deliverColleague: (framed) => this.colleagueTeams(framed),
       note: (text) => this.postMessage('office', text),
       changed: (teams) => {
@@ -3652,6 +3652,8 @@ export class Swarm {
       s.teams = teamsSettings(s.teams, patch.teams);
       // Switched on, or pointed at another channel: what was written there before is never replayed.
       if (s.teams.enabled && (!was.enabled || was.teamId !== s.teams.teamId || was.channelId !== s.teams.channelId)) this.teams.switchedOn();
+      // Direct chat switched on: each manager's chat counts from now (a manager added later, from their first check).
+      if (s.teams.direct && !was.direct) this.teams.directSwitchedOn();
     }
     if (patch.kimai !== undefined) {
       const problem = kimaiProblem(patch.kimai);
@@ -4282,7 +4284,7 @@ export class Swarm {
       maxAgents: s.maxAgents,
       scaling: s.scaling,
       email: s.email.enabled,
-      teams: s.teams.enabled,
+      teams: teamsOn(s.teams),
       autoPlan: this.state.repos.some((r) => r.autoPlan),
     };
   }
@@ -4398,7 +4400,8 @@ export class Swarm {
    * The manager's phone (or an email or Teams message of theirs) → the CEO. Injected into a running session, otherwise
    * the CEO picks it up next. `framed`: what the CEO gets instead of the phone's text (a Teams message's thread and rules).
    */
-  async messageCeo(text: string, via?: 'email' | 'teams', framed?: string) {
+  async messageCeo(text: string, via?: PhoneMessage['via'], framed?: string) {
+    const teams = via === 'teams' || via === 'teams-dm';
     const t = text.trim().slice(0, 4000);
     if (!t) throw new HttpError(400, 'Empty message');
     const forCeo = (framed ?? t).trim().slice(0, 4000);
@@ -4409,11 +4412,11 @@ export class Swarm {
       this.appendLog(a, [{ kind: 'manager', text: `▶ Manager: ${forCeo}` }]);
       this.ceoIssues.managerMessage(); // a new request: the issue cap counts from here
       this.ceoAsked = true;
-      if (via === 'teams') this.ceoTeams = true; // from here on, this job closes no decision
+      if (teams) this.ceoTeams = true; // from here on, this job closes no decision
       rt.session.send(`Message from the manager (they read your reply on their phone, so keep it short):\n${forCeo}`);
       return;
     }
-    this.enqueueCeo({ kind: 'chat', text: forCeo, at: Date.now(), ...(via === 'teams' ? { teams: true } : {}) });
+    this.enqueueCeo({ kind: 'chat', text: forCeo, at: Date.now(), ...(teams ? { teams: true } : {}) });
   }
 
   /**
@@ -6823,7 +6826,7 @@ export class Swarm {
             recent: this.state.emails.slice(-5).map((e) => ({ to: e.to, subject: e.subject, status: e.status, ...(e.note ? { managerNote: e.note } : {}) })),
           },
         }),
-        ...(s.teams.enabled && { teams: { postsToday: `${postsToday(this.state.teams.posts, Date.now())} of ${s.teams.postsPerDay}` } }),
+        ...(teamsOn(s.teams) && { teams: { postsToday: `${postsToday(this.state.teams.posts, Date.now())} of ${s.teams.postsPerDay}` } }),
       },
       null,
       1,
