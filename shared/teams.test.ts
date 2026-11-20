@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { channelId, DEFAULT_SERVICE_URL, DEFAULT_TEAMS, guid, MAX_MANAGERS, MAX_TEAMS_COLLEAGUES, postsToday, serviceUrl, TEAMS_DAY_MS, teamsProblem, teamsSettings } from './teams.ts';
+import { channelId, DEFAULT_SERVICE_URL, DEFAULT_TEAMS, directChatId, guid, MAX_MANAGERS, MAX_TEAMS_COLLEAGUES, postsToday, serviceUrl, TEAMS_DAY_MS, teamsOn, teamsProblem, teamsSettings } from './teams.ts';
 
 const TEAM = '44ffe347-85e3-4917-88c2-176352e79788';
 const CHANNEL = '19:57800f254d1046348418f4e838b40f12@thread.tacv2';
@@ -17,6 +17,7 @@ describe('Teams settings', () => {
       managers: [],
       colleagues: [],
       postsPerDay: 40,
+      direct: false,
     });
   });
 
@@ -56,6 +57,29 @@ describe('Teams settings', () => {
     expect(teamsProblem({ colleagues: Array.from({ length: MAX_TEAMS_COLLEAGUES + 1 }, (_, i) => ({ name: `b${i}` })) })).toMatch(/At most 10/);
     expect(teamsProblem({ enabled: 'yes' })).toBe('Teams is on or off.');
     expect(teamsProblem({ pollSeconds: 120, postsPerDay: 10, managers: [BRYAN], colleagues: [{ name: 'Marcus', appId: MARCUS }, { name: 'Nova' }] })).toBeNull();
+  });
+});
+
+describe('Direct chat', () => {
+  it('starts off, also for an office saved before it existed', () => {
+    const saved = { enabled: true, teamId: TEAM, channelId: CHANNEL, managers: [BRYAN], colleagues: [], postsPerDay: 40, pollSeconds: 60, serviceUrl: DEFAULT_SERVICE_URL };
+    expect(teamsSettings(DEFAULT_TEAMS, saved as never)).toMatchObject({ enabled: true, direct: false });
+  });
+
+  it('goes on only with a manager id, apart from the channel, and off when the last id goes', () => {
+    expect(teamsProblem({ direct: true })).toBe('Add your Entra object id first: only your direct chats are read.');
+    expect(teamsProblem({ direct: 'yes' })).toBe('Direct chat is on or off.');
+    expect(teamsProblem({ direct: true, managers: [BRYAN] })).toBeNull();
+    const on = teamsSettings(DEFAULT_TEAMS, { direct: true, managers: [BRYAN] });
+    expect(on).toMatchObject({ direct: true, enabled: false });
+    expect(teamsOn(on)).toBe(true);
+    expect(teamsSettings(on, { managers: [] }).direct).toBe(false);
+    expect(teamsSettings(on, { pollSeconds: 120 }).direct).toBe(true);
+    expect(teamsOn(DEFAULT_TEAMS)).toBe(false);
+  });
+
+  it('finds the 1:1 chat by the two ids', () => {
+    expect(directChatId(BRYAN, MARCUS.toUpperCase())).toBe(`19:${BRYAN}_${MARCUS}@unq.gbl.spaces`);
   });
 });
 

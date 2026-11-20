@@ -8,8 +8,12 @@
 // hears a bot only when it @mentions the CEO, never its acknowledgements, and replies to bots at most
 // BOT_REPLIES_PER_THREAD times per thread. Ids handled are saved before delivery, so a restart never delivers one twice,
 // and nothing written before the switch went on is replayed. No message text is logged.
-import { BOT_REPLIES_PER_THREAD, postsToday, TEAMS_DAY_MS } from '../shared/teams.ts';
-import type { TeamsColleague, TeamsMessageView, TeamsSettings, TeamsView } from '../shared/types.ts';
+// Direct chat (Settings → Teams → Direct chat): each manager's 1:1 chat with the CEO's app, read with
+// Chat.Read.WhereInstalled (only chats the app is in) at a chat id fixed by the two ids (directChatId), and answered as
+// the bot through a proactive 1:1 conversation. Only the managers' own chats are read, and only their messages count:
+// they are the manager's, with the same rules as the channel (no decision is answered there either).
+import { BOT_REPLIES_PER_THREAD, directChatId, postsToday, TEAMS_DAY_MS, teamsOn } from '../shared/teams.ts';
+import type { TeamsColleague, TeamsDirectView, TeamsMessageView, TeamsSettings, TeamsView } from '../shared/types.ts';
 import { NO_MESSAGE } from './ceo.ts';
 import { HttpError } from './httpError.ts';
 
@@ -54,6 +58,9 @@ const channelPath = (teamId: string, channelId: string) => `${GRAPH}/teams/${enc
 
 /** The channel's latest root messages, with their replies expanded. */
 export const messagesUrl = (teamId: string, channelId: string) => `${channelPath(teamId, channelId)}?$top=${ROOTS}&$expand=replies`;
+
+/** A manager's direct chat with the CEO's app: its latest messages, newest first. */
+export const directMessagesUrl = (managerId: string, appId: string) => `${GRAPH}/chats/${encodeURIComponent(directChatId(managerId, appId))}/messages?$top=${ROOTS}&$orderby=createdDateTime desc`;
 
 /** One thread's replies, for a root Graph didn't expand. */
 export const repliesUrl = (teamId: string, channelId: string, rootId: string) => `${channelPath(teamId, channelId)}/${encodeURIComponent(rootId)}/replies?$top=50`;
@@ -182,6 +189,18 @@ export function managerText(m: ChannelMessage, text: string): string {
   ].join('\n');
 }
 
+/** What the CEO gets for the manager's direct message: the same rules as the channel, answered in that chat. */
+export function directText(m: ChannelMessage, text: string, managerId: string): string {
+  return [
+    `Teams direct message from the manager, in their 1:1 chat with you in Teams (message ${m.id}):`,
+    '',
+    `${clip(text)}${files(m)}`,
+    '',
+    `(Answer in that chat with post_teams, direct_to "${managerId}", then reply ${NO_MESSAGE} unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)`,
+    ...(looksLikeDecision(text) ? ["(This reads like an answer to a decision. Don't act on it as one: tell the manager in the chat that decisions are answered in the Decision room.)"] : []),
+  ].join('\n');
+}
+
 /** What the CEO gets for a colleague bot's message: under its name, framed so it never carries the manager's authority. */
 export function colleagueText(m: ChannelMessage, text: string, c: TeamsColleague): string {
   const root = threadOf(m);
@@ -208,6 +227,17 @@ export function postRequest(o: { serviceUrl: string; channelId: string; tenantId
   return { url: `${o.serviceUrl}v3/conversations`, body: { isGroup: true, activity, channelData: { channel: { id: o.channelId }, tenant: { id: o.tenantId } } } };
 }
 
+/** The Bot Framework call that gets (or creates) the bot's 1:1 conversation with a person, by their Entra object id. */
+export function directConversationRequest(o: { serviceUrl: string; appId: string; tenantId: string; userId: string }) {
+  return {
+    url: `${o.serviceUrl}v3/conversations`,
+    body: { bot: { id: `28:${o.appId}` }, members: [{ id: o.userId }], tenantId: o.tenantId, isGroup: false, channelData: { tenant: { id: o.tenantId } } },
+  };
+}
+
+/** A post in a known 1:1 conversation. */
+export const directPostUrl = (serviceUrl: string, conversationId: string) => `${serviceUrl}v3/conversations/${encodeURIComponent(conversationId)}/activities`;
+
 // ---------- the poller ----------
 
 /** A thread the CEO took part in: whether its latest message for the CEO was a bot's, and how often the CEO answered bots there. */
@@ -215,6 +245,14 @@ export interface ThreadState {
   botReplies: number;
   lastBot: boolean;
   at: number;
+}
+
+/** One manager's direct chat. */
+export interface DirectState {
+  since: string; // ISO: messages written before it are never delivered
+  status: TeamsDirectView['status'];
+  error?: string;
+  conversationId?: string; // the Bot Framework's 1:1 conversation, once created
 }
 
 /** Teams' part of the state file. */
@@ -228,11 +266,15 @@ export interface TeamsState {
   posts: number[]; // when the CEO posted, the last 24 hours (the daily cap)
   threads: Record<string, ThreadState>; // by root message id
   names: Record<string, string>; // the manager's display names as Teams shows them, by object id (for @mentions)
+  direct: Record<string, DirectState>; // by the manager's object id
 }
 
 export function emptyTeams(): TeamsState {
-  return { since: null, seen: [], items: [], lastCheck: null, lastError: null, deniedAt: null, posts: [], threads: {}, names: {} };
+  return { since: null, seen: [], items: [], lastCheck: null, lastError: null, deniedAt: null, posts: [], threads: {}, names: {}, direct: {} };
 }
+
+const DIRECT_STATUS = new Set<string>(['unknown', 'found', 'not-added', 'error']);
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const record = (x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>) : {});
 
@@ -253,6 +295,23 @@ export function loadTeams(raw: unknown): TeamsState {
     posts: Array.isArray(s.posts) ? s.posts.filter((x): x is number => typeof x === 'number') : [],
     threads,
     names: Object.fromEntries(Object.entries(record(s.names)).filter((e): e is [string, string] => typeof e[1] === 'string')),
+    direct: Object.fromEntries(
+      Object.entries(record(s.direct)).flatMap(([k, v]): [string, DirectState][] => {
+        const d = record(v);
+        if (!GUID.test(k) || typeof d.since !== 'string' || Number.isNaN(Date.parse(d.since))) return [];
+        return [
+          [
+            k,
+            {
+              since: d.since,
+              status: typeof d.status === 'string' && DIRECT_STATUS.has(d.status) ? (d.status as DirectState['status']) : 'unknown',
+              ...(typeof d.error === 'string' ? { error: d.error } : {}),
+              ...(typeof d.conversationId === 'string' && d.conversationId ? { conversationId: d.conversationId } : {}),
+            },
+          ],
+        ];
+      }),
+    ),
   };
 }
 
@@ -262,6 +321,8 @@ export interface TeamsPost {
   text: string;
   subject?: string;
   mention_manager?: boolean;
+  /** A manager's object id: the post goes in their direct chat instead of the channel. */
+  direct_to?: string;
 }
 
 export interface TeamsDeps {
@@ -278,8 +339,8 @@ export interface TeamsDeps {
   post(url: string, body: unknown, fresh: boolean): Promise<{ status: number; body: unknown }>;
   /** Saves the state file now. */
   persist(): Promise<void>;
-  /** The manager's message: `text` for the phone, `framed` for the CEO. */
-  deliverManager(text: string, framed: string): Promise<void> | void;
+  /** The manager's message: `text` for the phone, `framed` for the CEO, `via` where it was written. */
+  deliverManager(text: string, framed: string, via: 'teams' | 'teams-dm'): Promise<void> | void;
   /** A colleague bot's message, framed as theirs. */
   deliverColleague(framed: string): Promise<void> | void;
   /** A note from the office in the phone thread. */
@@ -295,8 +356,10 @@ type Res = { status: number; body: unknown };
 const graphError = (r: Res) => (r.body as { error?: { code?: string; message?: string } } | null)?.error;
 
 export class TeamsChannel {
-  private nextAt = 0;
+  private nextAt = 0; // the next check of the channel
+  private directAt = new Map<string, number>(); // the next check of each manager's direct chat
   private running: Promise<TeamsView> | null = null;
+  private opening = new Map<string, Promise<string>>(); // a 1:1 conversation being created, by manager: made once
 
   constructor(private deps: TeamsDeps) {}
 
@@ -307,15 +370,22 @@ export class TeamsChannel {
   /** Why the office doesn't read the channel now, or null when it does. */
   private off(): string | null {
     const s = this.deps.settings();
-    if (!s.enabled) return 'Teams is off.';
-    if (!s.teamId || !s.channelId) return 'Set the team id and the channel id first.';
+    if (!teamsOn(s)) return 'Teams is off.';
+    if (s.enabled && (!s.teamId || !s.channelId)) return 'Set the team id and the channel id first.';
     if (!this.deps.app()) return 'No app is set up yet: Teams uses the email sender (docs/teams.md).';
     return null;
   }
 
   view(): TeamsView {
     const s = this.deps.state();
-    return { lastCheck: s.lastCheck, lastError: s.lastError, items: s.items, postsToday: postsToday(s.posts, this.now()) };
+    const settings = this.deps.settings();
+    const direct: TeamsDirectView[] = settings.direct
+      ? settings.managers.map((id) => {
+          const d = s.direct[id];
+          return { id, name: s.names[id] ?? null, status: d?.status ?? 'unknown', ...(d?.error ? { error: d.error } : {}) };
+        })
+      : [];
+    return { lastCheck: s.lastCheck, lastError: s.lastError, items: s.items, postsToday: postsToday(s.posts, this.now()), direct };
   }
 
   /** Switched on (or pointed at another channel): only messages from now on count. */
@@ -326,17 +396,45 @@ export class TeamsChannel {
     this.deps.changed(this.view());
   }
 
-  /** The timer's call: checks when it's on and due. */
-  tick() {
-    if (this.off() || this.now() < this.nextAt) return;
-    void this.check().catch((err) => this.deps.log(`teams check failed: ${err instanceof Error ? err.message : String(err)}`));
+  /** Direct chat switched on: each manager's chat counts from now on, and is looked for at once. */
+  directSwitchedOn() {
+    const s = this.deps.state();
+    const since = new Date(this.now()).toISOString();
+    for (const id of this.deps.settings().managers) s.direct[id] = { since, status: 'unknown', ...(s.direct[id]?.conversationId ? { conversationId: s.direct[id].conversationId } : {}) };
+    this.directAt.clear();
+    this.deps.changed(this.view());
   }
 
-  /** One check now (POST /api/teams/check, or the timer). One at a time: a second call gets the running one. */
+  /** Whether anything is due: the channel, or a manager's direct chat. */
+  private due(): boolean {
+    const s = this.deps.settings();
+    const now = this.now();
+    return (s.enabled && now >= this.nextAt) || (s.direct && s.managers.some((id) => now >= (this.directAt.get(id) ?? 0)));
+  }
+
+  /** The timer's call: checks what's on and due. */
+  tick() {
+    if (this.off() || !this.due()) return;
+    void this.run(false).catch((err) => this.deps.log(`teams check failed: ${err instanceof Error ? err.message : String(err)}`));
+  }
+
+  /** One check now (POST /api/teams/check): the channel and every direct chat, due or not. One at a time: a second call gets the running one. */
   check(manual = false): Promise<TeamsView> {
     const off = this.off();
     if (off) return manual ? Promise.reject(new HttpError(400, off)) : Promise.resolve(this.view());
-    this.running ??= this.run().finally(() => (this.running = null));
+    return this.run(true);
+  }
+
+  private run(all: boolean): Promise<TeamsView> {
+    this.running ??= (async () => {
+      const settings = this.deps.settings();
+      const now = this.now();
+      if (settings.enabled && (all || now >= this.nextAt)) await this.readChannel();
+      if (settings.direct) await this.readDirect(all);
+      const v = this.view();
+      this.deps.changed(v);
+      return v;
+    })().finally(() => (this.running = null));
     return this.running;
   }
 
@@ -372,7 +470,7 @@ export class TeamsChannel {
     return unique.sort((a, b) => Date.parse(a.createdDateTime) - Date.parse(b.createdDateTime));
   }
 
-  private async run(): Promise<TeamsView> {
+  private async readChannel(): Promise<void> {
     const s = this.deps.state();
     const settings = this.deps.settings();
     const app = this.deps.app()!;
@@ -443,7 +541,7 @@ export class TeamsChannel {
           thread.lastBot = true;
         }
       } else if (a.kind === 'other') reason = a.reason;
-      const item: TeamsMessageView = { id: m.id, from: a.name, at: Date.parse(m.createdDateTime), outcome, ...(reason ? { reason } : {}), ...(colleague ? { colleague: colleague.name } : {}) };
+      const item: TeamsMessageView = { id: m.id, from: a.name, at: Date.parse(m.createdDateTime), outcome, ...(reason ? { reason } : {}), ...(colleague ? { colleague: colleague.name } : {}), source: 'channel' };
       s.items.unshift(item);
       if (s.items.length > KEEP_ITEMS) s.items.length = KEEP_ITEMS;
       this.prune(s, now);
@@ -451,13 +549,92 @@ export class TeamsChannel {
       await this.deps.persist();
       quiet = false;
       this.deps.log(`💬 teams: ${item.from} in thread ${root}: ${outcome === 'ignored' ? `ignored (${reason})` : outcome === 'colleague' ? 'delivered (colleague)' : 'delivered'}`);
-      if (outcome === 'delivered') await this.deps.deliverManager(clip(text), managerText(m, text));
+      if (outcome === 'delivered') await this.deps.deliverManager(clip(text), managerText(m, text), 'teams');
       else if (colleague) await this.deps.deliverColleague(colleagueText(m, text, colleague));
     }
     if (quiet) await this.deps.persist();
-    const v = this.view();
-    this.deps.changed(v);
-    return v;
+  }
+
+  /** Each manager's direct chat that's due (`all`: every one), as the manager's own messages. */
+  private async readDirect(all: boolean): Promise<void> {
+    const s = this.deps.state();
+    const settings = this.deps.settings();
+    const app = this.deps.app()!;
+    const ceo = this.deps.ceoName();
+    let quiet = false;
+    s.lastCheck = this.now(); // the channel's error, if any, stays its own
+    for (const managerId of settings.managers) {
+      const now = this.now();
+      if (!all && now < (this.directAt.get(managerId) ?? 0)) continue;
+      this.directAt.set(managerId, now + settings.pollSeconds * 1000);
+      // A manager added while Direct chat was on: their chat counts from now.
+      const d = (s.direct[managerId] ??= { since: new Date(now).toISOString(), status: 'unknown' });
+      const was = `${d.status}|${d.error ?? ''}`;
+      let res: Res;
+      try {
+        res = await this.get(directMessagesUrl(managerId, app.appId));
+      } catch (err) {
+        res = { status: 0, body: { error: { message: (err instanceof Error ? err.message : String(err)).split('\n')[0] } } };
+      }
+      if (res.status === 403 || res.status === 404) {
+        // No chat yet (the manager hasn't added the app), or no Chat.Read.WhereInstalled: shown in Settings, never on the phone.
+        d.status = 'not-added';
+        delete d.error;
+        this.directAt.set(managerId, now + DENIED_EVERY_MS);
+      } else if (res.status < 200 || res.status >= 300) {
+        const e = graphError(res);
+        d.status = 'error';
+        d.error = res.status ? `Graph refused to read the chat (HTTP ${res.status}${e?.code ? `, ${e.code}` : ''}): ${(e?.message ?? '').slice(0, 200)}` : `Couldn't reach Microsoft Graph: ${(e?.message ?? '').slice(0, 200)}`;
+      } else {
+        d.status = 'found';
+        delete d.error;
+      }
+      if (`${d.status}|${d.error ?? ''}` !== was) {
+        quiet = true;
+        this.deps.log(`💬 teams: direct chat with ${managerId}: ${d.status}${d.error ? ` (${d.error})` : ''}`);
+      }
+      if (d.status !== 'found') continue;
+      const list = (res.body as { value?: unknown } | null)?.value;
+      // Graph lists them newest first: oldest first here, ties kept in Graph's order.
+      const msgs = (Array.isArray(list) ? [...list].reverse() : [])
+        .filter((m: unknown): m is ChannelMessage => !!m && typeof (m as ChannelMessage).id === 'string' && typeof (m as ChannelMessage).createdDateTime === 'string')
+        .sort((a, b) => Date.parse(a.createdDateTime) - Date.parse(b.createdDateTime));
+      const since = Date.parse(d.since);
+      for (const m of msgs) {
+        const key = `dm:${m.id}`; // apart from the channel's ids
+        if (s.seen.includes(key)) continue;
+        s.seen.push(key);
+        if (s.seen.length > KEEP_IDS) s.seen.splice(0, s.seen.length - KEEP_IDS);
+        const a = author(m, { appId: app.appId, managers: [managerId], colleagues: [] });
+        if ((m.messageType && m.messageType !== 'message') || m.deletedDateTime || a.kind === 'self' || Date.parse(m.createdDateTime) < since) {
+          quiet = true;
+          continue;
+        }
+        // Only the manager whose chat it is speaks for the manager here; nobody else, person or bot.
+        const mine = a.kind === 'manager';
+        if (mine) s.names[managerId] = a.name;
+        const item: TeamsMessageView = {
+          id: m.id,
+          from: 'name' in a ? a.name : 'unknown',
+          at: Date.parse(m.createdDateTime),
+          outcome: mine ? 'delivered' : 'ignored',
+          ...(mine ? {} : { reason: 'not a manager' }),
+          source: 'direct',
+        };
+        s.items.unshift(item);
+        if (s.items.length > KEEP_ITEMS) s.items.length = KEEP_ITEMS;
+        this.prune(s, now);
+        // Saved before it's delivered: a restart from here on never delivers it again.
+        await this.deps.persist();
+        quiet = false;
+        this.deps.log(`💬 teams: ${item.from} in a direct chat with ${ceo}: ${mine ? 'delivered' : 'ignored (not a manager)'}`);
+        if (mine) {
+          const text = messageText(m);
+          await this.deps.deliverManager(clip(text), directText(m, text, managerId), 'teams-dm');
+        }
+      }
+    }
+    if (quiet) await this.deps.persist();
   }
 
   private prune(s: TeamsState, now: number) {
@@ -466,14 +643,11 @@ export class TeamsChannel {
     if (ids.length > KEEP_THREADS) for (const id of ids.sort((x, y) => s.threads[x].at - s.threads[y].at).slice(0, ids.length - KEEP_THREADS)) delete s.threads[id];
   }
 
-  private async failed(why: string): Promise<TeamsView> {
+  private async failed(why: string): Promise<void> {
     const s = this.deps.state();
     Object.assign(s, { lastCheck: this.now(), lastError: why });
     this.deps.log(`teams: ${why}`);
     await this.deps.persist();
-    const v = this.view();
-    this.deps.changed(v);
-    return v;
   }
 
   /**
@@ -483,13 +657,19 @@ export class TeamsChannel {
   async post(p: TeamsPost): Promise<string> {
     const settings = this.deps.settings();
     const app = this.deps.app();
-    if (!settings.enabled || !settings.teamId || !settings.channelId) throw new Error('Teams is off. The manager turns it on in Settings → Teams.');
+    const directTo = p.direct_to?.trim().toLowerCase() || undefined;
+    if (directTo) {
+      if (!settings.direct) throw new Error('Direct chat is off. The manager turns it on in Settings → Teams.');
+    } else if (!settings.enabled || !settings.teamId || !settings.channelId)
+      throw new Error(settings.direct ? 'The Teams channel is off: answer a direct message with direct_to.' : 'Teams is off. The manager turns it on in Settings → Teams.');
     if (!app) throw new Error('No app is set up for Teams yet. Ask the manager to finish Settings → Email and Settings → Teams.');
     const s = this.deps.state();
     const now = this.now();
     this.prune(s, now);
+    // One cap for the channel and the direct chats.
     if (postsToday(s.posts, now) >= settings.postsPerDay)
       throw new Error(`The office posts at most ${settings.postsPerDay} Teams messages a day, and today's are used up. Put it in your message to the manager instead, or try tomorrow.`);
+    if (directTo) return this.postDirect(directTo, p.text, settings, app, s, now);
     const root = p.root_id?.trim() || undefined;
     if (root && !MESSAGE_ID.test(root)) throw new Error('root_id is the thread’s root message id from the Teams message you were given (digits only).');
     const thread = root ? s.threads[root] : undefined;
@@ -524,5 +704,56 @@ export class TeamsChannel {
     this.deps.changed(this.view());
     const left = settings.postsPerDay - postsToday(s.posts, now);
     return `Posted in Teams${root ? ' in the thread' : ' as a new post'}. ${left} post${left === 1 ? '' : 's'} left today.`;
+  }
+
+  /** A post in a manager's direct chat: the bot's 1:1 conversation with them, created once and cached. */
+  private async postDirect(managerId: string, raw: string, settings: TeamsSettings, app: { appId: string; tenantId: string }, s: TeamsState, now: number): Promise<string> {
+    if (!settings.managers.includes(managerId)) throw new Error('direct_to is the manager id from the Teams direct message you were given: only the manager’s own chats are answered.');
+    const text = raw.trim();
+    if (!text) throw new Error('Write something to post.');
+    const d = (s.direct[managerId] ??= { since: new Date(now).toISOString(), status: 'unknown' });
+    const call = async (url: string, body: unknown): Promise<Res> => {
+      try {
+        const res = await this.deps.post(url, body, false);
+        return res.status === 401 ? await this.deps.post(url, body, true) : res;
+      } catch (err) {
+        throw new Error(`Couldn't reach the Bot Framework: ${(err instanceof Error ? err.message : String(err)).split('\n')[0].slice(0, 200)}`);
+      }
+    };
+    const refused = (what: string, res: Res) => {
+      const e = graphError(res);
+      this.deps.log(`teams: ${what} refused (HTTP ${res.status}${e?.code ? `, ${e.code}` : ''})`);
+      const hint = res.status === 401 || res.status === 403 || res.status === 404 ? ' The manager may not have added the CEO’s Teams app (Apps → the CEO → Add), or the bot isn’t registered for this app (docs/teams.md).' : '';
+      return new Error(`Teams refused the ${what} (HTTP ${res.status}${e?.code ? `, ${e.code}` : ''}): ${(e?.message ?? '').slice(0, 200)}${hint}`);
+    };
+    if (!d.conversationId) {
+      let opening = this.opening.get(managerId);
+      if (!opening) {
+        opening = (async () => {
+          const req = directConversationRequest({ serviceUrl: settings.serviceUrl, appId: app.appId, tenantId: app.tenantId, userId: managerId });
+          const res = await call(req.url, req.body);
+          const id = (res.body as { id?: unknown } | null)?.id;
+          if (res.status < 200 || res.status >= 300 || typeof id !== 'string' || !id) throw refused('direct chat', res);
+          d.conversationId = id;
+          await this.deps.persist();
+          return id;
+        })().finally(() => this.opening.delete(managerId));
+        this.opening.set(managerId, opening);
+      }
+      await opening;
+    }
+    const res = await call(directPostUrl(settings.serviceUrl, d.conversationId!), activityFor(text));
+    if (res.status < 200 || res.status >= 300) {
+      // The conversation may be gone (the app was removed): made again next time.
+      if (res.status === 403 || res.status === 404) delete d.conversationId;
+      await this.deps.persist();
+      throw refused('post', res);
+    }
+    s.posts.push(now);
+    await this.deps.persist();
+    this.deps.log(`💬 teams: the CEO posted in a direct chat with ${managerId}`);
+    this.deps.changed(this.view());
+    const left = settings.postsPerDay - postsToday(s.posts, now);
+    return `Posted in the manager's Teams direct chat. ${left} post${left === 1 ? '' : 's'} left today.`;
   }
 }

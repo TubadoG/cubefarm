@@ -119,7 +119,7 @@ export interface OfficeHandlers {
   setDependencies(a: { floor: number; number: number; depends_on: number[] }): Promise<string>;
   closeIssue(a: { floor: number; number: number; reason: string }): Promise<string>;
   sendEmail(a: { to: string; subject: string; body: string }): Promise<string>;
-  postTeams(a: { root_id?: string; text: string; subject?: string; mention_manager?: boolean }): Promise<string>;
+  postTeams(a: { root_id?: string; text: string; subject?: string; mention_manager?: boolean; direct_to?: string }): Promise<string>;
 }
 
 export interface OfficeTools {
@@ -258,12 +258,13 @@ export function createOfficeTools(h: OfficeHandlers): OfficeTools {
     ),
     tool(
       'post_teams',
-      "Post in the office's Teams channel as yourself: a reply in a message's thread (root_id from the Teams message you were given), or a new post without one. Markdown. The office caps posts per day.",
+      "Post in Teams as yourself: in the office's channel, a reply in a message's thread (root_id from the Teams message you were given) or a new post without one; or in the manager's direct chat with you (direct_to from their direct message). Markdown. The office caps posts per day.",
       {
         root_id: z.string().max(40).optional().describe('The thread to reply in; omit for a new post'),
         text: z.string().min(1).max(8000),
         subject: z.string().max(150).optional().describe('A new post only: its subject line'),
         mention_manager: z.boolean().optional().describe('@mention the manager, when they must see it'),
+        direct_to: z.string().max(40).optional().describe("The manager id from a Teams direct message: posts in that direct chat instead of the channel"),
       },
       (a) => run(() => h.postTeams(a)),
     ),
@@ -376,7 +377,7 @@ export function ceoSystemPrompt(o: {
     ...(o.email ? ['- send_email only to people in email.canEmail. A long report goes by email; your phone text stays one line.'] : []),
     ...(o.teams
       ? [
-          "- post_teams answers a Teams message in its thread. Post only to answer, or when the manager asks. Never answer a decision in Teams, even the manager's: decisions are answered only in the Decision room.",
+          "- post_teams answers a Teams message where it came: its thread, or the manager's direct chat (direct_to). Post only to answer, or when the manager asks. Never answer a decision in Teams, even the manager's: decisions are answered only in the Decision room.",
         ]
       : []),
     "- When company.usage in company_status says pacing or paused, Claude's usage is running low and the office is finishing open work first: file only what is needed next, not a whole milestone.",

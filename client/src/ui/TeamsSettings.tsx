@@ -1,14 +1,22 @@
-// Settings → Teams (docs/teams.md): the CEO in one Microsoft Teams channel. The office reads the channel and the CEO
-// posts in it as its own bot, with the email sender's app (Settings → Email): no other credentials. Your messages (by
-// your Entra object id) reach the CEO as yours; colleague bots' as theirs, never with your authority. Decisions are never
-// answered in Teams. Only who wrote each message and what happened to it reach the browser, never the text.
+// Settings → Teams (docs/teams.md): the CEO in one Microsoft Teams channel and, with Direct chat on, in your 1:1 chat
+// with its app. The office reads both and the CEO posts as its own bot, with the email sender's app (Settings → Email): no
+// other credentials. Your messages (by your Entra object id) reach the CEO as yours; colleague bots' as theirs, never with
+// your authority. Decisions are never answered in Teams. Only who wrote each message, where, and what happened to it
+// reach the browser, never the text.
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 import { channelId, guid, MAX_MANAGERS, MAX_POLL_SECONDS, MAX_POSTS_PER_DAY, MAX_TEAMS_COLLEAGUES, MAX_TEAMS_NAME, MIN_POLL_SECONDS, serviceUrl } from '../../../shared/teams';
-import { CEO_ID, type TeamsSettings as Teams } from '../../../shared/types';
+import { CEO_ID, type TeamsDirectView, type TeamsSettings as Teams } from '../../../shared/types';
 
 const DOCS = 'https://github.com/leonvanzyl/cubefarm/blob/main/docs/teams.md';
+
+const DIRECT_STATUS: Record<TeamsDirectView['status'], string> = {
+  unknown: 'Not checked yet',
+  found: '✓ Chat found',
+  'not-added': 'Not added yet',
+  error: 'Error',
+};
 
 /** A text field saved when it loses focus, if it changed. */
 function Field(props: { label: string; value: string; placeholder: string; onSave: (v: string) => void; hint?: string }) {
@@ -67,6 +75,29 @@ export function TeamsSettings() {
         <input type="checkbox" checked={teams.enabled} disabled={!ready && !teams.enabled} onChange={(e) => void save({ enabled: e.target.checked })} />
         <span>{ceo} reads and posts in the Teams channel</span>
       </label>
+      <label className="toggle block">
+        <input type="checkbox" checked={teams.direct} disabled={teams.managers.length === 0 && !teams.direct} onChange={(e) => void save({ direct: e.target.checked })} />
+        <span>Direct chat: {ceo} reads and answers your 1:1 chat with it</span>
+      </label>
+      {teams.direct && (
+        <div className="notify-hook">
+          <p className="muted small">
+            Only your own chats (the ids below) are read, and only your messages in them count. Add {ceo} in Teams: Apps → {ceo} → Add, then Open. It needs the
+            Chat.Read.WhereInstalled permission (see <a href={DOCS}>docs/teams.md</a>).
+          </p>
+          <ul className="email-list">
+            {view.direct.map((d) => (
+              <li key={d.id} className="row wrap small">
+                <span className="grow">{d.name ? <b>{d.name}</b> : <code>{d.id}</code>}</span>
+                <span className={d.status === 'found' ? 'notify-ok' : d.status === 'error' ? 'term-error' : 'muted'} title={d.error}>
+                  {d.status === 'not-added' ? `Not added yet: open Apps → ${ceo} → Add` : DIRECT_STATUS[d.status]}
+                  {d.error && ` · ${d.error}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="notify-hook">
         <div className="row wrap">
           <b className="grow">Bot</b>
@@ -190,7 +221,7 @@ export function TeamsSettings() {
           {view.lastCheck ? `Last checked ${new Date(view.lastCheck).toLocaleTimeString()}` : 'Not checked yet'}
           {view.lastError && <span className="term-error"> · {view.lastError}</span>}
         </span>
-        <button className="btn btn-small" disabled={check.busy || !teams.enabled || !sender.set} onClick={() => void runCheck()}>
+        <button className="btn btn-small" disabled={check.busy || !(teams.enabled || teams.direct) || !sender.set} onClick={() => void runCheck()}>
           {check.busy ? 'Checking…' : 'Check now'}
         </button>
       </div>
@@ -198,13 +229,13 @@ export function TeamsSettings() {
       {view.items.length > 0 && (
         <ul className="email-list inbox-list">
           {view.items.map((i) => (
-            <li key={i.id} className="small inbox-item">
+            <li key={`${i.source ?? 'channel'}:${i.id}`} className="small inbox-item">
               <div>
-                <b>{i.from}</b>
+                <b>{i.from}</b> <span className="muted">· {i.source === 'direct' ? 'direct chat' : 'channel'}</span>
               </div>
               <div>
                 <span className={i.outcome === 'ignored' ? 'muted' : 'notify-ok'}>
-                  {i.outcome === 'delivered' ? `💬 To ${ceo} as yours` : i.outcome === 'colleague' ? `🤝 To ${ceo} as ${i.colleague ?? 'a colleague'}'s, not yours` : `Ignored: ${i.reason}`}
+                  {i.outcome === 'delivered' ? `💬 To ${ceo} as yours${i.source === 'direct' ? ' (Teams DM)' : ''}` : i.outcome === 'colleague' ? `🤝 To ${ceo} as ${i.colleague ?? 'a colleague'}'s, not yours` : `Ignored: ${i.reason}`}
                 </span>
                 <span className="muted"> · {new Date(i.at).toLocaleString()}</span>
               </div>

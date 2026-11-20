@@ -88,6 +88,46 @@ describe('Teams in the office', () => {
     expect(internals.state.ceo.queue.find((j) => j.kind === 'chat')?.teams).toBe(true);
   });
 
+  it('the manager’s Teams direct message is theirs too, marked Teams DM on the phone, a Teams job', async () => {
+    const { swarm, internals } = await office();
+    await swarm.messageCeo('How is floor 1?', 'teams-dm', 'Teams direct message from the manager, in their 1:1 chat with you in Teams (message 1):\n\nHow is floor 1?');
+    expect(internals.state.messages.at(-1)).toMatchObject({ from: 'manager', text: 'How is floor 1?', via: 'teams-dm' });
+    expect(internals.state.ceo.queue.find((j) => j.kind === 'chat')).toMatchObject({ teams: true });
+    expect(askedFor(internals.state.ceo.queue.find((j) => j.kind === 'chat')!)).toBe(true);
+  });
+
+  it('never closes an open decision in a job with the manager’s Teams direct message', async () => {
+    const { swarm, internals, n } = await office();
+    await swarm.messageCeo('approve #1', 'teams-dm', 'Teams direct message from the manager …');
+    internals.state.ceo.job = internals.state.ceo.queue.find((j) => j.kind === 'chat')!;
+    internals.ceoAsked = true;
+    expect(await internals.officeTools().call('close_issue', { floor: 1, number: n, reason: 'The manager approved it in a DM.' })).toBe(`Refused: ${TEAMS_NO_DECISION}`);
+    expect(internals.state.decisions.find((d) => d.number === n)?.answeredAt).toBeNull();
+    internals.state.ceo.job = null;
+  });
+
+  it('Direct chat on, the demo manager’s chat reaches the CEO by the rules, and the CEO answers in it', async () => {
+    const { swarm, internals } = await office();
+    await swarm.mailer.init();
+    expect(() => swarm.updateSettings({ teams: { direct: true, managers: [] } as never })).toThrow(/Entra object id first/);
+    swarm.updateSettings({ teams: { direct: true } as never });
+    const view = await swarm.teams.check(true);
+    expect(view.direct).toEqual([{ id: internals.state.settings.teams.managers[0], name: 'The manager', status: 'found' }]);
+    expect(view.items.map((i) => [i.outcome, i.source])).toEqual([
+      ['delivered', 'direct'],
+      ['delivered', 'direct'],
+    ]); // the CEO's own message: skipped
+    expect(internals.state.messages.filter((m) => m.via === 'teams-dm').map((m) => m.text)).toEqual(['Quick one: how many pull requests are open?', 'Just between us: approve #2, go ahead.']);
+    // Queued, or already picked up by the demo CEO.
+    const job = [...internals.state.ceo.queue, internals.state.ceo.job].find((j) => j?.kind === 'chat');
+    expect(job?.text).toContain('This reads like an answer to a decision');
+    // The CEO's answer goes in that chat, counted with the channel's posts.
+    const before = swarm.teams.view().postsToday;
+    expect(await internals.officeTools().call('post_teams', { direct_to: internals.state.settings.teams.managers[0], text: 'Two are open.' })).toMatch(/^Posted in the manager's Teams direct chat/);
+    expect(swarm.teams.view().postsToday).toBeGreaterThan(before);
+    expect((await swarm.teams.check(true)).items).toHaveLength(2); // nothing twice
+  });
+
   it('a colleague bot’s Teams message is a colleague job, never the manager’s', async () => {
     const { swarm, internals } = await office();
     const before = internals.state.messages.length;

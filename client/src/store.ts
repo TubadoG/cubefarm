@@ -278,7 +278,7 @@ export const useStore = create<State>((set, get) => ({
   emailSender: { set: false, mode: null, hint: '' },
   kimai: { tokenSet: false, entries: [], waiting: 0, failed: 0 },
   emailInbox: { lastCheck: null, lastError: null, items: [] },
-  teams: { lastCheck: null, lastError: null, items: [], postsToday: 0 },
+  teams: { lastCheck: null, lastError: null, items: [], postsToday: 0, direct: [] },
   pong: {},
   restarting: false,
   visitors: [],
