@@ -139,6 +139,21 @@ export function messageText(m: ChannelMessage): string {
     .trim();
 }
 
+/** Teams' own post when someone adds a tab to the channel; Graph shows it as that person's message. */
+export const TAB_ADDED_TEXT = 'I added a tab at the top of this channel. Check it out!';
+export const SYSTEM_POST = 'Teams system post';
+
+/**
+ * Whether Teams wrote it, not a person: a system event (any messageType but "message", or a systemEventMessage body),
+ * or a post whose whole text is Teams' "added a tab" notice, which Graph attributes to whoever added the tab. A message
+ * that only contains that sentence among other words is a person's.
+ */
+export function isSystemPost(m: ChannelMessage): boolean {
+  if (m.messageType && m.messageType !== 'message') return true;
+  if (/<systemEventMessage\b/i.test(m.body?.content ?? '')) return true;
+  return messageText(m).replace(/\s+/g, ' ').trim() === TAB_ADDED_TEXT;
+}
+
 const ACK_WORDS = new Set(
   'thanks thank you u thx ty cheers ok okay k kk got it noted ack acknowledged roger great perfect cool nice sounds good will do understood all done yes yep sure appreciated much very so a lot again received confirmed sg lgtm np no problem'.split(
     ' ',
@@ -511,19 +526,22 @@ export class TeamsChannel {
       s.seen.push(m.id);
       if (s.seen.length > KEEP_IDS) s.seen.splice(0, s.seen.length - KEEP_IDS);
       const a = author(m, who);
-      // System messages, deleted ones, the CEO's own posts and anything written before the switch went on: nothing to do.
-      if ((m.messageType && m.messageType !== 'message') || m.deletedDateTime || a.kind === 'self' || Date.parse(m.createdDateTime) < since) {
+      // Deleted messages, the CEO's own posts and anything written before the switch went on: nothing to do.
+      if (m.deletedDateTime || a.kind === 'self' || Date.parse(m.createdDateTime) < since) {
         quiet = true;
         continue;
       }
       const root = threadOf(m);
-      const thread = (s.threads[root] ??= { botReplies: 0, lastBot: false, at: now });
-      thread.at = now;
+      const system = isSystemPost(m);
+      const thread = system ? undefined : (s.threads[root] ??= { botReplies: 0, lastBot: false, at: now });
+      if (thread) thread.at = now;
       const text = messageText(m);
       let outcome: TeamsMessageView['outcome'] = 'ignored';
       let reason: string | undefined;
       let colleague: TeamsColleague | undefined;
-      if (a.kind === 'manager') {
+      // Teams' own posts (a tab added, a member joined) carry a person's name but aren't theirs: listed, never delivered.
+      if (!thread) reason = SYSTEM_POST;
+      else if (a.kind === 'manager') {
         // Addressed to someone else (another agent) and not to the CEO: theirs to answer.
         if (mentionsAnyone(m) && !mentionsCeo(m, app.appId, ceo)) reason = `for someone else, not ${ceo}`;
         else {
@@ -606,19 +624,21 @@ export class TeamsChannel {
         s.seen.push(key);
         if (s.seen.length > KEEP_IDS) s.seen.splice(0, s.seen.length - KEEP_IDS);
         const a = author(m, { appId: app.appId, managers: [managerId], colleagues: [] });
-        if ((m.messageType && m.messageType !== 'message') || m.deletedDateTime || a.kind === 'self' || Date.parse(m.createdDateTime) < since) {
+        if (m.deletedDateTime || a.kind === 'self' || Date.parse(m.createdDateTime) < since) {
           quiet = true;
           continue;
         }
-        // Only the manager whose chat it is speaks for the manager here; nobody else, person or bot.
-        const mine = a.kind === 'manager';
+        // Only the manager whose chat it is speaks for the manager here; nobody else, person or bot, and never Teams.
+        const system = isSystemPost(m);
+        const mine = a.kind === 'manager' && !system;
         if (mine) s.names[managerId] = a.name;
+        const reason = system ? SYSTEM_POST : 'not a manager';
         const item: TeamsMessageView = {
           id: m.id,
           from: 'name' in a ? a.name : 'unknown',
           at: Date.parse(m.createdDateTime),
           outcome: mine ? 'delivered' : 'ignored',
-          ...(mine ? {} : { reason: 'not a manager' }),
+          ...(mine ? {} : { reason }),
           source: 'direct',
         };
         s.items.unshift(item);
@@ -627,7 +647,7 @@ export class TeamsChannel {
         // Saved before it's delivered: a restart from here on never delivers it again.
         await this.deps.persist();
         quiet = false;
-        this.deps.log(`💬 teams: ${item.from} in a direct chat with ${ceo}: ${mine ? 'delivered' : 'ignored (not a manager)'}`);
+        this.deps.log(`💬 teams: ${item.from} in a direct chat with ${ceo}: ${mine ? 'delivered' : `ignored (${reason})`}`);
         if (mine) {
           const text = messageText(m);
           await this.deps.deliverManager(clip(text), directText(m, text, managerId), 'teams-dm');
