@@ -45,6 +45,7 @@ It ships on npm as `cubefarm` (`npx cubefarm`); it used to be called Office Swar
 | `npm run test:e2e` | optional, local only: Playwright (`e2e/`, `playwright.config.ts`): builds (`E2E_SKIP_BUILD=1` reuses your `dist/`), boots a demo office on `E2E_PORT` (default 4399; set it to your reserved port) with a temp `SWARM_HOME`, and smoke-tests it headless in a local Google Chrome, else Playwright's Chromium. Stops at once if the browser is missing: never install it mid-task |
 | `node scripts/smoke-package.mjs` | after a build: packs the npm package, installs it into a temp folder and boots its demo |
 | `npm run bench -- --port <yours>` | after a build: the scale benchmark (`scripts/bench.mjs`): boots the big-company demo headless, visits the lobby and three floors, writes FPS, frame-time p95, CPU per frame, draw calls, triangles, heap, audio nodes and websocket traffic to a JSON report (`--help`) |
+| `npm run teams-app -- --app-id <id> --tab-url <https url>` | builds the CEO's Teams app package (`teams-app/` → `teams-app/build/*.zip`, docs/teams.md) |
 | `node --import tsx server/index.ts --demo` | a demo office (see SAFETY for the env it needs) |
 
 CI (`.github/workflows/ci.yml`): Node 24, `npm ci` → `typecheck` → `test` → `build` → package smoke test, for every PR
@@ -115,6 +116,11 @@ Server (`server/`, Node + Express 5 + ws, run by tsx in development; esbuild bun
 - `email.ts`: the CEO's outbound email (docs/email.md): `Mailer` keeps the sender's credentials in `secrets.json`;
   `graphMail.ts` sends through Microsoft Graph (client secret, or a Key Vault-signed assertion via `az`), behind
   `Backend.email`. `mailInbox.ts` reads replies to the mailbox: the manager's own reach the CEO, colleagues' as theirs (never the manager's). The allowlist, approvals and daily cap are the swarm's, by `shared/email.ts`'s rules.
+- `teamsChannel.ts`: the CEO in one Teams channel (docs/teams.md), with the email sender's app: polls Graph (RSC), posts
+  as its bot through the Bot Framework (`post_teams`), outbound only. The manager's messages (by Entra object id) reach
+  the CEO as theirs, colleague bots' as theirs (never the manager's); no decision is answered in Teams; bot loops,
+  the daily cap and no-replay are enforced there and in `shared/teams.ts` (settings). The Teams app package is
+  `teams-app/`, zipped by `scripts/teamsApp.ts` (`npm run teams-app`).
 - `logo.ts`: the company logo (Settings → Company, `PUT /api/logo`): a PNG, JPEG or WebP the lobby sign draws beside the
   company name, in `<SWARM_HOME>/logo.*`; `settings.logoAt` says whether there is one.
 - `journal.ts`: the time-lapse journal (`<SWARM_HOME>/journal/<day>/`): records what `Swarm.broadcast` sends, a file
@@ -136,6 +142,7 @@ Shared (`shared/`, imported by both sides):
 - `watch.ts`: which terminal lines a tab gets: its floor, open panels, the workers list's latest lines.
 - `looks.ts`: the look editor's options and `cleanStyle` (an agent's `style`, checked on the server).
 - `email.ts`: Settings → Email's validation, the allowlist lookup, the daily cap and the footer.
+- `teams.ts`: Settings → Teams' validation (ids, the service URL's hosts), defaults and the daily post count.
 
 Client (`client/`, Vite root; React 19, R3F, drei, zustand):
 - `src/world/`: the 3D building: floors, desks, characters (`appearance.ts`, `characterParts.ts`, `Figure.tsx`, `face.ts`), elevator,

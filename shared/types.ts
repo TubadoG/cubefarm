@@ -350,6 +350,7 @@ export interface SwarmSettings {
   notify: NotifySettings;
   email: EmailSettings; // Settings → Email: whom the CEO may email (docs/email.md)
   kimai: KimaiSettings; // Settings → Time tracking: agents' working time as Kimai timesheets (docs/kimai.md)
+  teams: TeamsSettings; // Settings → Teams: the CEO in one Microsoft Teams channel (docs/teams.md)
   lead: LeadSettings; // the floor leads' models (docs/floor-lead.md)
 }
 
@@ -423,6 +424,42 @@ export interface EmailInboxView {
   lastCheck: number | null;
   lastError: string | null;
   items: InboundEmailView[]; // the latest 20, newest first
+}
+
+/** A colleague bot in the Teams channel: its messages reach the CEO as theirs, never the manager's (docs/teams.md). */
+export interface TeamsColleague {
+  name: string; // as Teams shows the bot
+  appId: string; // its Entra app (bot) id, lowercased; '' = matched by name only
+}
+
+/** Settings → Teams (shared/teams.ts): the channel the CEO reads and posts in, and whose messages count. */
+export interface TeamsSettings {
+  enabled: boolean;
+  teamId: string; // the team's group id ('' = not set)
+  channelId: string; // 19:…@thread.tacv2 ('' = not set)
+  serviceUrl: string; // the Bot Framework service URL posts go to
+  pollSeconds: number; // how often the channel is read
+  managers: string[]; // Entra object ids whose messages count as the manager's, lowercased
+  colleagues: TeamsColleague[];
+  postsPerDay: number; // the CEO's posts in any 24 hours, apart from email's cap
+}
+
+/** One Teams message the office read, and what it did with it. Never the text. */
+export interface TeamsMessageView {
+  id: string;
+  from: string; // the author's display name
+  at: number;
+  outcome: 'delivered' | 'colleague' | 'ignored';
+  reason?: string; // why it was ignored
+  colleague?: string; // the colleague's name (outcome colleague)
+}
+
+/** Settings → Teams' status. */
+export interface TeamsView {
+  lastCheck: number | null;
+  lastError: string | null;
+  items: TeamsMessageView[]; // the latest 20, newest first
+  postsToday: number; // the CEO's posts in the last 24 hours
 }
 
 /** Time tracking's mode: off, dry-run (every entry built and shown, nothing sent) or live (posted to Kimai). */
@@ -683,7 +720,7 @@ export interface PhoneMessage {
   at: number;
   requestId?: string; // a hire / let-go proposal this message is about
   emailId?: string; // an email waiting for the manager's OK
-  via?: 'email'; // the manager's message came in by email (the office mailbox)
+  via?: 'email' | 'teams'; // the manager's message came in by email (the office mailbox) or in the Teams channel
   voice?: Exclude<VoiceProvider, 'off'>; // who read it aloud when it arrived (absent: nobody), for the phone's ▶ replay
 }
 
@@ -739,6 +776,7 @@ export interface WorldSnapshot {
   emailSender: EmailSenderView;
   kimai?: KimaiView; // Settings → Time tracking (absent in old journals)
   emailInbox?: EmailInboxView; // Settings → Email's inbox status (absent in old journals)
+  teams?: TeamsView; // Settings → Teams' status (absent in old journals)
   progress: ProgressView; // coins, decorations and achievements (#210)
   pong: Record<string, PongRow[]>; // each floor's ping-pong leaderboard by repo id, best first
   decisions?: DecisionView[]; // the Decision room's cards: every open decision on every floor (absent in old journals)
@@ -793,6 +831,7 @@ export type ServerEvent =
   | { type: 'emailSender'; emailSender: EmailSenderView }
   | { type: 'kimai'; kimai: KimaiView }
   | { type: 'emailInbox'; emailInbox: EmailInboxView }
+  | { type: 'teams'; teams: TeamsView }
   | { type: 'ceo'; ceo: CeoInfo }
   | { type: 'message'; message: PhoneMessage }
   | { type: 'phoneRead'; at: number }

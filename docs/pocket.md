@@ -93,7 +93,8 @@ agents. **Remove** deletes them. A demo office keeps its own `demo-secrets.json`
 
 The CEO can also email people you list in **Settings → Email**, with your OK first for anyone you mark **Ask me**;
 those emails wait in **Approvals** and notify you as "An email waits for my OK". Setup (a Microsoft 365 mailbox and
-an app registration) is in [email.md](email.md).
+an app registration) is in [email.md](email.md). The same app can put the CEO in a Teams channel: see
+[teams.md](teams.md).
 
 ## Reach the office from your phone
 

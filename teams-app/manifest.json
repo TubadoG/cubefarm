@@ -1,0 +1,59 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.25/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.25",
+  "version": "1.0.0",
+  "id": "{{MANIFEST_ID}}",
+  "developer": {
+    "name": "{{DEVELOPER}}",
+    "websiteUrl": "{{WEBSITE}}",
+    "privacyUrl": "{{WEBSITE}}",
+    "termsOfUseUrl": "{{WEBSITE}}"
+  },
+  "name": {
+    "short": "{{NAME}}",
+    "full": "{{NAME}}, the office CEO"
+  },
+  "description": {
+    "short": "{{NAME}}, the office CEO, reads and replies in this team only.",
+    "full": "{{NAME}}, the CEO of a cubefarm office (an AI agent), reads channel messages in the one team this app is added to (resource-specific consent) and replies in threads as its own bot. The office checks the channel on a timer; nothing listens for inbound traffic. It cannot read any other team. Decisions are never answered in Teams."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#2F4A3A",
+  "webApplicationInfo": {
+    "id": "{{APP_ID}}",
+    "resource": "https://RscPermission"
+  },
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [
+        {
+          "name": "ChannelMessage.Read.Group",
+          "type": "Application"
+        }
+      ]
+    }
+  },
+  "validDomains": ["{{TAB_HOST}}"],
+  "configurableTabs": [
+    {
+      "configurationUrl": "{{TAB_BASE}}config.html",
+      "canUpdateConfiguration": false,
+      "scopes": ["team"],
+      "context": ["channelTab"]
+    }
+  ],
+  "supportsChannelFeatures": "tier1",
+  "bots": [
+    {
+      "botId": "{{APP_ID}}",
+      "scopes": ["team"],
+      "isNotificationOnly": false,
+      "supportsFiles": false,
+      "supportsCalling": false,
+      "supportsVideo": false
+    }
+  ]
+}

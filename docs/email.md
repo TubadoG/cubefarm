@@ -179,6 +179,11 @@ Not covered: replies from anyone not on your addresses or colleagues (listed onl
 reaches the CEO as an ordinary message, and the CEO can act on it with its tools; one-tap decisions stay in the
 Decision room), and marking or filing mail.
 
+## Teams
+
+The same app registration can also put the CEO in one Microsoft Teams channel, reading it and answering as its own
+bot, with the same rules for you and your colleagues. See [teams.md](teams.md).
+
 ## The demo
 
 A demo office starts with a made-up sender and a short list (one person behind **Ask me**, one whose address contains

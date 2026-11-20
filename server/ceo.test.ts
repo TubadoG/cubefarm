@@ -105,6 +105,7 @@ describe('office tools', () => {
       setDependencies: async () => '',
       closeIssue: async () => '',
       sendEmail: async () => '',
+      postTeams: async () => '',
     });
     const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
     await office.server.instance.connect(serverSide);
@@ -122,6 +123,7 @@ describe('office tools', () => {
       'company_status',
       'configure_agent',
       'file_issue',
+      'post_teams',
       'scale_team',
       'send_email',
       'set_dependencies',
