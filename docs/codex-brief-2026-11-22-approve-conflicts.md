@@ -108,3 +108,9 @@ All must pass. Paste the vitest summary line into the final log entry.
 - 2026-11-22 23:06 UTC — Task 2 complete: server/swarm.ts and server/approveDecision.test.ts; hide conflicting cards, send stuck swarm heads for one budgeted conflict fix, restart returning unanswered clocks while preserving already-applied defaults. Typecheck passed; targeted vitest: Test Files 4 passed (4), Tests 63 passed (63).
 
 - 2026-11-22 23:12 UTC — Tasks 1–2 verification follow-up: server/fixOutcome.ts, its tests, and swarm.ts preserve unapproved conflict-fix behavior and avoid a duplicate QA broadcast. Typecheck and full vitest passed: Test Files 238 passed (238); Tests 2774 passed | 2 skipped (2776). Scale-test variability also reproduced on main; budget unchanged.
+
+- 2026-11-22 23:13 UTC — Task 3 complete: added the requested release note to CHANGELOG.md (no existing changelog found). Documentation reviewed; typecheck, full vitest, and build pass.
+
+- 2026-11-22 23:13 UTC — Final: npm run typecheck, npx vitest run, npm run build all passed. Vitest: Test Files 238 passed (238); Tests 2774 passed | 2 skipped (2776). All work committed on fix/approve-conflicts; no push, real office state, remote services, or database commands.
+  Demo script (manual, not run): `SWARM_HOME=$(mktemp -d) npm run demo`; open a held PR card recommending merge, then approve after a competing demo merge makes its branch conflict but before the next listing refresh hides it. Observe the office explanation, developer conflict fix, green checks, and automatic merge without a second card. If the refresh hides it first, verify it returns only once mergeable; the fake-backend approval test deterministically covers the race.
+ALL TASKS COMPLETE
