@@ -6309,7 +6309,7 @@ export class Swarm {
       if (rec.repoId !== repo.id || rec.status !== 'needs-human' || !rec.escalated || rec.mergeFixes >= MAX_MERGE_FIXES) continue;
       const pr = pulls.find((p) => p.number === rec.prNumber && hidden.has(p.number));
       if (!pr || !pr.headRefName.startsWith('swarm/') || rec.conflictFixSha === pr.headSha) continue;
-      this.setQa(rec, { conflictFixSha: pr.headSha });
+      rec.conflictFixSha = pr.headSha; // sendBack saves it with the status change, without broadcasting the old card again
       this.sendBack(repo, rec, 'conflict', `It conflicts with ${repo.defaultBranch}.`, false);
     }
   }

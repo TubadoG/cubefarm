@@ -19,6 +19,7 @@ export interface FixRecord {
   sessionFailures: number;
   testedSha: string | null;
   passedSha: string | null;
+  approvedSha?: string | null;
   fixReason: 'qa' | 'checks' | 'conflict' | null;
   preQa: PreQa | null;
   qaChecks: PullInfo['checks'] | null; // GitHub's checks on the PR when QA reported (null: not recorded)
@@ -80,9 +81,9 @@ export function fixOutcome(rec: FixRecord, head: string | null, minutes: number,
   }
   // A conflict fix for a PR QA failed on its last round (passedSha null) also fixed QA's findings: QA re-tests it.
   if (rec.fixReason === 'checks' || (rec.fixReason === 'conflict' && rec.passedSha)) {
-    // Only conflict resolution carries sign-off to the new head. Other new commits still go through QA again;
-    // a checks fix that only re-runs a flake has the same head and can merge as soon as it turns green.
-    const passed = rec.fixReason === 'conflict' && head ? { passedSha: head } : {};
+    // An approved conflict resolution carries sign-off to the new head. Without an explicit approval, keep the
+    // existing QA path for changed code; a checks fix that only re-runs a flake still has the same signed-off head.
+    const passed = rec.approvedSha && rec.fixReason === 'conflict' && head ? { passedSha: head } : {};
     return { set: { status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks', ...passed }, log: { kind: 'done', text: `✔ PR #${pr} fixed in ${minutes}m. Back in line to merge.` }, pushed: true };
   }
   return { set: { status: 'queued', round: rec.round + 1, sessionFailures: 0 }, log: { kind: 'done', text: `✔ Fix pushed for PR #${pr} in ${minutes}m. Back to QA.` }, pushed: true };
