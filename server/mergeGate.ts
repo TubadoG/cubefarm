@@ -25,6 +25,16 @@ export type MergeBookkeeping = Partial<Pick<MergeRecord, 'passedSha' | 'pendingS
 
 export type MergePull = Pick<PullInfo, 'isDraft' | 'mergeable' | 'mergeState' | 'headSha' | 'checks' | 'failedChecks' | 'pendingChecks'>;
 
+/** The manager approved this head: check GitHub's current obstacles before trying its merge. */
+export function approvedMergeStep(pr: MergePull): { do: 'merge' } | { do: 'conflict' } | { do: 'update-branch' } | { do: 'wait-checks' } | { do: 'checks-failing' } | { do: 'details' } {
+  if (pr.mergeable === 'CONFLICTING' || pr.mergeState === 'DIRTY') return { do: 'conflict' };
+  if (pr.mergeable === 'UNKNOWN' || pr.mergeState === 'UNKNOWN') return { do: 'details' };
+  if (pr.mergeState === 'BEHIND') return { do: 'update-branch' };
+  if (pr.checks === 'pending') return { do: 'wait-checks' };
+  if (pr.checks === 'failing') return { do: 'checks-failing' };
+  return { do: 'merge' };
+}
+
 /** What auto-merge does next with a QA-passed PR. */
 export type MergeStep = { set: MergeBookkeeping } & (
   | { do: 'wait'; note?: string; alert?: boolean } // no note: leave the card as it is; alert: tell the manager checks are slow

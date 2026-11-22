@@ -31,6 +31,7 @@ export type FixPatch = Partial<{
   sessionFailures: number;
   mergeNote: string | null;
   fixReason: FixRecord['fixReason'];
+  passedSha: string | null;
   preQa: PreQa | null;
 }>;
 
@@ -79,8 +80,10 @@ export function fixOutcome(rec: FixRecord, head: string | null, minutes: number,
   }
   // A conflict fix for a PR QA failed on its last round (passedSha null) also fixed QA's findings: QA re-tests it.
   if (rec.fixReason === 'checks' || (rec.fixReason === 'conflict' && rec.passedSha)) {
-    // Back in line to merge: new commits go through QA again first, a re-run of flaky checks doesn't.
-    return { set: { status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks' }, log: { kind: 'done', text: `✔ PR #${pr} fixed in ${minutes}m. Back in line to merge.` }, pushed: true };
+    // Only conflict resolution carries sign-off to the new head. Other new commits still go through QA again;
+    // a checks fix that only re-runs a flake has the same head and can merge as soon as it turns green.
+    const passed = rec.fixReason === 'conflict' && head ? { passedSha: head } : {};
+    return { set: { status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks', ...passed }, log: { kind: 'done', text: `✔ PR #${pr} fixed in ${minutes}m. Back in line to merge.` }, pushed: true };
   }
   return { set: { status: 'queued', round: rec.round + 1, sessionFailures: 0 }, log: { kind: 'done', text: `✔ Fix pushed for PR #${pr} in ${minutes}m. Back to QA.` }, pushed: true };
 }

@@ -48,7 +48,7 @@ describe('fixOutcome', () => {
 
     it('with a new commit goes back in line to merge', () => {
       expect(fixOutcome(conflict, NEW, 3)).toEqual({
-        set: { status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks' },
+        set: { status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks', passedSha: NEW },
         log: { kind: 'done', text: '✔ PR #45 fixed in 3m. Back in line to merge.' },
         pushed: true,
       });
@@ -139,7 +139,7 @@ describe('fixOutcome', () => {
     it('leaves conflict fixes as they were', () => {
       const conflict = record({ fixReason: 'conflict', passedSha: OLD, qaChecks: 'failing' });
       expect(fixOutcome(conflict, OLD, 3, true, 'passing').set).toEqual({ status: 'failed', sessionFailures: 1 });
-      expect(fixOutcome(conflict, NEW, 3, true, 'passing').set).toEqual({ status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks' });
+      expect(fixOutcome(conflict, NEW, 3, true, 'passing').set).toEqual({ status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks', passedSha: NEW });
     });
 
     it('is an ordinary QA fix when a commit was pushed too', () => {

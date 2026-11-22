@@ -17,7 +17,7 @@ import { fixGoesTo, pickTester, PREP_HOLD_MS, prepFailure, prepHeld, type PrepSt
 import { HttpError } from './httpError.ts';
 import { IssueAges } from './issueAges.ts';
 import { issuesResolvedBy, issueTaken } from './issueClaims.ts';
-import { CHECKS_ALERT_MS, failedRunIds, MAX_MERGE_FIXES, MERGE_RETRY_MS, mergeStep } from './mergeGate.ts';
+import { CHECKS_ALERT_MS, failedRunIds, MAX_MERGE_FIXES, MERGE_RETRY_MS, approvedMergeStep, mergeStep } from './mergeGate.ts';
 import { orphanedQa } from './qaOrphans.ts';
 import { catchUp, failedRunId, logTail, noChangeReason, PR_LIMITS_VERSION, QA_STOPPED, unpushedFix } from './prOwnership.ts';
 import { conflictFixInstructions, MAX_QA_ROUNDS, qaGate, qaOutcome, type PreQa, type QaNext } from './qaOutcome.ts';
@@ -186,6 +186,8 @@ interface QaRecord extends Omit<QaView, 'ceoLooking' | 'stuckPick'> {
   sessionFailures: number;
   testedSha: string | null; // the head commit QA is testing
   passedSha: string | null; // the head commit QA signed off on: auto-merge merges exactly that
+  approvedSha?: string | null; // the head the manager approved; a conflict-only fix carries the approval forward
+  approvedAt?: number | null;
   fixReason: 'qa' | 'checks' | 'conflict' | null; // why it was last sent back to a developer
   mergeFixes: number; // times it went back for failing checks or conflicts
   retests: number; // QA rounds caused by merge fixes or new commits rather than by QA failing it
@@ -829,6 +831,8 @@ export class Swarm {
           ...q,
           testedSha: q.testedSha ?? null,
           passedSha: q.passedSha ?? null,
+          approvedSha: q.approvedSha ?? null,
+          approvedAt: q.approvedAt ?? null,
           fixReason: q.fixReason ?? null,
           mergeFixes: q.mergeFixes ?? 0,
           retests: q.retests ?? 0,
@@ -1385,6 +1389,8 @@ export class Swarm {
 
   private setQa(rec: QaRecord, patch: Partial<QaRecord>) {
     const told = rec.status === 'needs-human' && rec.escalated;
+    // A new QA round asks for a fresh approval too; only conflict resolution stays in the approved merge line.
+    if (patch.status === 'queued') Object.assign(patch, { approvedSha: null, approvedAt: null });
     Object.assign(rec, patch, { updatedAt: Date.now() });
     if (rec.status !== 'passed') rec.heldFor = null; // a new pass weighs the hold again
     if (!this.state.qa.includes(rec)) return; // it left QA (its PR closed) while a session on it was still wrapping up
@@ -1733,11 +1739,11 @@ export class Swarm {
    */
   private async advanceMerges(repo: PersistedRepo) {
     const rt = this.repoRt.get(repo.id);
-    if (!rt || !repo.autoMerge || rt.merging) return;
+    if (!rt || rt.merging) return;
     rt.merging = true;
     let merged = false;
     try {
-      for (const rec of this.state.qa.filter((q) => q.repoId === repo.id && q.status === 'passed')) {
+      for (const rec of this.state.qa.filter((q) => q.repoId === repo.id && q.status === 'passed' && (repo.autoMerge || q.approvedSha))) {
         const pr = rt.pulls.find((p) => p.number === rec.prNumber && p.state === 'OPEN');
         if (!pr || !pr.headRefName.startsWith('swarm/')) continue; // people's own PRs are theirs to merge
         // Only act on PR data fetched after the record last changed (a fix may have just pushed).
@@ -1765,6 +1771,7 @@ export class Swarm {
    * floor, work that isn't routine. null: it may merge itself. Its changed files are read once per head commit.
    */
   private async holdFor(repo: PersistedRepo, pr: PullInfo): Promise<string | null> {
+    if (this.state.qa.some((q) => q.repoId === repo.id && q.prNumber === pr.number && q.approvedSha)) return null;
     if (!repo.holdPaths.length && !repo.routineOnly) return holdReason(pr.labels, null, []);
     const key = `${repo.id}#${pr.number}`;
     let seen = this.prFilesSeen.get(key);
@@ -1793,8 +1800,8 @@ export class Swarm {
     let step = mergeStep(pr, rec, Date.now(), { base: repo.defaultBranch });
     if (step.do === 'details') {
       // GitHub works mergeability out lazily and lists often say UNKNOWN; asking about the PR itself gets an answer.
-      const d = await this.backend.prDetails(repo.fullName, pr.number);
-      pr = { ...pr, headSha: d.headSha, mergeable: d.mergeable, mergeState: d.mergeState };
+      pr = await this.mergeDetails(repo, pr.number, pr);
+      if (rec.approvedSha && approvedMergeStep(pr).do === 'details') return this.mergeNote(rec, 'GitHub is checking it can merge');
       step = mergeStep(pr, rec, Date.now(), { base: repo.defaultBranch, detailed: true });
     }
     Object.assign(rec, step.set);
@@ -1823,11 +1830,7 @@ export class Swarm {
       return step.note === undefined ? false : this.mergeNote(rec, step.note);
     }
     if (step.do === 'update-branch') {
-      // The repo only merges up-to-date branches. GitHub merges the base in cleanly (or refuses); CI checks the result.
-      this.mergeNote(rec, `updating the branch with ${repo.defaultBranch}`);
-      await this.backend.updateBranch(repo.fullName, pr.number);
-      const details = await this.backend.prDetails(repo.fullName, pr.number);
-      this.setQa(rec, { passedSha: details.headSha });
+      await this.updateMergeBranch(repo, rec, pr);
       return false;
     }
     if (step.do !== 'merge' || held) return false;
@@ -1856,6 +1859,75 @@ export class Swarm {
     this.notifyMerge(repo, pr.number, pr.title);
     await this.closeResolvedIssues(repo, pr.number, pr);
     return true;
+  }
+
+  /** Fresh check names come from details; keep run URLs from the listing only when it describes the same head. */
+  private async mergeDetails(repo: PersistedRepo, number: number, listed?: PullInfo): Promise<PullInfo> {
+    const details = await this.backend.prDetails(repo.fullName, number);
+    return {
+      isDraft: false, reviewDecision: null, createdAt: '', mergedAt: null, additions: 0, deletions: 0,
+      ...listed, ...details,
+      failedChecks: details.failedChecks.map((name) => ({ name, url: listed?.headSha === details.headSha ? listed.failedChecks.find((c) => c.name === name)?.url ?? null : null })),
+    };
+  }
+
+  /** Bringing the base into a passed branch preserves its sign-off; CI still checks the resulting head. */
+  private async updateMergeBranch(repo: PersistedRepo, rec: QaRecord, pr: PullInfo) {
+    this.mergeNote(rec, `updating the branch with ${repo.defaultBranch}`);
+    await this.backend.updateBranch(repo.fullName, pr.number);
+    const details = await this.backend.prDetails(repo.fullName, pr.number);
+    this.setQa(rec, { passedSha: details.headSha });
+  }
+
+  /**
+   * An explicit approval survives conflicts, running checks and a GitHub merge race. Keep it on the QA record before
+   * doing any work, so the normal merge gate can finish later (even on a floor with automatic merging turned off).
+   * People's own branches keep the manager's existing direct-merge action; the office never takes over their fixes.
+   */
+  private async approveMerge(repo: PersistedRepo, number: number): Promise<string | null> {
+    const listed = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === number);
+    let pr = await this.mergeDetails(repo, number, listed);
+    if (!pr.headRefName.startsWith('swarm/')) {
+      await this.mergePull(repo.id, number);
+      return null;
+    }
+    let step = approvedMergeStep(pr);
+    if (step.do === 'details') {
+      pr = await this.mergeDetails(repo, number, pr);
+      step = approvedMergeStep(pr);
+      if (step.do === 'details') step = { do: 'wait-checks' };
+    }
+    let rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === number);
+    if (!rec) {
+      this.queueQa(repo, number, null, pr.closesIssues[0] ?? null);
+      rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === number)!;
+    }
+    this.setQa(rec, { approvedSha: pr.headSha, approvedAt: Date.now(), status: 'passed', heldFor: null, passedSha: pr.headSha, preQa: null, mergeRetryAt: null });
+    try {
+      if (step.do === 'merge') {
+        await this.mergePull(repo.id, number);
+        return null;
+      }
+      if (step.do === 'conflict') {
+        this.sendBack(repo, rec, 'conflict', `It conflicts with ${repo.defaultBranch}.`, rec.mergeFixes >= MAX_MERGE_FIXES);
+        return rec.status === 'needs-human'
+          ? 'It still conflicts after the fix budget was used; your approval is saved while it waits for help.'
+          : `It conflicts with ${repo.defaultBranch}, so a developer resolves that first; it merges by itself once the checks are green.`;
+      }
+      if (step.do === 'update-branch') {
+        await this.updateMergeBranch(repo, rec, pr);
+        return `Its branch is being brought up to date with ${repo.defaultBranch}; it merges by itself once the checks are green.`;
+      }
+      if (step.do === 'checks-failing') {
+        await this.advanceMerge(repo, rec, pr);
+        return 'Its checks are failing, so the office re-runs them or sends it to a developer; it merges by itself once they are green.';
+      }
+      this.mergeNote(rec, 'waiting for checks and mergeability');
+      return 'It is waiting for checks and GitHub to confirm it can merge; it merges by itself once ready.';
+    } catch (err) {
+      this.setQa(rec, { mergeRetryAt: Date.now() + MERGE_RETRY_MS, mergeNote: `merge blocked: ${oneLine(err)}` });
+      return 'GitHub could not finish the merge yet; your approval is saved and the office retries through the merge gate.';
+    }
   }
 
   /**
@@ -6295,8 +6367,13 @@ export class Swarm {
       if (issue) issue.labels = [...issue.labels.filter((l) => !remove.includes(l.toLowerCase()) && !add.includes(l)), ...add];
       this.emitRepo(repo);
       setTimeout(() => this.schedule(), 200);
-    } else if (plan.pr?.do === 'merge') await this.mergePull(repo.id, number);
-    else if (plan.pr?.do === 'close') await this.closePull(repo.id, number);
+    } else if (plan.pr?.do === 'merge') {
+      const next = await this.approveMerge(repo, number);
+      if (next) {
+        plan.summary = `${plan.summary.replace(/[.!\s]+$/, '')}. ${next}`;
+        this.answered(repo.id, item.kind, number, plan.summary);
+      }
+    } else if (plan.pr?.do === 'close') await this.closePull(repo.id, number);
     else if (plan.pr?.do === 'send-back') {
       const rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === number);
       if (rec?.status === 'passed') this.returnHeldPr(rec, `From the manager: ${plan.pr.note}`);

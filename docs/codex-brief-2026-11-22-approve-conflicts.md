@@ -90,3 +90,5 @@ All must pass. Paste the vitest summary line into the final log entry.
 ## 6. Status log (Codex appends; Claude reads)
 
 - 2026-11-22 — Claude: brief written at main `35662a1`. Waiting for Codex.
+
+- 2026-11-22 23:04 UTC — Task 1 complete: server/{swarm,mergeGate,fixOutcome}.ts and their tests plus approveDecision.test.ts; approvals survive conflict fixes/merge races, unrelated commits clear approval. Typecheck passed; targeted vitest: Test Files 4 passed (4), Tests 74 passed (74).
