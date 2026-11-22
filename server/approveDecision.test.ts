@@ -5,21 +5,24 @@ import type { DecisionView } from '../shared/decisions.ts';
 import { createDemoBackend } from './demo.ts';
 import { Swarm } from './swarm.ts';
 import type { FixRecord } from './fixOutcome.ts';
-import { MERGE_RETRY_MS } from './mergeGate.ts';
+import type { DecisionRecord } from './decisionClock.ts';
+import { MAX_MERGE_FIXES, MERGE_RETRY_MS } from './mergeGate.ts';
 
 const REPO = 'demo-co/weather-api';
 const PR = 79;
 type Rec = FixRecord & {
   status: string; approvedSha?: string | null; approvedAt?: number | null; heldFor?: string | null;
-  mergeRetryAt: number | null; mergeFixes: number; updatedAt: number; escalated: boolean;
+  conflictFixSha?: string | null; mergeRetryAt: number | null; mergeFixes: number; updatedAt: number; escalated: boolean;
 };
 type Internals = {
-  state: { qa: Rec[]; messages: { text: string }[]; agents: { id: string; status: string; prNumber: number | null }[] };
+  state: { decisions: DecisionRecord[]; qa: Rec[]; messages: { text: string }[]; agents: { id: string; status: string; prNumber: number | null }[] };
   repoRt: Map<string, { pulls: PullInfo[]; syncing: boolean; fetchedAt: number }>;
   briefs: Map<string, Brief>;
   repo(id: string): { autoMerge: boolean };
   queueQa(repo: unknown, number: number, dev: null, issue: null): void;
   advanceMerges(repo: unknown): Promise<void>;
+  reconcileDecisionConflicts(repo: unknown): void;
+  openDecisions(): { number: number; reason: string }[];
   setQa(rec: Rec, patch: object): void;
   onFixFinished(agent: unknown, repo: unknown, result: object): Promise<void>;
   decisionViews(): DecisionView[];
@@ -176,5 +179,92 @@ describe('approving a PR through the merge gate', () => {
     await o.approve();
     expect(o.merge).toHaveBeenCalledExactlyOnceWith(REPO, PR, 'squash');
     expect(o.rec.approvedSha).toBeUndefined();
+  });
+});
+
+
+describe('conflicts in the Decision room', () => {
+  it.each(['held', 'stuck'] as const)('hides a %s card for conflicts or DIRTY, but shows MERGEABLE and UNKNOWN', async (reason) => {
+    const o = await office();
+    if (reason === 'stuck') o.x.setQa(o.rec, { status: 'needs-human', escalated: true });
+    for (const patch of [
+      { mergeable: 'CONFLICTING', mergeState: 'CLEAN' },
+      { mergeable: 'MERGEABLE', mergeState: 'DIRTY' },
+    ]) {
+      Object.assign(o.listed, patch);
+      expect(o.x.openDecisions()).toEqual([]);
+    }
+    for (const mergeable of ['MERGEABLE', 'UNKNOWN']) {
+      Object.assign(o.listed, { mergeable, mergeState: 'UNKNOWN' });
+      expect(o.x.openDecisions()).toContainEqual(expect.objectContaining({ number: PR, reason }));
+    }
+  });
+
+  it('sends a stuck conflict back once per head, even when the same record is stuck again', async () => {
+    const o = await office();
+    Object.assign(o.listed, { mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+    o.x.setQa(o.rec, { status: 'needs-human', escalated: true });
+    o.x.reconcileDecisionConflicts(o.repo);
+    expect(o.rec).toMatchObject({ status: 'failed', fixReason: 'conflict', mergeFixes: 1, conflictFixSha: 'approved-head' });
+    o.x.setQa(o.rec, { status: 'needs-human', escalated: true });
+    o.x.reconcileDecisionConflicts(o.repo);
+    expect(o.rec).toMatchObject({ status: 'needs-human', mergeFixes: 1 });
+    o.listed.headSha = 'new-head';
+    o.x.reconcileDecisionConflicts(o.repo);
+    expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 2, conflictFixSha: 'new-head' });
+  });
+
+  it('respects the fix budget and leaves non-swarm branches with their owners', async () => {
+    const o = await office();
+    o.listed.mergeable = 'CONFLICTING';
+    o.x.setQa(o.rec, { status: 'needs-human', escalated: true, mergeFixes: MAX_MERGE_FIXES });
+    o.x.reconcileDecisionConflicts(o.repo);
+    expect(o.rec).toMatchObject({ status: 'needs-human', mergeFixes: MAX_MERGE_FIXES });
+    o.rec.mergeFixes = 0;
+    o.listed.headRefName = 'bryan/change';
+    o.x.reconcileDecisionConflicts(o.repo);
+    expect(o.rec).toMatchObject({ status: 'needs-human', mergeFixes: 0 });
+  });
+
+  it('leaves held conflict fixes to advanceMerges without double-sending', async () => {
+    const o = await office({ mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+    o.rt.pulls = [o.live];
+    o.x.reconcileDecisionConflicts(o.repo);
+    expect(o.rec).toMatchObject({ status: 'passed', mergeFixes: 0 });
+    await o.advance();
+    o.x.reconcileDecisionConflicts(o.repo);
+    expect(o.rec).toMatchObject({ status: 'failed', fixReason: 'conflict', mergeFixes: 1 });
+  });
+
+  it('restarts a returning card deadline even if it disappeared between clock ticks; other deadlines stay put', async () => {
+    const o = await office();
+    const second = { ...o.listed, number: PR + 1 };
+    o.rt.pulls.push(second);
+    o.x.queueQa(o.repo, second.number, null, null);
+    o.x.setQa(o.x.state.qa[1], { status: 'passed', heldFor: 'held' });
+    await o.swarm.decisionTick();
+    const firstDeadline = o.x.decisionViews().find((d) => d.number === PR)!.deadline!;
+    const otherDeadline = o.x.decisionViews().find((d) => d.number === second.number)!.deadline;
+    vi.setSystemTime(firstDeadline + 1);
+    o.listed.mergeable = 'CONFLICTING';
+    o.x.reconcileDecisionConflicts(o.repo); // sync saw the hidden card before the next clock tick
+    expect(o.x.state.decisions.some((d) => d.number === PR)).toBe(false);
+    o.listed.mergeable = 'MERGEABLE';
+    await o.swarm.decisionTick();
+    expect(o.x.decisionViews().find((d) => d.number === PR)!.deadline).toBe(Date.now() + 48 * 3_600_000);
+    expect(o.x.decisionViews().find((d) => d.number === second.number)!.deadline).toBe(otherDeadline);
+  });
+
+  it('does not restart a default that was already applied', async () => {
+    const o = await office();
+    await o.swarm.decisionTick();
+    const clock = o.x.state.decisions.find((d) => d.number === PR)!;
+    clock.appliedAt = Date.now();
+    o.listed.mergeable = 'CONFLICTING';
+    o.x.reconcileDecisionConflicts(o.repo);
+    o.listed.mergeable = 'MERGEABLE';
+    await o.swarm.decisionTick();
+    expect(o.x.state.decisions.find((d) => d.number === PR)).toBe(clock);
+    expect(o.x.decisionViews()[0].deadline).toBeNull();
   });
 });

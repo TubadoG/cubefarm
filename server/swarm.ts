@@ -188,6 +188,7 @@ interface QaRecord extends Omit<QaView, 'ceoLooking' | 'stuckPick'> {
   passedSha: string | null; // the head commit QA signed off on: auto-merge merges exactly that
   approvedSha?: string | null; // the head the manager approved; a conflict-only fix carries the approval forward
   approvedAt?: number | null;
+  conflictFixSha?: string | null; // a stuck PR has already been sent for conflict resolution on this head
   fixReason: 'qa' | 'checks' | 'conflict' | null; // why it was last sent back to a developer
   mergeFixes: number; // times it went back for failing checks or conflicts
   retests: number; // QA rounds caused by merge fixes or new commits rather than by QA failing it
@@ -833,6 +834,7 @@ export class Swarm {
           passedSha: q.passedSha ?? null,
           approvedSha: q.approvedSha ?? null,
           approvedAt: q.approvedAt ?? null,
+          conflictFixSha: q.conflictFixSha ?? null,
           fixReason: q.fixReason ?? null,
           mergeFixes: q.mergeFixes ?? 0,
           retests: q.retests ?? 0,
@@ -2132,6 +2134,7 @@ export class Swarm {
         rt.lastMergedAt = newest;
         void this.syncFolder(repo);
       }
+      this.reconcileDecisionConflicts(repo);
       void this.advanceMerges(repo);
       this.emitDecisions();
       if (this.openDecisions().some((o) => !this.briefs.has(decisionKey(o)))) this.decisionTickSoon(); // a new card needs its brief
@@ -6095,7 +6098,7 @@ export class Swarm {
       for (const q of this.state.qa) {
         if (q.repoId !== repo.id || q.status !== 'passed' || !q.heldFor) continue;
         const pr = rt.pulls.find((p) => p.number === q.prNumber && p.state === 'OPEN');
-        if (pr) out.push({ repoId: repo.id, kind: 'pr', number: pr.number, title: pr.title, url: pr.url });
+        if (pr && !this.pullConflicts(pr)) out.push({ repoId: repo.id, kind: 'pr', number: pr.number, title: pr.title, url: pr.url });
       }
     }
     return out;
@@ -6152,6 +6155,7 @@ export class Swarm {
     if (this.deciding) return;
     this.deciding = true;
     try {
+      for (const repo of this.state.repos) this.reconcileDecisionConflicts(repo);
       const waiting = this.waitingDecisions();
       const titles = new Map(waiting.map((w) => [decisionKey(w), w]));
       this.state.decisions = trackDecisions(this.state.decisions, waiting, (r) => this.decisionOpen(r), now);
@@ -6275,13 +6279,48 @@ export class Swarm {
 
   // ---------- the Decision room ----------
 
+  /** UNKNOWN is GitHub's lazy answer, not evidence that a card can't merge. */
+  private pullConflicts(pr: PullInfo) {
+    return pr.mergeable === 'CONFLICTING' || pr.mergeState === 'DIRTY';
+  }
+
+  /**
+   * A stuck swarm PR that conflicts goes back to a developer before asking the manager. Remember the head on its
+   * QA record so a failed attempt (or an office restart) cannot send it back twice; the ordinary merge-fix budget
+   * still applies. Passed holds already take this path through advanceMerge and must not be handed out here too.
+   * Drop only unanswered clocks when conflict hides a card, including between clock ticks: when it returns it gets
+   * a fresh deadline. Applied records stay put, preserving the clock's rule that it never defaults the same PR twice.
+   */
+  private reconcileDecisionConflicts(repo: PersistedRepo) {
+    const pulls = this.repoRt.get(repo.id)?.pulls ?? [];
+    const hidden = new Set(pulls.filter((p) => p.state === 'OPEN' && this.pullConflicts(p)).map((p) => p.number));
+    const before = this.state.decisions.length;
+    this.state.decisions = this.state.decisions.filter((d) => d.repoId !== repo.id || d.kind !== 'pr' || !hidden.has(d.number) || d.appliedAt !== null);
+    let changed = before !== this.state.decisions.length;
+    for (const number of hidden) {
+      const key = decisionKeyOf(repo.id, number);
+      if (this.state.decisionNotes[key]) {
+        delete this.state.decisionNotes[key];
+        changed = true;
+      }
+    }
+    if (changed) this.save();
+    for (const rec of this.state.qa) {
+      if (rec.repoId !== repo.id || rec.status !== 'needs-human' || !rec.escalated || rec.mergeFixes >= MAX_MERGE_FIXES) continue;
+      const pr = pulls.find((p) => p.number === rec.prNumber && hidden.has(p.number));
+      if (!pr || !pr.headRefName.startsWith('swarm/') || rec.conflictFixSha === pr.headSha) continue;
+      this.setQa(rec, { conflictFixSha: pr.headSha });
+      this.sendBack(repo, rec, 'conflict', `It conflicts with ${repo.defaultBranch}.`, false);
+    }
+  }
+
   /** Every open decision: the decision clock's (needs-input issues, held PRs) and stuck PRs the CEO handed on. */
   private openDecisions(): { repoId: string; kind: 'issue' | 'pr'; number: number; title: string; url: string; reason: DecisionReason }[] {
     const out = this.waitingDecisions().map((w) => ({ ...w, reason: (w.kind === 'issue' ? 'needs-input' : 'held') as DecisionReason }));
     for (const q of this.state.qa) {
       if (q.status !== 'needs-human' || !q.escalated) continue;
       const pr = this.repoRt.get(q.repoId)?.pulls.find((p) => p.number === q.prNumber && p.state === 'OPEN');
-      if (pr && !out.some((o) => o.repoId === q.repoId && o.number === pr.number)) out.push({ repoId: q.repoId, kind: 'pr', number: pr.number, title: pr.title, url: pr.url, reason: 'stuck' });
+      if (pr && !this.pullConflicts(pr) && !out.some((o) => o.repoId === q.repoId && o.number === pr.number)) out.push({ repoId: q.repoId, kind: 'pr', number: pr.number, title: pr.title, url: pr.url, reason: 'stuck' });
     }
     return out;
   }
