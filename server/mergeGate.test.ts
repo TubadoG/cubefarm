@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHECKS_ALERT_MS, MAX_MERGE_FIXES, RERUN_GRACE_MS, failedRunIds, mergeStep, type MergePull, type MergeRecord } from './mergeGate.ts';
+import { CHECKS_ALERT_MS, MAX_MERGE_FIXES, RERUN_GRACE_MS, approvedMergeStep, failedRunIds, mergeStep, type MergePull, type MergeRecord } from './mergeGate.ts';
 
 const NOW = 1_800_000_000_000;
 const base = { base: 'main' };
@@ -224,5 +224,22 @@ describe('mergeStep', () => {
     it('still updates a branch that fell behind while waiting', () => {
       expect(mergeStep(pull({ mergeState: 'BEHIND' }), record({ mergeRetryAt: NOW + 60_000 }), NOW, base).do).toBe('update-branch');
     });
+  });
+});
+
+
+describe('approvedMergeStep', () => {
+  it.each([
+    [{}, 'merge'],
+    [{ checks: 'none' }, 'merge'],
+    [{ mergeable: 'CONFLICTING', checks: 'pending' }, 'conflict'],
+    [{ mergeState: 'DIRTY', mergeable: 'UNKNOWN' }, 'conflict'],
+    [{ mergeable: 'UNKNOWN' }, 'details'],
+    [{ mergeState: 'UNKNOWN' }, 'details'],
+    [{ mergeState: 'BEHIND', checks: 'pending' }, 'update-branch'],
+    [{ checks: 'pending' }, 'wait-checks'],
+    [{ checks: 'failing' }, 'checks-failing'],
+  ] as [Partial<MergePull>, string][])('checks %j before merging', (patch, next) => {
+    expect(approvedMergeStep(pull(patch))).toEqual({ do: next });
   });
 });

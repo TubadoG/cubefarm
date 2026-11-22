@@ -54,6 +54,12 @@ describe('fixOutcome', () => {
       });
     });
 
+    it('carries an explicit approval to the resolved head without another QA round', () => {
+      expect(fixOutcome({ ...conflict, approvedSha: OLD }, NEW, 3).set).toEqual({
+        status: 'passed', sessionFailures: 0, mergeNote: 'waiting for fresh checks', passedSha: NEW,
+      });
+    });
+
     it('compares with the commit QA passed, which auto-merge may have moved on from the one QA tested', () => {
       expect(fixOutcome(conflict, OLD, 3).pushed).toBe(false);
       expect(fixOutcome(conflict, conflict.testedSha, 3).pushed).toBe(true);
