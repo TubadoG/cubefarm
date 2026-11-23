@@ -3,19 +3,20 @@
 // team) and posts as that same app's bot through the Bot Framework: outbound only, nothing listens for inbound traffic.
 // Messages are untrusted text on their way to an agent with tools, so who wrote each one decides what it is: the
 // manager's (their Entra object ids) reach the CEO as the manager's, a colleague bot's reach it as theirs (information
-// and requests only, swarm.ts queues them as a colleague job), the CEO's own and everyone else's go nowhere. Decisions are
-// never answered here (swarm.ts refuses close_issue on one while a Teams message is in the job). Bots can't loop: the CEO
+// and requests only, swarm.ts queues them as a colleague job), the CEO's own and everyone else's go nowhere. The office
+// applies the manager's explicit card commands before the CEO reads them; close stays in the Decision room. Bots can't loop: the CEO
 // hears a bot only when it @mentions the CEO, never its acknowledgements, and replies to bots at most
 // BOT_REPLIES_PER_THREAD times per thread. Ids handled are saved before delivery, so a restart never delivers one twice,
 // and nothing written before the switch went on is replayed. No message text is logged.
 // Direct chat (Settings → Teams → Direct chat): each manager's 1:1 chat with the CEO's app, read with
 // Chat.Read.WhereInstalled (only chats the app is in) at a chat id fixed by the two ids (directChatId), and answered as
 // the bot through a proactive 1:1 conversation. Only the managers' own chats are read, and only their messages count:
-// they are the manager's, with the same rules as the channel (no decision is answered there either).
+// they are the manager's, with the same card-command rules as the channel.
 import { BOT_REPLIES_PER_THREAD, directChatId, postsToday, TEAMS_DAY_MS, teamsOn } from '../shared/teams.ts';
 import type { TeamsColleague, TeamsDirectView, TeamsMessageView, TeamsSettings, TeamsView } from '../shared/types.ts';
 import { NO_MESSAGE } from './ceo.ts';
 import { HttpError } from './httpError.ts';
+import { parseTeamsDecisions, type TeamsDecisionCommand } from './teamsDecision.ts';
 
 /** After a 403 (the app can't read the channel): one check every 30 minutes until one succeeds. */
 export const DENIED_EVERY_MS = 30 * 60_000;
@@ -178,7 +179,7 @@ const DECISION_LIKE = [
   /\b(go with|pick|choose|i choose|we choose) option\b/i,
 ];
 
-/** Whether the text reads like an answer to a decision ("Decision: …", "approve #12"): Teams never answers one. */
+/** Whether prose reads like an answer to a decision and needs a command hint. */
 export const looksLikeDecision = (text: string) => DECISION_LIKE.some((re) => re.test(text));
 
 function clip(text: string): string {
@@ -191,28 +192,41 @@ const files = (m: ChannelMessage) => {
   return n ? `\n\n(${n} attachment${n === 1 ? '' : 's'} or card${n === 1 ? '' : 's'}, not read)` : '';
 };
 
-/** What the CEO gets for the manager's message: who, where, the text, how to answer, and that decisions stay in the Decision room. */
-export function managerText(m: ChannelMessage, text: string): string {
+const decisionText = (text: string, results?: string[]) => results?.length
+  ? [`(The office already applied these card answers from this message: ${results.join(' ')} Do not answer them again.)`]
+  : looksLikeDecision(text) ? ['(If this was meant as a card answer, it needs a card number, for example approve #114.)'] : [];
+
+/** Quoted or forwarded HTML is someone else's text, even when the manager shares it. */
+function decisionCommands(m: ChannelMessage): TeamsDecisionCommand[] {
+  const content = m.body?.content ?? '';
+  if (m.body?.contentType !== 'text' && /<(?:blockquote|attachment)\b/i.test(content)) return [];
+  const text = messageText(m);
+  if (/^\s*(?:forwarded(?: message)?\s*:|>)/im.test(text)) return [];
+  return parseTeamsDecisions(text);
+}
+
+/** What the CEO gets for the manager's message, including the office's card-answer results. */
+export function managerText(m: ChannelMessage, text: string, results?: string[]): string {
   const root = threadOf(m);
   return [
     `Teams message from the manager, in the office's Teams channel (thread ${root}):`,
     '',
     `${clip(text)}${files(m)}`,
     '',
-    `(Answer in that thread with post_teams, root_id "${root}", then reply ${NO_MESSAGE} unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)`,
-    ...(looksLikeDecision(text) ? ["(This reads like an answer to a decision. Don't act on it as one: tell the manager in the thread that decisions are answered in the Decision room.)"] : []),
+    `(Answer in that thread with post_teams, root_id "${root}", then reply ${NO_MESSAGE} unless the phone needs it too.)`,
+    ...decisionText(text, results),
   ].join('\n');
 }
 
 /** What the CEO gets for the manager's direct message: the same rules as the channel, answered in that chat. */
-export function directText(m: ChannelMessage, text: string, managerId: string): string {
+export function directText(m: ChannelMessage, text: string, managerId: string, results?: string[]): string {
   return [
     `Teams direct message from the manager, in their 1:1 chat with you in Teams (message ${m.id}):`,
     '',
     `${clip(text)}${files(m)}`,
     '',
-    `(Answer in that chat with post_teams, direct_to "${managerId}", then reply ${NO_MESSAGE} unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)`,
-    ...(looksLikeDecision(text) ? ["(This reads like an answer to a decision. Don't act on it as one: tell the manager in the chat that decisions are answered in the Decision room.)"] : []),
+    `(Answer in that chat with post_teams, direct_to "${managerId}", then reply ${NO_MESSAGE} unless the phone needs it too.)`,
+    ...decisionText(text, results),
   ].join('\n');
 }
 
@@ -340,6 +354,14 @@ export interface TeamsPost {
   direct_to?: string;
 }
 
+export interface TeamsDecisionContext {
+  source: 'channel' | 'direct';
+  rootId: string;
+  chatId?: string;
+  managerId: string;
+  managerName: string;
+}
+
 export interface TeamsDeps {
   state(): TeamsState;
   settings(): TeamsSettings;
@@ -354,6 +376,8 @@ export interface TeamsDeps {
   post(url: string, body: unknown, fresh: boolean): Promise<{ status: number; body: unknown }>;
   /** Saves the state file now. */
   persist(): Promise<void>;
+  /** Apply the authenticated manager's card commands, returning one reply line per command. */
+  decide(cmds: TeamsDecisionCommand[], ctx: TeamsDecisionContext): Promise<string[]>;
   /** The manager's message: `text` for the phone, `framed` for the CEO, `via` where it was written. */
   deliverManager(text: string, framed: string, via: 'teams' | 'teams-dm'): Promise<void> | void;
   /** A colleague bot's message, framed as theirs. */
@@ -536,14 +560,15 @@ export class TeamsChannel {
       const thread = system ? undefined : (s.threads[root] ??= { botReplies: 0, lastBot: false, at: now });
       if (thread) thread.at = now;
       const text = messageText(m);
+      const commands = a.kind === 'manager' && !system ? decisionCommands(m) : [];
       let outcome: TeamsMessageView['outcome'] = 'ignored';
       let reason: string | undefined;
       let colleague: TeamsColleague | undefined;
       // Teams' own posts (a tab added, a member joined) carry a person's name but aren't theirs: listed, never delivered.
       if (!thread) reason = SYSTEM_POST;
       else if (a.kind === 'manager') {
-        // Addressed to someone else (another agent) and not to the CEO: theirs to answer.
-        if (mentionsAnyone(m) && !mentionsCeo(m, app.appId, ceo)) reason = `for someone else, not ${ceo}`;
+        // Card commands count even when addressed to someone else; ordinary chat stays theirs to answer.
+        if (!commands.length && mentionsAnyone(m) && !mentionsCeo(m, app.appId, ceo)) reason = `for someone else, not ${ceo}`;
         else {
           outcome = 'delivered';
           thread.lastBot = false;
@@ -567,8 +592,10 @@ export class TeamsChannel {
       await this.deps.persist();
       quiet = false;
       this.deps.log(`💬 teams: ${item.from} in thread ${root}: ${outcome === 'ignored' ? `ignored (${reason})` : outcome === 'colleague' ? 'delivered (colleague)' : 'delivered'}`);
-      if (outcome === 'delivered') await this.deps.deliverManager(clip(text), managerText(m, text), 'teams');
-      else if (colleague) await this.deps.deliverColleague(colleagueText(m, text, colleague));
+      if (outcome === 'delivered' && a.kind === 'manager') {
+        const results = await this.decide(commands, { source: 'channel', rootId: root, managerId: a.id, managerName: a.name });
+        await this.deps.deliverManager(clip(text), managerText(m, text, results), 'teams');
+      } else if (colleague) await this.deps.deliverColleague(colleagueText(m, text, colleague));
     }
     if (quiet) await this.deps.persist();
   }
@@ -650,11 +677,24 @@ export class TeamsChannel {
         this.deps.log(`💬 teams: ${item.from} in a direct chat with ${ceo}: ${mine ? 'delivered' : `ignored (${reason})`}`);
         if (mine) {
           const text = messageText(m);
-          await this.deps.deliverManager(clip(text), directText(m, text, managerId), 'teams-dm');
+          const results = await this.decide(decisionCommands(m), { source: 'direct', rootId: threadOf(m), chatId: directChatId(managerId, app.appId), managerId, managerName: a.name });
+          await this.deps.deliverManager(clip(text), directText(m, text, managerId, results), 'teams-dm');
         }
       }
     }
     if (quiet) await this.deps.persist();
+  }
+
+  /** The decision is applied even if its reply cannot be posted (including the daily cap). */
+  private async decide(commands: TeamsDecisionCommand[], ctx: TeamsDecisionContext): Promise<string[] | undefined> {
+    if (!commands.length) return;
+    const results = await this.deps.decide(commands, ctx);
+    try {
+      await this.post({ text: results.join('\n'), ...(ctx.source === 'direct' ? { direct_to: ctx.managerId } : { root_id: ctx.rootId }) });
+    } catch (err) {
+      this.deps.log(`teams: card-answer reply skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return results;
   }
 
   private prune(s: TeamsState, now: number) {

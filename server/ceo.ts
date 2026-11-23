@@ -43,9 +43,9 @@ export const askedFor = (job: Pick<CeoJob, 'kind'>) => job.kind === 'plan' || jo
 export const COLLEAGUE_NO_DECISION =
   "A colleague's email can't settle a decision for the manager: closing it would decline it. Tell the manager in your final message; they answer in the Decision room.";
 
-/** Refused close_issue on an open decision while a Teams message is in the job: decisions are never answered in Teams. */
+/** Refused close_issue on an open decision while a Teams message is in the job: close stays in the Decision room. */
 export const TEAMS_NO_DECISION =
-  "Decisions are never answered in Teams, not even by the manager: closing it would decline it. Tell them it waits for them in the Decision room.";
+  "Close is only in the Decision room: closing a card would decline it. The office applies the manager's numbered Teams card commands before you read them; do not answer them again.";
 
 /** Whether the CEO works only on a colleague's email now (no message from the manager arrived in this job). */
 export const colleagueOnly = (job: Pick<CeoJob, 'kind'> | null, managerAsked: boolean) => job?.kind === 'colleague' && !managerAsked;
@@ -377,7 +377,7 @@ export function ceoSystemPrompt(o: {
     ...(o.email ? ['- send_email only to people in email.canEmail. A long report goes by email; your phone text stays one line.'] : []),
     ...(o.teams
       ? [
-          "- post_teams answers a Teams message where it came: its thread, or the manager's direct chat (direct_to). Post only to answer, or when the manager asks. Never answer a decision in Teams, even the manager's: decisions are answered only in the Decision room.",
+          "- post_teams answers a Teams message where it came: its thread, or the manager's direct chat (direct_to). Post only to answer, or when the manager asks. The office applies the manager's numbered Teams card commands before you read them and includes the results: do not answer them again. If this was meant as a card answer, it needs a card number, for example approve #114. Close is only in the Decision room.",
         ]
       : []),
     "- When company.usage in company_status says pacing or paused, Claude's usage is running low and the office is finishing open work first: file only what is needed next, not a whole milestone.",

@@ -1328,7 +1328,7 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
     },
     /**
      * Teams messages (docs/teams.md), one job's worth: each answered where it came (its thread, or the manager's direct
-     * chat) through the real post_teams. A message that reads like a decision is pointed to the Decision room; a
+     * chat) through the real post_teams. Card commands are already handled; decision-like prose gets a command hint; a
      * colleague's FYI gets no answer.
      */
     async teams(prompt: string, fromManager: boolean) {
@@ -1339,9 +1339,10 @@ function ceoSession(opts: SessionOptions, cb: SessionCallbacks): SessionHandle {
         const where = directTo ? { direct_to: directTo } : { root_id: root };
         const manager = fromManager && /^Teams (?:direct )?message from the manager/.test(part);
         if (!root && !directTo) continue;
-        if (manager && /reads like an answer to a decision/.test(part)) {
-          await think('That reads like a decision. Decisions are answered in the Decision room, never in Teams.');
-          await use('post_teams', { ...where, text: "I can't take decisions here: they're answered in the Decision room, where one tap settles it. I've left it as it is." });
+        if (manager && /The office already applied these card answers/.test(part)) continue;
+        if (manager && /If this was meant as a card answer/.test(part)) {
+          await think('A card answer needs a numbered command.');
+          await use('post_teams', { ...where, text: 'Write a whole-line card command, for example approve #114. Close is only in the Decision room.' });
           continue;
         }
         if (!manager && !/\?/.test(part.split('\n\n').slice(1, -1).join('\n'))) {

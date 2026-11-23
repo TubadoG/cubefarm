@@ -16,6 +16,10 @@ const issue = { kind: 'issue' as const, reason: 'needs-input' as const, brief: b
 const pr = { kind: 'pr' as const, reason: 'held' as const, brief: brief('Merge it.'), by: 'Sam' };
 
 describe('answerPlan: issues', () => {
+  it('signs Teams answers without changing the Decision room signature', () => {
+    expect(answerPlan({ ...issue, via: 'teams' }, { choice: 'approve' }).comment).toContain('_Answered by Sam in Teams (cubefarm)._');
+    expect(answerPlan({ ...issue, via: 'room' }, { choice: 'approve' }).comment).toContain('_Answered by Sam in the cubefarm Decision room._');
+  });
   it('records the choice as an explicit "Decision:" comment and relabels the issue so it can be built', () => {
     const p = answerPlan(issue, { choice: 'approve' });
     expect(p.summary).toBe('approved the recommendation: Harbour: better contrast.');
