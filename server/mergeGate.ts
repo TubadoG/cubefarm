@@ -58,7 +58,7 @@ export function mergeStep(pr: MergePull, rec: MergeRecord, now: number, opts: { 
   if (pr.headSha !== (set.passedSha ?? rec.passedSha)) return { do: 'requeue', set };
   const needsHuman = rec.mergeFixes >= MAX_MERGE_FIXES;
   if (pr.mergeable === 'CONFLICTING' || pr.mergeState === 'DIRTY') {
-    return { do: 'send-back', reason: 'conflict', instructions: `It conflicts with ${opts.base}.`, needsHuman, set };
+    return { do: 'send-back', reason: 'conflict', instructions: `It conflicts with ${opts.base}.`, needsHuman: false, set }; // an exhausted conflict budget goes to the floor lead
   }
   const rerun = rec.rerunSha === pr.headSha;
   if (pr.checks === 'failing') {

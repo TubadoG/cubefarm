@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — 2026-11-23
+
+- A PR reaches the manager only when 5 fixes in a row fail; a fix that passes QA, or the manager's retry, resets the count.
+- Merge conflicts stay with the floor: after 5 unsuccessful conflict fixes, the floor lead takes over with a fresh fix budget. Failing checks and business decisions keep their existing escalation paths.
+
 ## Unreleased — 2026-11-22
 
 - Approvals never fail on a merge conflict: an approved PR that conflicts with main goes to a developer first and merges by itself once clean; the Decision room only shows PRs that can merge.

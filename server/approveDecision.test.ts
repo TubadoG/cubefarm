@@ -1,32 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Brief } from '../shared/brief.ts';
-import type { PullInfo } from '../shared/types.ts';
+import type { DoctorFinding, PullInfo } from '../shared/types.ts';
 import type { DecisionView } from '../shared/decisions.ts';
 import { createDemoBackend } from './demo.ts';
 import { Swarm } from './swarm.ts';
 import type { FixRecord } from './fixOutcome.ts';
 import type { DecisionRecord } from './decisionClock.ts';
 import { MAX_MERGE_FIXES, MERGE_RETRY_MS } from './mergeGate.ts';
+import type { Problem, Remedy } from './watchdog.ts';
+import type { LeadJob, LeadState } from './lead.ts';
 
 const REPO = 'demo-co/weather-api';
 const PR = 79;
 type Rec = FixRecord & {
   status: string; approvedSha?: string | null; approvedAt?: number | null; heldFor?: string | null;
-  conflictFixSha?: string | null; mergeRetryAt: number | null; mergeFixes: number; updatedAt: number; escalated: boolean;
+  conflictFixSha?: string | null; mergeRetryAt: number | null; mergeFixes: number; updatedAt: number; escalated: boolean; triages: number;
 };
 type Internals = {
-  state: { decisions: DecisionRecord[]; qa: Rec[]; messages: { text: string }[]; agents: { id: string; status: string; prNumber: number | null }[] };
+  state: { decisions: DecisionRecord[]; qa: Rec[]; messages: { text: string }[]; agents: { id: string; status: string; prNumber: number | null }[]; leads: Record<string, LeadState> };
   repoRt: Map<string, { pulls: PullInfo[]; syncing: boolean; fetchedAt: number }>;
   briefs: Map<string, Brief>;
-  repo(id: string): { autoMerge: boolean };
+  repo(id: string): { autoMerge: boolean; floor: number };
   queueQa(repo: unknown, number: number, dev: null, issue: null): void;
   advanceMerges(repo: unknown): Promise<void>;
   reconcileDecisionConflicts(repo: unknown): void;
   openDecisions(): { number: number; reason: string }[];
   setQa(rec: Rec, patch: object): void;
   onFixFinished(agent: unknown, repo: unknown, result: object): Promise<void>;
+  onQaFinished(agent: unknown, repo: unknown, result: object): Promise<void>;
   decisionViews(): DecisionView[];
   approveMerge(repo: unknown, number: number): Promise<string | null>;
+  doctor: DoctorFinding[];
+  remedy(problem: Problem, remedy: Remedy, now: number): string | null;
+  triageRetryQa(input: { floor: number; pr: number; repoId: string }): Promise<string>;
+  triageRerunChecks(input: { floor: number; pr: number; repoId: string }): Promise<string>;
+  triageSendBack(input: { floor: number; pr: number; repoId: string; note: string }): Promise<string>;
+  returnHeldPr(rec: Rec, instructions: string): void;
+  runQa(agent: unknown, repo: unknown, rec: Rec): Promise<void>;
+  stuckRecord(repoId: string, job: LeadJob): Rec | undefined;
+  endTriage(repoId: string, job: LeadJob): void;
 };
 
 beforeEach(() => vi.useFakeTimers());
@@ -183,6 +195,155 @@ describe('approving a PR through the merge gate', () => {
 });
 
 
+describe('QA passes reset the merge-fix budget', () => {
+  async function finishQa(o: Awaited<ReturnType<typeof office>>, pass: boolean) {
+    const tester = o.x.state.agents[0];
+    Object.assign(tester, { status: 'working', prNumber: PR });
+    o.x.setQa(o.rec, { status: 'testing', testedSha: o.live.headSha });
+    await o.x.onQaFinished(tester, o.repo, {
+      ok: true, text: '', costUsd: 0, turns: 1, errors: [],
+      structured: { verdict: pass ? 'pass' : 'fail', summary: 'QA result', checks: [], commands: [], screenshots: [] },
+    });
+  }
+
+  it.each([false, true])('allows six conflict fixes that each pass QA (held: %s)', async (held) => {
+    const o = await office();
+    o.listed.labels = o.live.labels = held ? ['swarm:hold'] : [];
+    for (let round = 1; round <= 6; round++) {
+      Object.assign(o.live, { mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+      await o.advance();
+      expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 1 });
+      Object.assign(o.live, { headSha: `fixed-${round}`, mergeable: 'MERGEABLE', mergeState: 'CLEAN' });
+      await finishQa(o, true);
+      expect(o.rec).toMatchObject({ status: 'passed', passedSha: `fixed-${round}`, mergeFixes: 0 });
+      // Pending CI keeps an ordinary PR open while the held path also weighs its manager hold.
+      o.live.checks = 'pending';
+      await o.advance();
+      expect(o.rec.status).toBe('passed');
+      if (held) expect(o.rec.heldFor).toBeTruthy();
+    }
+  });
+
+  it('hands five consecutive failed conflict fixes to the lead without a manager card', async () => {
+    const o = await office({ mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+    await o.advance();
+    expect(o.rec.mergeFixes).toBe(1);
+    o.rec.round = 6; // QA has used its own rounds; remaining conflict fixes use the merge budget.
+    for (let fix = 1; fix <= 5; fix++) {
+      o.live.headSha = `still-broken-${fix}`;
+      await finishQa(o, false);
+      expect(o.rec.mergeFixes).toBe(fix === 5 ? 0 : fix + 1);
+      expect(o.rec.status).toBe('failed');
+    }
+    expect(o.x.state.leads[REPO].queue).toContainEqual({ kind: 'triage', prNumber: PR, at: Date.now() });
+    expect(o.x.state.messages.filter((m) => m.text.includes('the floor lead takes it over'))).toHaveLength(1);
+    expect(o.x.decisionViews()).toEqual([]);
+  });
+
+  it('keeps exhausted conflict triage live while a developer fixes it and permits lead tools', async () => {
+    const o = await office({ mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+    o.rec.mergeFixes = MAX_MERGE_FIXES;
+    await o.advance();
+    expect(o.rec).toMatchObject({ status: 'failed', fixReason: 'conflict', mergeFixes: 0, escalated: false });
+    const job = o.x.state.leads[REPO].queue.find((j) => j.kind === 'triage')!;
+    expect(o.x.stuckRecord(REPO, job)).toBe(o.rec);
+    o.rec.status = 'fixing';
+    expect(o.x.stuckRecord(REPO, job)).toBe(o.rec);
+    o.rec.status = 'failed';
+    o.x.state.leads[REPO].job = job;
+    await o.x.triageSendBack({ repoId: REPO, floor: o.repo.floor, pr: PR, note: 'Resolve both sides of the merge' });
+    o.x.endTriage(REPO, job);
+    expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 0, escalated: false });
+    expect(o.x.decisionViews()).toEqual([]);
+    o.rec.status = 'passed';
+    expect(o.x.stuckRecord(REPO, job)).toBeUndefined();
+  });
+
+  it('hands an exhausted pre-QA conflict to the lead and preserves the pending QA findings', async () => {
+    const o = await office({ mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+    o.x.setQa(o.rec, { status: 'queued', mergeFixes: MAX_MERGE_FIXES, fixReason: 'qa', fixInstructions: 'Fix the toolbar' });
+    await o.x.runQa(o.x.state.agents[0], o.repo, o.rec);
+    expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 0, preQa: { sha: o.live.headSha, fixReason: 'qa' }, fixInstructions: 'Fix the toolbar' });
+    expect(o.x.state.leads[REPO].queue).toContainEqual({ kind: 'triage', prNumber: PR, at: Date.now() });
+    expect(o.x.decisionViews()).toEqual([]);
+  });
+
+  it('still brings five failed checks fixes to the manager after ordinary triage is spent', async () => {
+    const o = await office({ checks: 'failing' });
+    o.rec.triages = 2;
+    for (let fix = 0; fix <= 5; fix++) {
+      o.x.setQa(o.rec, { status: 'passed' }); // checks fixes return to the merge gate without a new QA pass
+      await o.advance();
+      expect(o.rec.mergeFixes).toBe(Math.min(fix + 1, 5));
+      expect(o.rec.status).toBe(fix === 5 ? 'needs-human' : 'failed');
+    }
+    for (let i = 0; i < 100 && !o.rec.escalated; i++) await Promise.resolve();
+    expect(o.rec.escalated).toBe(true);
+    expect(o.x.decisionViews()).toContainEqual(expect.objectContaining({ number: PR, reason: 'stuck' }));
+  });
+});
+
+
+describe('manager retries reset the merge-fix budget', () => {
+  it('resets an exhausted budget through the stuck card Retry QA action', async () => {
+    const o = await office();
+    o.x.setQa(o.rec, { status: 'needs-human', mergeFixes: MAX_MERGE_FIXES });
+    await o.swarm.sendToQa(REPO, PR);
+    expect(o.rec).toMatchObject({ status: 'queued', mergeFixes: 0 });
+  });
+
+  it('resets the stuck card send-back action', async () => {
+    const o = await office();
+    o.x.setQa(o.rec, { status: 'needs-human', mergeFixes: MAX_MERGE_FIXES });
+    await o.swarm.sendBackToDev(REPO, PR, 'Try again');
+    expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 0 });
+  });
+
+  it.each([
+    ['retry-qa', 'needs-human', 'queued'],
+    ['send-back', 'needs-human', 'failed'],
+    ['send-back', 'testing', 'failed'],
+    ['send-back', 'fixing', 'failed'],
+  ] as const)('resets doctor %s for a %s PR', async (fix, status, next) => {
+    const o = await office();
+    o.x.setQa(o.rec, { status, mergeFixes: MAX_MERGE_FIXES });
+    o.x.doctor = [{ id: 'stuck-pr', kind: 'qa-orphan', repoId: REPO, agentId: null, prNumber: PR, issueNumber: null, text: 'Retry', fixes: [fix], since: 0 }];
+    await o.swarm.doctorFix('stuck-pr', fix);
+    expect(o.rec).toMatchObject({ status: next, mergeFixes: 0 });
+  });
+
+  it.each(['needs-human', 'passed'])('resets a Decision room send-back for a %s PR', async (status) => {
+    const o = await office();
+    o.x.setQa(o.rec, { status, escalated: true, mergeFixes: MAX_MERGE_FIXES });
+    await o.swarm.answerDecision(REPO, PR, { choice: 'send-back', note: 'Try again' });
+    expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 0 });
+  });
+
+  it('keeps the budget on a watchdog retry', async () => {
+    const o = await office();
+    o.x.setQa(o.rec, { status: 'testing', mergeFixes: MAX_MERGE_FIXES });
+    o.x.remedy({ key: 'orphan', kind: 'qa-orphan', repoId: REPO, prNumber: PR, agentId: null, issueNumber: null, since: 0 }, 'retry-qa', Date.now());
+    expect(o.rec).toMatchObject({ status: 'queued', mergeFixes: MAX_MERGE_FIXES });
+  });
+
+  it.each(['triageRetryQa', 'triageRerunChecks', 'triageSendBack'] as const)('keeps the budget on automatic %s', async (action) => {
+    const o = await office();
+    o.x.setQa(o.rec, { status: 'needs-human', passedSha: null, mergeFixes: MAX_MERGE_FIXES });
+    o.x.state.leads[REPO].job = { kind: 'triage', prNumber: PR, at: Date.now() };
+    o.listed.failedChecks = [{ name: 'test', url: 'https://github.com/o/r/actions/runs/1/job/2' }];
+    await o.x[action]({ floor: o.repo.floor, repoId: REPO, pr: PR, note: 'Try again' });
+    expect(o.rec).toMatchObject({ status: action === 'triageSendBack' ? 'failed' : 'queued', mergeFixes: MAX_MERGE_FIXES });
+  });
+
+  it('keeps the budget when the office returns a held PR after the decision deadline', async () => {
+    const o = await office();
+    o.rec.mergeFixes = MAX_MERGE_FIXES;
+    o.x.returnHeldPr(o.rec, 'The decision deadline passed');
+    expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: MAX_MERGE_FIXES });
+  });
+});
+
+
 describe('conflicts in the Decision room', () => {
   it.each(['held', 'stuck'] as const)('hides a %s card for conflicts or DIRTY, but shows MERGEABLE and UNKNOWN', async (reason) => {
     const o = await office();
@@ -214,13 +375,14 @@ describe('conflicts in the Decision room', () => {
     expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 2, conflictFixSha: 'new-head' });
   });
 
-  it('respects the fix budget and leaves non-swarm branches with their owners', async () => {
+  it('hands an existing exhausted conflict to the lead and leaves non-swarm branches with their owners', async () => {
     const o = await office();
     o.listed.mergeable = 'CONFLICTING';
     o.x.setQa(o.rec, { status: 'needs-human', escalated: true, mergeFixes: MAX_MERGE_FIXES });
     o.x.reconcileDecisionConflicts(o.repo);
-    expect(o.rec).toMatchObject({ status: 'needs-human', mergeFixes: MAX_MERGE_FIXES });
-    o.rec.mergeFixes = 0;
+    expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 0 });
+    expect(o.x.state.leads[REPO].queue).toContainEqual({ kind: 'triage', prNumber: PR, at: Date.now() });
+    o.x.setQa(o.rec, { status: 'needs-human', escalated: true });
     o.listed.headRefName = 'bryan/change';
     o.x.reconcileDecisionConflicts(o.repo);
     expect(o.rec).toMatchObject({ status: 'needs-human', mergeFixes: 0 });

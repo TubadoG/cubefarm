@@ -45,6 +45,13 @@ The budget is meant to catch a developer who cannot resolve a PR, not a PR whose
 - Do NOT reset it for the office's own automatic retries (watchdog, rebuild, CEO triage).
 - Test: a record at `mergeFixes: 5` + manager retry → 0; watchdog retry-qa → unchanged.
 
+### Task 2b — A merge conflict is never a manager card (added by Claude after Task 1 started)
+
+- Agreed with Zander (the CEO agent) in Teams on 2026-11-23: a merge conflict is the floor's job, not a business decision. When a PR runs out of its conflict-fix budget (`reason === 'conflict'` in `sendBack`, and the conflict paths in `qaOutcome.ts` / `mergeGate.ts`), do NOT mark it `needs-human` / create a Decision room card. Instead: post one office message ("PR #N still conflicts with main after 5 fixes in a row; the floor lead takes it over"), queue a floor-lead triage job for it (the same path the office uses for a stuck PR it hands to the lead, `enqueueLead` with a triage job), reset `mergeFixes: 0`, and send it back for a conflict fix.
+- Failing checks (`reason === 'checks'`) keep today's behaviour (they can be a real problem the manager must see).
+- Held cards for real business calls (a PR that touches `.env.example`, ci.yml, secrets) are unchanged.
+- Test: a PR whose conflict fixes fail 5 times in a row gets a lead triage job and no manager card; a PR whose checks fail 5 times still goes to the manager.
+
 ### Task 3 — Release note
 
 - `CHANGELOG.md`: an entry in the style of the newest one: "A PR reaches the manager only when 5 fixes in a row fail; a fix that passes QA, or the manager's retry, resets the count."
@@ -71,7 +78,9 @@ All must pass (`server/scale.test.ts` is a timing budget that can flake under fu
 ## 5. Questions and answers
 
 ### Questions from Codex
-(none yet)
+- 2026-11-23 16:58 UTC — Verification blocker: first full suite hit sandbox `listen EPERM` (syncProxy/ptyHost), a shared temporary-state rename race (stateFile), and the known scale budget flake. Retrying the suite outside the sandbox with its existing isolated temporary SWARM_HOME; no database access. No answer needed yet.
+- 2026-11-23 16:58 UTC — Socket/terminal tests pass outside the sandbox. The second full run hit the same temporary-state rename race in teamsOffice and the scale budget; rerunning the entire suite with one worker to avoid cross-file state collisions. Production state/persistence code remains unchanged.
+- 2026-11-23 17:00 UTC — Resolved: the complete suite passed outside the sandbox with `npx vitest run --maxWorkers=1`, including stateFile, teamsOffice, syncProxy, ptyHost and scale. No outstanding questions or blockers.
 
 ### Answers from Claude
 (none yet)
@@ -81,3 +90,10 @@ All must pass (`server/scale.test.ts` is a timing budget that can flake under fu
 ## 6. Status log (Codex appends; Claude reads)
 
 - 2026-11-23 — Claude: brief written at main `e45b2ae`. Waiting for Codex.
+- 2026-11-23 16:50 UTC — Task 1: `server/swarm.ts`, `server/approveDecision.test.ts`; QA passes reset the budget, including held PRs. Three targeted test files passed: 72 tests; six successful fixes stay out of needs-human, five consecutive failed fixes still escalate.
+- 2026-11-23 16:52 UTC — Task 2: `server/swarm.ts`, `server/approveDecision.test.ts`; shared `resetManagerFixBudget(repoId, prNumber)` covers manager retry/send-back paths; automatic triage, watchdog and decision-deadline send-backs preserve the count. Six targeted files passed: 133 tests; TypeScript passed.
+- 2026-11-23 16:56 UTC — Task 2b: `server/{swarm,mergeGate,qaOutcome,triage}.ts` and the existing approval/merge/QA tests; exhausted conflicts reset to 0, stay failed, and get one lead triage job/message. Triage remains usable during conflict repair; failing checks still escalate and business holds remain. Five targeted files passed: 121 tests; TypeScript passed.
+- 2026-11-23 17:00 UTC — Task 3: `CHANGELOG.md` adds the requested release note and the Task 2b conflict exception; this brief records verification. TypeScript, all 238 test files (one worker), and production build passed.
+- 2026-11-23 17:00 UTC — Final: `npx tsc --noEmit -p .`, `npx vitest run --maxWorkers=1`, and `npm run build` passed. All tasks, including Claude's added Task 2b, are complete; no databases touched and nothing pushed.
+      Tests  2796 passed | 2 skipped (2798)
+ALL TASKS COMPLETE

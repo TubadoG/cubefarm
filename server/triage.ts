@@ -29,8 +29,8 @@ export function triageStep(e: TriageEvent): TriageStep {
 
 /**
  * Whether a triage tool may act on PR #pr of `floor`: only in a triage job, only on that job's floor, and only on an
- * open PR that is waiting on a decision. Throws HttpError 404 (another floor's or an unknown PR) or 409 (no triage
- * job, a closed PR, or one that isn't stuck).
+ * open PR that is waiting on a decision or a conflict fix. Throws HttpError 404 (another floor's or an unknown PR)
+ * or 409 (no triage job, a closed PR, or one that isn't stuck).
  */
 export function checkTriageTarget(r: {
   jobFloor: number | null; // the floor of the CEO's current triage job; null when it isn't on one
@@ -38,12 +38,13 @@ export function checkTriageTarget(r: {
   pr: number;
   pull: { state: string } | undefined; // the PR as the floor last synced it
   status: QaStatus | undefined; // its QA record
+  fixReason?: 'qa' | 'checks' | 'conflict' | null;
 }) {
   if (r.jobFloor == null) throw new HttpError(409, 'Triage tools only work in a triage job.');
   if (r.floor !== r.jobFloor) throw new HttpError(404, `This triage is for floor ${r.jobFloor}: PR #${r.pr} on floor ${r.floor} isn't yours to change.`);
   if (!r.pull) throw new HttpError(404, `There is no PR #${r.pr} on floor ${r.floor}.`);
   if (r.pull.state !== 'OPEN') throw new HttpError(409, `PR #${r.pr} is ${r.pull.state.toLowerCase()}, so there is nothing to decide.`);
-  if (r.status !== 'needs-human') throw new HttpError(409, `PR #${r.pr} isn't stuck: it is ${r.status ?? 'not in QA'}.`);
+  if (r.status !== 'needs-human' && !(r.status === 'failed' && r.fixReason === 'conflict')) throw new HttpError(409, `PR #${r.pr} isn't stuck: it is ${r.status ?? 'not in QA'}.`);
 }
 
 /** The PR facts a triage job's prompt carries. */

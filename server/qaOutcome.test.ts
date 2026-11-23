@@ -20,8 +20,8 @@ describe('qaOutcome', () => {
     expect(qaOutcome(false, last(), null)).toBe('needs-human'); // GitHub couldn't be asked
   });
 
-  it('sends a fail while conflicting to the manager once the merge-fix budget is used up', () => {
-    expect(qaOutcome(false, last({ mergeFixes: MAX_MERGE_FIXES }), CONFLICTING)).toBe('needs-human');
+  it('keeps an exhausted conflict fix with the floor', () => {
+    expect(qaOutcome(false, last({ mergeFixes: MAX_MERGE_FIXES }), CONFLICTING)).toBe('conflict');
   });
 
   it('sends an earlier fail back to the developer, conflicting or not', () => {
@@ -62,8 +62,8 @@ describe('qaGate: conflicts before QA', () => {
     expect(qaGate(pull({ mergeable: 'CONFLICTING', mergeState: 'UNKNOWN' }), record({ mergeFixes: MAX_MERGE_FIXES - 1 }), true)).toEqual({ do: 'send-back', needsHuman: false });
   });
 
-  it('sends it to the manager once the merge-fix budget is used up', () => {
-    expect(qaGate(pull(CONFLICTING), record({ mergeFixes: MAX_MERGE_FIXES }), true)).toEqual({ do: 'send-back', needsHuman: true });
+  it('keeps it with the floor once the merge-fix budget is used up', () => {
+    expect(qaGate(pull(CONFLICTING), record({ mergeFixes: MAX_MERGE_FIXES }), true)).toEqual({ do: 'send-back', needsHuman: false });
   });
 
   it('updates a branch that is only behind, as the merge gate does (auto-merge floors)', () => {
