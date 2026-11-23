@@ -4,6 +4,7 @@
 
 - A PR reaches the manager only when 5 fixes in a row fail; a fix that passes QA, or the manager's retry, resets the count.
 - Merge conflicts stay with the floor: after 5 unsuccessful conflict fixes, the floor lead takes over with a fresh fix budget. Failing checks and business decisions keep their existing escalation paths.
+- Managers can answer Decision room cards from Teams with numbered approve, option, retry QA and send-back commands; replies stay in the same thread or direct chat, and close stays in the Decision room.
 
 ## Unreleased — 2026-11-22
 

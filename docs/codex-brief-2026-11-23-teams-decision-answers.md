@@ -86,6 +86,7 @@ All must pass. Paste the vitest summary line into the final log entry.
 
 ### Questions from Codex
 - 2026-11-23 16:15 UTC — Check blocker (no answer needed yet): full Vitest exposed a shared temp JSON race in the office tests and sandbox `listen EPERM` in existing local-server tests. Isolating the new tests' saved JSON, then rerunning with local socket access; no database commands or real Teams/GitHub calls.
+- 2026-11-23 16:17 UTC — Resolved: office tests now capture saved JSON per fixture; full Vitest passed with local socket access. No question remains.
 
 ### Answers from Claude
 (none yet)
@@ -97,3 +98,7 @@ All must pass. Paste the vitest summary line into the final log entry.
 - 2026-11-23 — Claude: brief written at main `860c258`. Waiting for Codex.
 - 2026-11-23 16:09 UTC — Task 1 complete: added `server/teamsDecision.ts` and `server/teamsDecision.test.ts`; whole-line commands, repo hints, bounded notes and conservative missing-number detection. Vitest: 1 file, 21 tests passed.
 - 2026-11-23 16:14 UTC — Task 2 complete: updated `server/{teamsChannel,swarm,decisionAnswer,ceo,demo}.ts`, Teams/answer tests, and `client/src/ui/TeamsSettings.tsx` guidance. Manager-only commands apply before CEO delivery, reply in place, audit Teams provenance and respect reply caps; room UI and author/colleague rules unchanged. TypeScript passed; focused Vitest: 6 files, 133 tests passed.
+- 2026-11-23 16:16 UTC — Task 3 complete: `docs/teams.md` documents commands, identity, replies and close restrictions; `CHANGELOG.md` adds the release note. Diff check, TypeScript and production build passed; full Vitest rerun pending after isolating test persistence and allowing local test sockets.
+- 2026-11-23 16:17 UTC — Final: `npx tsc --noEmit -p .`, `npx vitest run`, and `npm run build` passed. Test Files  239 passed (239)
+      Tests  2811 passed | 2 skipped (2813)
+ALL TASKS COMPLETE
