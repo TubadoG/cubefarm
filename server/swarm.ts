@@ -3170,8 +3170,14 @@ export class Swarm {
     setTimeout(() => this.schedule(), 200);
   }
 
+  /** An explicit manager retry grants a fresh merge-fix budget; automatic recovery keeps its existing count. */
+  resetManagerFixBudget(repoId: string, prNumber: number) {
+    const rec = this.state.qa.find((q) => q.repoId === repoId && q.prNumber === prNumber);
+    if (rec) this.setQa(rec, { mergeFixes: 0 });
+  }
+
   /** Manager's "send to QA" for any open PR (including ones opened by people); with `agentId`, that free agent tests it now. */
-  async sendToQa(repoId: string, prNumber: number, agentId?: string) {
+  async sendToQa(repoId: string, prNumber: number, agentId?: string, source: 'manager' | 'office' = 'manager') {
     const repo = this.repo(repoId);
     const pr = this.repoRt.get(repo.id)?.pulls.find((p) => p.number === prNumber && p.state === 'OPEN');
     if (!pr) throw new HttpError(404, `PR #${prNumber} is not open on ${repo.fullName}`);
@@ -3189,6 +3195,7 @@ export class Swarm {
     if (tester && (tester.repoId !== repo.id || !isWorker(tester))) throw new HttpError(400, `${tester.name} doesn't work on ${repo.fullName}`);
     if (tester && BUSY.includes(tester.status)) throw new HttpError(409, `${tester.name} is busy: ${this.agentDoing(tester)}`);
     if (tester) this.ensureSlot();
+    if (source === 'manager') this.resetManagerFixBudget(repo.id, prNumber);
     this.clearPrepStrikes(repo.id, prNumber);
     this.queueQa(repo, prNumber, dev ?? null, pr.closesIssues[0] ?? null);
     const queued = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === prNumber && q.status === 'queued');
@@ -3210,7 +3217,10 @@ export class Swarm {
     const rec = find();
     const patch = sendBackPatch(prNumber, pr, rec, repo.defaultBranch, note, from);
     this.clearPrepStrikes(repo.id, prNumber);
-    if (!from) this.answered(repo.id, 'pr', prNumber); // the manager's own send-back
+    if (!from) {
+      this.resetManagerFixBudget(repo.id, prNumber);
+      this.answered(repo.id, 'pr', prNumber); // the manager's own send-back
+    }
     this.setQa(rec!, { ...patch, preQa: null });
     setTimeout(() => this.schedule(), 200);
     this.toast('info', `PR #${prNumber} goes back to a developer${patch.fixReason === 'conflict' ? ' to resolve its conflicts' : ''}`);
@@ -4808,7 +4818,7 @@ export class Swarm {
 
   private async triageRetryQa(x: { floor: number; pr: number; repoId: string }) {
     const { repo, rec } = await this.triageTarget(x);
-    await this.sendToQa(repo.id, rec.prNumber);
+    await this.sendToQa(repo.id, rec.prNumber, undefined, 'office');
     return `PR #${rec.prNumber} is queued for QA round ${rec.round}.`;
   }
 
@@ -4834,7 +4844,7 @@ export class Swarm {
       this.setQa(rec, { status: 'passed', rerunSha: listed.headSha, rerunAt: Date.now(), pendingSince: null, mergeNote: 're-running a failed check' });
       return `Re-running ${runs} on PR #${rec.prNumber}. QA passed this commit, so it merges if they go green.`;
     }
-    await this.sendToQa(repo.id, rec.prNumber);
+    await this.sendToQa(repo.id, rec.prNumber, undefined, 'office');
     return `Re-running ${runs} on PR #${rec.prNumber}, and it is queued for QA round ${rec.round}.`;
   }
 
@@ -5673,13 +5683,17 @@ export class Swarm {
     else if (fix === 'clear') this.resetAgent(need(a, 'That agent').id);
     else if (fix === 'requeue') this.requeue(need(a, 'That agent'), 'the manager put the work back in line from the office doctor');
     else if (fix === 'retry-qa') {
+      const r = need(rec, `PR #${f.prNumber}'s QA record`);
+      this.resetManagerFixBudget(f.repoId, f.prNumber!);
       this.clearPrepStrikes(f.repoId, f.prNumber!);
-      this.setQa(need(rec, `PR #${f.prNumber}'s QA record`), { status: 'queued', qaAgentId: null });
+      this.setQa(r, { status: 'queued', qaAgentId: null });
     } else if (fix === 'send-back') {
       const r = need(rec, `PR #${f.prNumber}'s QA record`);
       // A PR left "testing" or "fixing" with nobody on it goes back to a developer as it is; otherwise it's the console's Send back.
-      if (r.status === 'testing' || r.status === 'fixing') this.setQa(r, { status: 'failed', qaAgentId: null });
-      else await this.sendBackToDev(f.repoId, f.prNumber!);
+      if (r.status === 'testing' || r.status === 'fixing') {
+        this.resetManagerFixBudget(f.repoId, f.prNumber!);
+        this.setQa(r, { status: 'failed', qaAgentId: null });
+      } else await this.sendBackToDev(f.repoId, f.prNumber!);
     } else if (fix === 'close-issue') await this.closeIssueByManager(f.repoId, f.issueNumber!, f.prNumber ?? undefined);
     this.watchdogTick(false);
     setTimeout(() => this.schedule(), 200);
@@ -6416,8 +6430,10 @@ export class Swarm {
     } else if (plan.pr?.do === 'close') await this.closePull(repo.id, number);
     else if (plan.pr?.do === 'send-back') {
       const rec = this.state.qa.find((q) => q.repoId === repo.id && q.prNumber === number);
-      if (rec?.status === 'passed') this.returnHeldPr(rec, `From the manager: ${plan.pr.note}`);
-      else await this.sendBackToDev(repo.id, number, plan.pr.note);
+      if (rec?.status === 'passed') {
+        this.resetManagerFixBudget(repo.id, number);
+        this.returnHeldPr(rec, `From the manager: ${plan.pr.note}`);
+      } else await this.sendBackToDev(repo.id, number, plan.pr.note);
     }
     this.postMessage('office', `🧭 Decision on ${item.kind === 'pr' ? 'PR ' : ''}#${number} on ${repo.fullName}: you ${plan.summary}`);
     this.emitDecisions();

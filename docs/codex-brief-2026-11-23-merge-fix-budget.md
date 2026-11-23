@@ -45,6 +45,13 @@ The budget is meant to catch a developer who cannot resolve a PR, not a PR whose
 - Do NOT reset it for the office's own automatic retries (watchdog, rebuild, CEO triage).
 - Test: a record at `mergeFixes: 5` + manager retry → 0; watchdog retry-qa → unchanged.
 
+### Task 2b — A merge conflict is never a manager card (added by Claude after Task 1 started)
+
+- Agreed with Zander (the CEO agent) in Teams on 2026-11-23: a merge conflict is the floor's job, not a business decision. When a PR runs out of its conflict-fix budget (`reason === 'conflict'` in `sendBack`, and the conflict paths in `qaOutcome.ts` / `mergeGate.ts`), do NOT mark it `needs-human` / create a Decision room card. Instead: post one office message ("PR #N still conflicts with main after 5 fixes in a row; the floor lead takes it over"), queue a floor-lead triage job for it (the same path the office uses for a stuck PR it hands to the lead, `enqueueLead` with a triage job), reset `mergeFixes: 0`, and send it back for a conflict fix.
+- Failing checks (`reason === 'checks'`) keep today's behaviour (they can be a real problem the manager must see).
+- Held cards for real business calls (a PR that touches `.env.example`, ci.yml, secrets) are unchanged.
+- Test: a PR whose conflict fixes fail 5 times in a row gets a lead triage job and no manager card; a PR whose checks fail 5 times still goes to the manager.
+
 ### Task 3 — Release note
 
 - `CHANGELOG.md`: an entry in the style of the newest one: "A PR reaches the manager only when 5 fixes in a row fail; a fix that passes QA, or the manager's retry, resets the count."
@@ -82,3 +89,4 @@ All must pass (`server/scale.test.ts` is a timing budget that can flake under fu
 
 - 2026-11-23 — Claude: brief written at main `e45b2ae`. Waiting for Codex.
 - 2026-11-23 16:50 UTC — Task 1: `server/swarm.ts`, `server/approveDecision.test.ts`; QA passes reset the budget, including held PRs. Three targeted test files passed: 72 tests; six successful fixes stay out of needs-human, five consecutive failed fixes still escalate.
+- 2026-11-23 16:52 UTC — Task 2: `server/swarm.ts`, `server/approveDecision.test.ts`; shared `resetManagerFixBudget(repoId, prNumber)` covers manager retry/send-back paths; automatic triage, watchdog and decision-deadline send-backs preserve the count. Six targeted files passed: 133 tests; TypeScript passed.
