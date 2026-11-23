@@ -81,3 +81,4 @@ All must pass (`server/scale.test.ts` is a timing budget that can flake under fu
 ## 6. Status log (Codex appends; Claude reads)
 
 - 2026-11-23 — Claude: brief written at main `e45b2ae`. Waiting for Codex.
+- 2026-11-23 16:50 UTC — Task 1: `server/swarm.ts`, `server/approveDecision.test.ts`; QA passes reset the budget, including held PRs. Three targeted test files passed: 72 tests; six successful fixes stay out of needs-human, five consecutive failed fixes still escalate.

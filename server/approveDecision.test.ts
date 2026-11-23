@@ -25,6 +25,7 @@ type Internals = {
   openDecisions(): { number: number; reason: string }[];
   setQa(rec: Rec, patch: object): void;
   onFixFinished(agent: unknown, repo: unknown, result: object): Promise<void>;
+  onQaFinished(agent: unknown, repo: unknown, result: object): Promise<void>;
   decisionViews(): DecisionView[];
   approveMerge(repo: unknown, number: number): Promise<string | null>;
 };
@@ -179,6 +180,50 @@ describe('approving a PR through the merge gate', () => {
     await o.approve();
     expect(o.merge).toHaveBeenCalledExactlyOnceWith(REPO, PR, 'squash');
     expect(o.rec.approvedSha).toBeUndefined();
+  });
+});
+
+
+describe('QA passes reset the merge-fix budget', () => {
+  async function finishQa(o: Awaited<ReturnType<typeof office>>, pass: boolean) {
+    const tester = o.x.state.agents[0];
+    Object.assign(tester, { status: 'working', prNumber: PR });
+    o.x.setQa(o.rec, { status: 'testing', testedSha: o.live.headSha });
+    await o.x.onQaFinished(tester, o.repo, {
+      ok: true, text: '', costUsd: 0, turns: 1, errors: [],
+      structured: { verdict: pass ? 'pass' : 'fail', summary: 'QA result', checks: [], commands: [], screenshots: [] },
+    });
+  }
+
+  it.each([false, true])('allows six conflict fixes that each pass QA (held: %s)', async (held) => {
+    const o = await office();
+    o.listed.labels = o.live.labels = held ? ['swarm:hold'] : [];
+    for (let round = 1; round <= 6; round++) {
+      Object.assign(o.live, { mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+      await o.advance();
+      expect(o.rec).toMatchObject({ status: 'failed', mergeFixes: 1 });
+      Object.assign(o.live, { headSha: `fixed-${round}`, mergeable: 'MERGEABLE', mergeState: 'CLEAN' });
+      await finishQa(o, true);
+      expect(o.rec).toMatchObject({ status: 'passed', passedSha: `fixed-${round}`, mergeFixes: 0 });
+      // Pending CI keeps an ordinary PR open while the held path also weighs its manager hold.
+      o.live.checks = 'pending';
+      await o.advance();
+      expect(o.rec.status).toBe('passed');
+      if (held) expect(o.rec.heldFor).toBeTruthy();
+    }
+  });
+
+  it('still escalates five consecutive conflict fixes that fail QA', async () => {
+    const o = await office({ mergeable: 'CONFLICTING', mergeState: 'DIRTY' });
+    await o.advance();
+    expect(o.rec.mergeFixes).toBe(1);
+    o.rec.round = 6; // QA has used its own rounds; remaining conflict fixes use the merge budget.
+    for (let fix = 1; fix <= 5; fix++) {
+      o.live.headSha = `still-broken-${fix}`;
+      await finishQa(o, false);
+      expect(o.rec.mergeFixes).toBe(Math.min(fix + 1, 5));
+      expect(o.rec.status).toBe(fix === 5 ? 'needs-human' : 'failed');
+    }
   });
 });
 

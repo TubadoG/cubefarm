@@ -190,7 +190,7 @@ interface QaRecord extends Omit<QaView, 'ceoLooking' | 'stuckPick'> {
   approvedAt?: number | null;
   conflictFixSha?: string | null; // a stuck PR has already been sent for conflict resolution on this head
   fixReason: 'qa' | 'checks' | 'conflict' | null; // why it was last sent back to a developer
-  mergeFixes: number; // times it went back for failing checks or conflicts
+  mergeFixes: number; // fix rounds since the last QA pass or manager retry
   retests: number; // QA rounds caused by merge fixes or new commits rather than by QA failing it
   preQa: PreQa | null; // a conflict found before QA tested the head is being fixed
   noChangeSha: string | null; // the head a developer last said needed no change (one free re-test per commit)
@@ -3398,6 +3398,7 @@ export class Swarm {
         fixReason: pass ? null : 'qa',
         preQa: null,
         passedSha: pass ? rec.testedSha : null,
+        mergeFixes: pass ? 0 : rec.mergeFixes,
         mergeNote: null,
         pendingSince: null,
         mergeRetryAt: null,
