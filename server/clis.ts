@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { run } from './exec.ts';
 import type { AgentCli, AgentRole, CliView, EffortLevel } from '../shared/types.ts';
@@ -297,6 +298,41 @@ export function codexThread(action: 'archive' | 'unarchive', id: string, after?:
 
 // ---------- prompts the office answers ----------
 
+/**
+ * Marks an office worktree as trusted in Claude Code's config before a session starts there, so the folder-trust
+ * question never shows (the named agents' folders were trusted once; a new seat's folder was not, and its session
+ * could sit on the question until the stuck watchdog stopped it). Best effort: the on-screen answer stays as a fallback.
+ */
+export function trustClaudeFolder(dir: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): boolean {
+  const file = env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json');
+  try {
+    const cfg = JSON.parse(fs.readFileSync(file, 'utf8')) as { projects?: Record<string, Record<string, unknown>> };
+    const projects = (cfg.projects ??= {});
+    const key = path.resolve(dir);
+    if (projects[key]?.hasTrustDialogAccepted === true) return false;
+    projects[key] = { ...(projects[key] ?? {}), hasTrustDialogAccepted: true };
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The folders Claude Code checks trust for: the worktree, and the main checkout a linked worktree belongs to. */
+export function trustFolders(dir: string): string[] {
+  const out = [path.resolve(dir)];
+  try {
+    const m = fs.readFileSync(path.join(dir, '.git'), 'utf8').match(/^gitdir:\s*(.+?)[\\/]\.git[\\/]worktrees[\\/]/m);
+    if (m) out.push(path.resolve(dir, m[1]));
+  } catch {
+    // a plain checkout (.git is a folder) or no repo: the folder itself is enough
+  }
+  return out;
+}
+
+const TRUST_QUESTION = /Quick safety check|Do you trust the (files|contents) (in|of) this|allow Codex to work in this folder/i;
 const TRUST_PROMPT = /Quick safety check|Do you trust the (files|contents) (in|of) this|trust this folder|allow Codex to work in this folder/i;
 
 /**
@@ -306,7 +342,10 @@ const TRUST_PROMPT = /Quick safety check|Do you trust the (files|contents) (in|o
  */
 export function trustKey(screen: string): 'enter' | 'down' | null {
   if (!TRUST_PROMPT.test(screen)) return null;
-  const selected = screen.match(/^\s*[❯›]\s*(?:\d+\.\s*)?(.+)$/m)?.[1] ?? '';
+  // The newest question is at the bottom: a terminal reused across sessions can still show an earlier one above it.
+  const lines = screen.split('\n');
+  const asked = lines.reduce((at, l, i) => (TRUST_QUESTION.test(l) ? i : at), -1);
+  const selected = lines.slice(Math.max(0, asked)).join('\n').match(/^\s*[❯›]\s*(?:\d+\.\s*)?(.+)$/m)?.[1] ?? '';
   if (/^(yes|trust|continue|proceed)\b/i.test(selected.trim())) return 'enter';
   if (/^(no|exit|quit|cancel)\b/i.test(selected.trim())) return 'down';
   return null;

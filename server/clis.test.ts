@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CODEX_HOOK_EVENTS, codexHookCommand, CROSS_TURN_TOOLS, hookReviewKey, interruptions, launchArgs, oneAtATime, trustKey, unwrapCmdShim, type LaunchContext } from './clis.ts';
+import { CODEX_HOOK_EVENTS, codexHookCommand, CROSS_TURN_TOOLS, hookReviewKey, interruptions, launchArgs, oneAtATime, trustClaudeFolder, trustFolders, trustKey, unwrapCmdShim, type LaunchContext } from './clis.ts';
 import { describeOfficeTool, describeTool, newScreenshots, screenshotFile, summariseResult } from './agentRunner.ts';
 
 const dir = path.join(os.tmpdir(), 'npm-global');
@@ -220,5 +220,42 @@ describe('newScreenshots', () => {
     expect(newScreenshots(dir, seen, later).map((s) => s.name)).toEqual(['page-2026-09-29T10-00-02-000Z.jpeg']);
     expect(newScreenshots(path.join(dir, 'missing'), seen, later)).toEqual([]);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('trust prompt fixes (Lead seats stuck on "Enter to confirm")', () => {
+  it('reads the newest trust question when an earlier session left one on screen', () => {
+    const screen = [
+      'Quick safety check: Is this a project you created or one you trust?',
+      '  No, exit',
+      '❯ Yes, I trust this folder',
+      '── Claude Code session ended ──',
+      '── Claude Code · Lead 2 · QA · PR #154 ──',
+      'Quick safety check: Is this a project you created or one you trust?',
+      '❯ No, exit',
+      '  Yes, I trust this folder',
+      'Enter to confirm · Esc to cancel',
+    ].join('\n');
+    expect(trustKey(screen)).toBe('down');
+  });
+
+  it('pre-trusts a folder in the Claude config, keeping other settings', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'trust-'));
+    const file = path.join(home, '.claude.json');
+    fs.writeFileSync(file, JSON.stringify({ theme: 'dark', projects: { '/a': { hasTrustDialogAccepted: true, allowedTools: ['x'] } } }));
+    expect(trustClaudeFolder('/b', {}, home)).toBe(true);
+    expect(trustClaudeFolder('/a', {}, home)).toBe(false);
+    const cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+    expect(cfg.theme).toBe('dark');
+    expect(cfg.projects['/a'].allowedTools).toEqual(['x']);
+    expect(cfg.projects['/b'].hasTrustDialogAccepted).toBe(true);
+  });
+
+  it("adds a linked worktree's main checkout", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-'));
+    const wt = path.join(root, 'work');
+    fs.mkdirSync(wt);
+    fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${path.join(root, 'repos', 'x', '.git', 'worktrees', 'work')}\n`);
+    expect(trustFolders(wt)).toEqual([path.resolve(wt), path.join(root, 'repos', 'x')]);
   });
 });
