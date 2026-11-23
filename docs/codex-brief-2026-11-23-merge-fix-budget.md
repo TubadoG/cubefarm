@@ -78,7 +78,9 @@ All must pass (`server/scale.test.ts` is a timing budget that can flake under fu
 ## 5. Questions and answers
 
 ### Questions from Codex
-(none yet)
+- 2026-11-23 16:58 UTC — Verification blocker: first full suite hit sandbox `listen EPERM` (syncProxy/ptyHost), a shared temporary-state rename race (stateFile), and the known scale budget flake. Retrying the suite outside the sandbox with its existing isolated temporary SWARM_HOME; no database access. No answer needed yet.
+- 2026-11-23 16:58 UTC — Socket/terminal tests pass outside the sandbox. The second full run hit the same temporary-state rename race in teamsOffice and the scale budget; rerunning the entire suite with one worker to avoid cross-file state collisions. Production state/persistence code remains unchanged.
+- 2026-11-23 17:00 UTC — Resolved: the complete suite passed outside the sandbox with `npx vitest run --maxWorkers=1`, including stateFile, teamsOffice, syncProxy, ptyHost and scale. No outstanding questions or blockers.
 
 ### Answers from Claude
 (none yet)
@@ -91,3 +93,7 @@ All must pass (`server/scale.test.ts` is a timing budget that can flake under fu
 - 2026-11-23 16:50 UTC — Task 1: `server/swarm.ts`, `server/approveDecision.test.ts`; QA passes reset the budget, including held PRs. Three targeted test files passed: 72 tests; six successful fixes stay out of needs-human, five consecutive failed fixes still escalate.
 - 2026-11-23 16:52 UTC — Task 2: `server/swarm.ts`, `server/approveDecision.test.ts`; shared `resetManagerFixBudget(repoId, prNumber)` covers manager retry/send-back paths; automatic triage, watchdog and decision-deadline send-backs preserve the count. Six targeted files passed: 133 tests; TypeScript passed.
 - 2026-11-23 16:56 UTC — Task 2b: `server/{swarm,mergeGate,qaOutcome,triage}.ts` and the existing approval/merge/QA tests; exhausted conflicts reset to 0, stay failed, and get one lead triage job/message. Triage remains usable during conflict repair; failing checks still escalate and business holds remain. Five targeted files passed: 121 tests; TypeScript passed.
+- 2026-11-23 17:00 UTC — Task 3: `CHANGELOG.md` adds the requested release note and the Task 2b conflict exception; this brief records verification. TypeScript, all 238 test files (one worker), and production build passed.
+- 2026-11-23 17:00 UTC — Final: `npx tsc --noEmit -p .`, `npx vitest run --maxWorkers=1`, and `npm run build` passed. All tasks, including Claude's added Task 2b, are complete; no databases touched and nothing pushed.
+      Tests  2796 passed | 2 skipped (2798)
+ALL TASKS COMPLETE
