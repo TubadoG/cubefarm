@@ -102,3 +102,5 @@ All must pass. Paste the vitest summary line into the final log entry.
 ## 6. Status log (Codex appends; Claude reads)
 
 - 2026-11-25 — Claude: brief written at main `d8d6173`. Waiting for Codex.
+
+- 2026-11-25 17:02 EST — Task 1: added executable `scripts/test-slot.sh` and real-process tests in `server/testSlots.test.ts`. Bash syntax passed; vitest: 3 skipped (no flock on this Mac); fallback printed slots-off and preserved exit 3.
