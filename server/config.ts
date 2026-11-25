@@ -10,6 +10,8 @@ export const VERSION: string = JSON.parse(fs.readFileSync(path.resolve(import.me
 // Everything the swarm writes lives outside this project so that agents working in
 // cloned repos never pick up this project's CLAUDE.md or settings by walking up the tree.
 export const HOME_DIR = process.env.SWARM_HOME ?? path.join(os.homedir(), '.cubefarm');
+const testSlots = Number(process.env.SWARM_TEST_SLOTS ?? 2);
+export const TEST_SLOTS = Number.isInteger(testSlots) && process.env.SWARM_TEST_SLOTS !== '' ? Math.max(1, testSlots) : 2;
 export const WORKSPACE_ROOT = path.join(HOME_DIR, 'workspaces');
 export const DEMO = process.argv.includes('--demo') || process.env.SWARM_DEMO === '1' || process.env.SWARM_DEMO === 'true';
 

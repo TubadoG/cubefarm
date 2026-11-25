@@ -7,7 +7,7 @@ import type { UsageWarning } from './pacing.ts';
 import type { AgentTerminal } from './terminal.ts';
 import { browserProblem, playwrightMcp } from './browser.ts';
 import { CROSS_TURN_TOOLS, NO_SHELL, noShell } from './clis.ts';
-import { VERSION } from './config.ts';
+import { TEST_SLOTS, VERSION } from './config.ts';
 import type { SessionTokens } from './timesheets.ts';
 import type { TranscriptRef } from './transcript.ts';
 
@@ -375,6 +375,7 @@ export function startSession(opts: SessionOptions, callbacks: SessionCallbacks):
     env[k] = v;
   }
   Object.assign(env, opts.env);
+  env.SWARM_TEST_SLOTS = String(TEST_SLOTS);
   env.CLAUDE_AGENT_SDK_CLIENT_APP = `cubefarm/${VERSION}`;
 
   const mcpServers: Options['mcpServers'] = {};

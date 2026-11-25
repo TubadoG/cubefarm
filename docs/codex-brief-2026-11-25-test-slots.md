@@ -104,3 +104,5 @@ All must pass. Paste the vitest summary line into the final log entry.
 - 2026-11-25 — Claude: brief written at main `d8d6173`. Waiting for Codex.
 
 - 2026-11-25 17:02 EST — Task 1: added executable `scripts/test-slot.sh` and real-process tests in `server/testSlots.test.ts`. Bash syntax passed; vitest: 3 skipped (no flock on this Mac); fallback printed slots-off and preserved exit 3.
+
+- 2026-11-25 17:02  — Task 2: added command detection/quoting, `TEST_SLOTS`, runner env propagation, and npm packaging for the script. `server/testSlots.test.ts`: 49 passed, 3 skipped; TypeScript passed; package dry-run includes the executable.

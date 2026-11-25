@@ -3,12 +3,46 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { isHeavyTestCommand, TEST_SLOT_SCRIPT, wrapHeavyCommand } from './testSlots.ts';
 
 const script = path.resolve(import.meta.dirname, '../scripts/test-slot.sh');
 const hasFlock = spawnSync('flock', ['--version']).status === 0;
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 const dirs: string[] = [];
 const children: ChildProcess[] = [];
+
+describe('heavy test commands', () => {
+  it.each([
+    'docker compose up', 'docker-compose up', 'docker compose run tests',
+    'docker compose up -d --wait postgres seaweedfs', 'pytest -q', 'uv run pytest', 'python -m pytest', 'python3 -m pytest',
+    'vitest run', 'npx vitest', 'npx vitest run', 'npm test', 'npm run test', 'pnpm test', 'yarn test',
+    'npx playwright test', 'playwright test', 'make test', 'npx eslint .', 'npm run lint',
+    'tsc --noEmit', 'npx tsc --noEmit -p tsconfig.json', 'npm run typecheck', 'npm run build', 'next build', 'vite build',
+    'cd app && uv run pytest -q', 'git status; npm test', 'pytest | tee output', 'pwd\nnpm test', 'CI=1 npm test',
+  ])('wraps %s', (command) => {
+    expect(isHeavyTestCommand(command)).toBe(true);
+    expect(wrapHeavyCommand(command)).toBe(`${TEST_SLOT_SCRIPT} ${quote(command)}`);
+    expect(wrapHeavyCommand(wrapHeavyCommand(command))).toBe(wrapHeavyCommand(command));
+  });
+
+  it.each([
+    'git status', 'docker compose down -v', 'docker compose ps', 'docker compose logs', 'docker-compose down',
+    'cat package.json', 'ls', 'grep pytest README.md', 'rg "npm test"', 'echo "hello; pytest"', "git commit -m 'npm test'",
+    'npx vitest --watch', 'vitest run --watch', 'npx vitest -w', 'vitest', 'npm run dev', '',
+  ])('leaves %s unchanged', (command) => {
+    expect(isHeavyTestCommand(command)).toBe(false);
+    expect(wrapHeavyCommand(command)).toBe(command);
+  });
+
+  it('preserves single and double quotes as one shell argument', () => {
+    const command = `pytest -k 'one or two' --override-ini="name=quoted"`;
+    const wrapped = wrapHeavyCommand(command);
+    const argument = wrapped.slice(TEST_SLOT_SCRIPT.length + 1);
+    const result = spawnSync('bash', ['-c', `printf '%s' ${argument}`], { encoding: 'utf8' });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(command);
+  });
+});
 
 afterEach(() => {
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill('SIGKILL');
