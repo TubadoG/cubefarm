@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 2026-11-25
+
+- Agents' heavy test runs (test suites, linters, builds, compose stacks) wait for one of 2 shared test slots across all floors and run at low CPU and disk priority, so CI on the same box keeps running (`SWARM_TEST_SLOTS`).
+
 ## Unreleased — 2026-11-23
 
 - A PR reaches the manager only when 5 fixes in a row fail; a fix that passes QA, or the manager's retry, resets the count.

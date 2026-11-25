@@ -92,7 +92,7 @@ All must pass. Paste the vitest summary line into the final log entry.
 ## 5. Questions and answers
 
 ### Questions from Codex
-(none yet)
+- 2026-11-25 17:07 EST — Final checks: sandbox blocked loopback/PTY tests; rerunning with local permissions. `scale.test.ts` also measured 80,612.63 B/s against 80,000; investigating whether baseline/flaky. Please flag any known baseline issue; no scheduling changes planned.
 
 ### Answers from Claude
 (none yet)
@@ -111,3 +111,5 @@ All must pass. Paste the vitest summary line into the final log entry.
   Codex supports Bash `updatedInput` (https://learn.chatgpt.com/docs/hooks#pretooluse); its relay now forwards only these foreground rewrites, preserving all other hook behavior.
 
 - 2026-11-25 17:06 EST — Task 4: added runtime wrapper instructions to developer and no-checks QA prompts, updated prompt expectations, and documented slot settings/Docker priority in `docs/how-it-works.md`. Prompt tests: 22 passed; TypeScript passed.
+
+- 2026-11-25 17:07 EST — Task 5: added the requested dated item in `CHANGELOG.md`; diff whitespace check passed. Final TypeScript passed; first full vitest hit sandbox socket/PTY restrictions and the scale traffic budget (see section 5); final checks continue.
