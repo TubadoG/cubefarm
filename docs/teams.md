@@ -39,7 +39,7 @@ Every message in the channel, including replies inside threads, is sorted by who
 
 | Written by | What happens |
 | --- | --- |
-| **You**: a person whose Entra object id is on **Count messages from these people as mine** | It reaches the CEO as your message, like the phone. The phone shows it with 💬. If you @mention someone else (another agent) and not the CEO, it's theirs to answer and the CEO doesn't get it. |
+| **You**: a person whose Entra object id is on **Count messages from these people as mine** | It reaches the CEO as your message, like the phone. The phone shows it with 💬. If you @mention someone else (another agent) and not the CEO, it's theirs to answer, unless your message contains card commands: the office applies those and tells the CEO the results. |
 | **A colleague bot**: an app on **Colleague bots** (by app id, or by name if you didn't give one) | It reaches the CEO as theirs, never yours, but only when it @mentions the CEO and isn't just an acknowledgement. |
 | **The CEO's own bot** | Skipped. |
 | **Teams itself**: system events (any `messageType` but `message`), and the "I added a tab at the top of this channel. Check it out!" post Teams puts under the name of whoever added the tab (only when that is the whole message) | Listed as ignored, "Teams system post", in the channel and in direct chats; never delivered. |
@@ -52,7 +52,7 @@ Teams message from the manager, in the office's Teams channel (thread 1763650000
 
 Plan the checkout work, please.
 
-(Answer in that thread with post_teams, root_id "1763650000001", then reply NO_MESSAGE unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)
+(Answer in that thread with post_teams, root_id "1763650000001", then reply NO_MESSAGE unless the phone needs it too.)
 ```
 
 For a **colleague bot's** message:
@@ -70,18 +70,33 @@ A colleague's message is a CEO job of its own ("Reading a colleague's message").
 asking for work. So the CEO can't file issues because of it, and `close_issue` refuses an open decision. Text is cut
 at 3,500 characters (the CEO is told). Attachments and cards are counted but never opened.
 
-## Decisions are never answered in Teams
+## Answering cards from Teams
 
-Not by a colleague, and not by you either. The **Decision room** (or a GitHub comment starting with `Decision:`)
-stays the only way to answer a decision.
+You can answer an open Decision room card in the office's Teams channel or your direct chat with the CEO's app.
+Write each command on its own line, always with the card number:
 
-- While a job has a Teams message in it, `close_issue` refuses any open decision (closing one would decline it), even
-  though your message counts as yours. The CEO is told to point you to the Decision room. This holds whether the
-  message started the job or arrived while the CEO was already working.
-- If your message reads like an answer ("Decision: …", "approve #12", "go with option B"), the CEO also gets a line
-  saying so: "This reads like an answer to a decision. Don't act on it as one: tell the manager in the thread that
-  decisions are answered in the Decision room."
-- Nothing on the Teams path calls the office's decision code (`answerDecision`).
+- `approve #114` or `yes on #114`: apply the card's recommendation.
+- `option 2 on #114`: choose an option (1–9).
+- `retry QA #114` or `retry qa on #114`: queue a PR card for QA again.
+- `send back #123: <note>`: send back with a required note of 1–1,000 characters.
+- `close #114` is refused: **close stays in the Decision room**.
+
+Commands ignore case and allow leading @mentions and a trailing period. Several command lines are applied in order.
+If two floors have the same number, add a repo word: `approve regn #114` or `approve openRTSM #114`.
+It matches part of the repo's full name, ignoring case. Missing numbers (such as `yes on the merge`), closed or missing
+cards, and ambiguous numbers change nothing; the reply asks for the card or floor, or explains what was not found.
+Prose that merely mentions a number is not a command.
+
+Only your **Entra object id** on the manager list counts, never your display name. Colleague bots, other apps,
+forwarded or quoted messages, and people with your name cannot answer cards. Your own commands count even when you
+@mention someone other than the CEO.
+
+The office saves the message id before applying commands, so a restart cannot apply it twice. It uses the same answer
+actions as the Decision room, signs GitHub answers “Answered by … in Teams (cubefarm),” and records an office audit
+line. One reply in the same thread or direct chat reports each command's result. Replies count against the daily
+post limit; reaching that limit still applies the answers and logs that the reply was skipped. The CEO receives the
+message with those results and instructions not to answer the cards again. Its `close_issue` tool still refuses open
+decisions during a Teams job.
 
 ## No bot loops
 
@@ -127,9 +142,8 @@ messages in the channel, with the same rules.
   **💬 Teams DM**). The CEO's own messages are skipped; anyone or anything else is listed as "not a manager".
   System messages, deleted ones and anything written before Direct chat went on (or before a newly added id's first
   check) are never delivered. Each id is saved before delivery, so a restart never delivers one twice.
-- **Decisions.** The same as the channel: never answered in Teams. `close_issue` refuses an open decision while a
-  Teams message (channel or direct) is in the job, and a message that reads like an answer gets the extra line telling
-  the CEO to point you to the Decision room.
+- **Decisions.** The same numbered commands as the channel: see [Answering cards from Teams](#answering-cards-from-teams).
+  The office applies them before CEO delivery; close stays in the Decision room.
 - **Replying.** The CEO answers with `post_teams` and `direct_to` (your object id, given in the message). The office
   opens the bot's 1:1 conversation with you once, then caches its id:
   - `POST {serviceUrl}v3/conversations` with
@@ -147,7 +161,7 @@ Teams direct message from the manager, in their 1:1 chat with you in Teams (mess
 
 How is floor 1 doing?
 
-(Answer in that chat with post_teams, direct_to "e00b07ab-2f12-4a13-a2cd-156a025ae427", then reply NO_MESSAGE unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)
+(Answer in that chat with post_teams, direct_to "e00b07ab-2f12-4a13-a2cd-156a025ae427", then reply NO_MESSAGE unless the phone needs it too.)
 ```
 
 ### Setting up Direct chat

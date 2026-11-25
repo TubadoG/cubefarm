@@ -1,7 +1,7 @@
 // Settings → Teams (docs/teams.md): the CEO in one Microsoft Teams channel and, with Direct chat on, in your 1:1 chat
 // with its app. The office reads both and the CEO posts as its own bot, with the email sender's app (Settings → Email): no
 // other credentials. Your messages (by your Entra object id) reach the CEO as yours; colleague bots' as theirs, never with
-// your authority. Decisions are never answered in Teams. Only who wrote each message, where, and what happened to it
+// your authority. Only your numbered card commands answer decisions. Only who wrote each message, where, and what happened to it
 // reach the browser, never the text.
 import { useEffect, useState } from 'react';
 import { api } from '../api';
@@ -69,7 +69,7 @@ export function TeamsSettings() {
       <h3>💬 Teams</h3>
       <p className="muted small">
         {ceo} reads one Teams channel and answers in it as its own bot. Your messages there reach {ceo} as yours; colleague bots' reach it as theirs, only when they
-        @mention it. Decisions are never answered in Teams, not even by you: they stay in the Decision room.
+        @mention it. You can answer cards with commands such as approve #114. Close stays in the Decision room.
       </p>
       <label className="toggle block">
         <input type="checkbox" checked={teams.enabled} disabled={!ready && !teams.enabled} onChange={(e) => void save({ enabled: e.target.checked })} />

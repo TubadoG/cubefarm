@@ -31,7 +31,7 @@ import {
 } from './teamsChannel.ts';
 
 // The CEO in Teams (docs/teams.md): who a message is from decides what it is, bots can't loop, the cap holds, nothing is
-// delivered twice or replayed, and decisions never go through Teams.
+// delivered twice or replayed, and only the manager can answer cards.
 
 const T0 = Date.parse('2026-11-20T15:00:00Z');
 const iso = (t: number) => new Date(t).toISOString();
@@ -133,10 +133,10 @@ describe('the text', () => {
         '',
         'Plan the checkout work, please.',
         '',
-        `(Answer in that thread with post_teams, root_id "1763650099999", then reply ${NO_MESSAGE} unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)`,
+        `(Answer in that thread with post_teams, root_id "1763650099999", then reply ${NO_MESSAGE} unless the phone needs it too.)`,
       ].join('\n'),
     );
-    expect(managerText(m, 'Decision: approve #3')).toContain("This reads like an answer to a decision. Don't act on it as one");
+    expect(managerText(m, 'Decision: approve #3')).toContain("If this was meant as a card answer, it needs a card number");
   });
 
   it('frames a colleague bot’s message as theirs, never the manager’s, in its thread', () => {
@@ -223,6 +223,7 @@ function rig(o: { settings?: Partial<TeamsSettings>; state?: TeamsState; app?: b
       return postReplies.shift() ?? { status: 201, body: { id: 'x' } };
     },
     persist: async () => void saved.push(JSON.stringify(state)),
+    decide: async (cmds) => cmds.map(() => 'Done: test card answered.'),
     deliverManager: (text, framed, via) => {
       manager.push({ text, framed, via });
       delivered.push(saved.at(-1) ?? '');
@@ -330,13 +331,12 @@ describe('TeamsChannel: routing', () => {
   });
 });
 
-describe('TeamsChannel: decisions are never answered in Teams', () => {
-  it('flags the manager’s decision-like message so the CEO points them to the Decision room', async () => {
+describe('TeamsChannel: decision-like prose', () => {
+  it('flags the manager’s decision-like message so the CEO explains numbered commands', async () => {
     const r = rig({ state: started() });
     r.pages.push(page(msg({ body: { contentType: 'html', content: '<p>Decision: approve #3, ship it.</p>' } })));
     await r.teams.check();
-    expect(r.manager[0].framed).toContain('Decisions are never answered in Teams, not even by the manager');
-    expect(r.manager[0].framed).toContain('This reads like an answer to a decision');
+    expect(r.manager[0].framed).toContain('If this was meant as a card answer');
   });
 
   it('a colleague bot’s “decision” is only a colleague’s message', async () => {
@@ -545,10 +545,10 @@ describe('direct chat: the calls', () => {
         '',
         'How is floor 1?',
         '',
-        `(Answer in that chat with post_teams, direct_to "${BRYAN}", then reply ${NO_MESSAGE} unless the phone needs it too. Decisions are never answered in Teams, not even by the manager: they answer in the Decision room.)`,
+        `(Answer in that chat with post_teams, direct_to "${BRYAN}", then reply ${NO_MESSAGE} unless the phone needs it too.)`,
       ].join('\n'),
     );
-    expect(directText(m, 'approve #3, ship it', BRYAN)).toContain("This reads like an answer to a decision. Don't act on it as one: tell the manager in the chat");
+    expect(directText(m, 'approve #3, ship it', BRYAN)).toContain("If this was meant as a card answer, it needs a card number");
   });
 });
 
@@ -624,11 +624,10 @@ describe('direct chat: reading', () => {
     ]);
   });
 
-  it('flags a decision-like direct message so the CEO points to the Decision room', async () => {
+  it('flags a decision-like direct message so the CEO explains numbered commands', async () => {
     const r = rig({ settings: DIRECT, state: directState(), chats: { [BRYAN]: [chat(msg({ body: { contentType: 'html', content: '<p>Decision: approve #3, ship it.</p>' } }))] } });
     await r.teams.check();
-    expect(r.manager[0].framed).toContain('Decisions are never answered in Teams, not even by the manager');
-    expect(r.manager[0].framed).toContain('This reads like an answer to a decision');
+    expect(r.manager[0].framed).toContain('If this was meant as a card answer');
   });
 
   it('delivers each once, saved first, never again after a restart, and never what was written before it went on', async () => {

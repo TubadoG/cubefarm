@@ -24,8 +24,8 @@ const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
  * otherwise it goes back to a developer with the choice as the note; send back and close do just that.
  * Throws a message the manager can act on (no brief, an option that isn't there).
  */
-export function answerPlan(d: { kind: 'issue' | 'pr'; reason: DecisionReason; brief: Brief | null; by: string }, c: DecisionChoice): AnswerPlan {
-  const sign = `\n\n_Answered by ${d.by} in the cubefarm Decision room._\n${OFFICE_MARK}`;
+export function answerPlan(d: { kind: 'issue' | 'pr'; reason: DecisionReason; brief: Brief | null; by: string; via?: 'room' | 'teams' }, c: DecisionChoice): AnswerPlan {
+  const sign = `\n\n_Answered by ${d.by} in ${d.via === 'teams' ? 'Teams (cubefarm)' : 'the cubefarm Decision room'}._\n${OFFICE_MARK}`;
   let chosen: string; // the words of the choice
   let summary: string;
   if (c.choice === 'approve') {

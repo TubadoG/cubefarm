@@ -26,7 +26,8 @@ import { followKeptCli, resumeNote, resumesAfterRestart } from './restartRecover
 import { emptyKimai, KimaiSync, loadKimai, type KimaiState } from './kimai.ts';
 import { findLogo, logoProblem, removeLogo, saveLogo } from './logo.ts';
 import { emptyInbox, loadInbox, MailInbox, type InboxState } from './mailInbox.ts';
-import { emptyTeams, loadTeams, TeamsChannel, type TeamsState } from './teamsChannel.ts';
+import { emptyTeams, loadTeams, TeamsChannel, type TeamsDecisionContext, type TeamsState } from './teamsChannel.ts';
+import type { TeamsDecisionCommand } from './teamsDecision.ts';
 import { DEFAULT_TEAMS, postsToday, teamsOn, teamsProblem, teamsSettings } from '../shared/teams.ts';
 import type { WorkSession } from './timesheets.ts';
 import { sessionTranscriptTokens } from './transcript.ts';
@@ -757,6 +758,7 @@ export class Swarm {
       get: (url, fresh) => this.mailer.get(url, fresh),
       post: (url, body, fresh) => this.mailer.botPost(url, body, fresh),
       persist: () => this.writeState(),
+      decide: (cmds, ctx) => this.teamsDecisions(cmds, ctx),
       deliverManager: (text, framed, via) => this.messageCeo(text, via, framed),
       deliverColleague: (framed) => this.colleagueTeams(framed),
       note: (text) => this.postMessage('office', text),
@@ -6395,12 +6397,50 @@ export class Swarm {
     return { repo, item };
   }
 
+  /** Resolve Teams commands against the same open cards as the Decision room. */
+  private async teamsDecisions(commands: TeamsDecisionCommand[], ctx: TeamsDecisionContext): Promise<string[]> {
+    const results: string[] = [];
+    for (const cmd of commands) {
+      try {
+        if (cmd.kind === 'no-number') throw new HttpError(400, 'Which card? Include its number, for example approve #114.');
+        if (cmd.kind === 'close') throw new HttpError(400, `Close #${cmd.number} only in the Decision room.`);
+        const matches = this.openDecisions().filter((d) => d.number === cmd.number && (!cmd.repo || this.repo(d.repoId).fullName.toLowerCase().includes(cmd.repo.toLowerCase())));
+        if (!matches.length) throw new HttpError(404, `No open card #${cmd.number}.`);
+        if (matches.length > 1) {
+          const examples = matches.map((d) => `approve ${this.repo(d.repoId).fullName.split('/').at(-1)} #${cmd.number}`);
+          throw new HttpError(409, `#${cmd.number} is open on more than one floor: write ${examples.join(' or ')}.`);
+        }
+        const card = matches[0];
+        let answer: string;
+        if (cmd.kind === 'retry-qa') {
+          if (card.kind !== 'pr') throw new HttpError(400, `#${cmd.number} is not a PR card; retry QA needs a PR.`);
+          const rec = this.state.qa.find((q) => q.repoId === card.repoId && q.prNumber === card.number);
+          if (!rec) throw new HttpError(404, `PR #${cmd.number}'s QA record is gone.`);
+          this.clearPrepStrikes(card.repoId, card.number);
+          this.setQa(rec, { status: 'queued', qaAgentId: null });
+          answer = 'queued for QA';
+          this.answered(card.repoId, card.kind, card.number, answer);
+          this.emitDecisions();
+          setTimeout(() => this.schedule(), 200);
+        } else {
+          const body = cmd.kind === 'option' ? { choice: 'option', option: cmd.option } : cmd.kind === 'send-back' ? { choice: 'send-back', note: cmd.note } : { choice: 'approve' };
+          answer = (await this.answerDecision(card.repoId, card.number, body, 'teams')).answer;
+        }
+        this.postMessage('office', `Teams: ${ctx.managerName} ${answer} — #${card.number} (${this.repo(card.repoId).fullName})`);
+        results.push(`Done: #${card.number} ${answer.replace(/[.!\s]+$/, '')}.`);
+      } catch (err) {
+        results.push(`Not done: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return results;
+  }
+
   /**
    * The manager's answer from a card (decisionAnswer.ts answerPlan): an explicit "Decision:" comment on GitHub, then the
    * issue's labels (or its close), or the PR's merge, send-back or close through the office's own actions. The 48-hour
    * clock stops.
    */
-  async answerDecision(repoId: string, number: number, body: unknown) {
+  async answerDecision(repoId: string, number: number, body: unknown, via: 'room' | 'teams' = 'room') {
     const { repo, item } = this.openDecision(repoId, number);
     let choice;
     try {
@@ -6411,7 +6451,7 @@ export class Swarm {
     const brief = this.briefs.get(decisionKey(item)) ?? null;
     let plan;
     try {
-      plan = answerPlan({ kind: item.kind, reason: item.reason, brief: usableBrief(brief) ? brief : null, by: this.state.settings.managerName || 'the manager' }, choice);
+      plan = answerPlan({ kind: item.kind, reason: item.reason, brief: usableBrief(brief) ? brief : null, by: this.state.settings.managerName || 'the manager', via }, choice);
     } catch (err) {
       throw new HttpError(409, (err as Error).message);
     }
@@ -7063,7 +7103,7 @@ export class Swarm {
     checkCloseIssue({ floor: repo.floor, number: n, state, pulls: rt?.pulls ?? [] });
     const decision = this.openDecisions().some((d) => d.repoId === repo.id && d.number === n);
     if (decision && colleagueOnly(this.state.ceo.job, this.ceoAsked)) throw new Error(COLLEAGUE_NO_DECISION);
-    // Decisions are never answered through Teams, by anyone: the Decision room (or a Decision: comment) only.
+    // Teams card answers are applied before the CEO reads them. Closing a card stays in the Decision room.
     if (decision && (this.ceoTeams || this.state.ceo.job?.teams)) throw new Error(TEAMS_NO_DECISION);
     await this.backend.closeIssue(repo.fullName, n, reason, 'not planned');
     this.postMessage('office', `🗂️ ${this.ceo().name} closed #${n} on floor ${repo.floor}: ${reason.split('\n')[0].slice(0, 200)}`);
