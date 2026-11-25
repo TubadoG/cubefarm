@@ -45,6 +45,33 @@ describe('findBrief', () => {
     expect(findBrief(body, comments)!.recommendation).toBe('Newer');
     expect(findBrief('no brief', [{ body: 'none either' }])).toBeNull();
   });
+
+  it('skips brief comments older than the requested time and falls back to the body or null', () => {
+    const since = Date.parse('2026-11-25T12:00:00Z');
+    const old = { body: renderBrief({ ...full, recommendation: 'Old comment' }), createdAt: '2026-11-25T11:00:00Z' };
+    const body = renderBrief({ ...full, recommendation: 'From the body' });
+    expect(findBrief(body, [old], since)!.recommendation).toBe('From the body');
+    expect(findBrief('no brief', [old], since)).toBeNull();
+  });
+
+  it('keeps brief comments within the stale slack or after the requested time', () => {
+    const since = Date.parse('2026-11-25T12:00:00Z');
+    const withinSlack = { body: renderBrief({ ...full, recommendation: 'Within slack' }), createdAt: '2026-11-25T11:55:00Z' };
+    const after = { body: renderBrief({ ...full, recommendation: 'After' }), createdAt: '2026-11-25T12:05:00Z' };
+    expect(findBrief(null, [withinSlack], since)!.recommendation).toBe('Within slack');
+    expect(findBrief(null, [after], since)!.recommendation).toBe('After');
+  });
+
+  it('takes the newest fresh brief and keeps comments without a usable date', () => {
+    const since = Date.parse('2026-11-25T12:00:00Z');
+    const comments = [
+      { body: renderBrief({ ...full, recommendation: 'Older fresh' }), createdAt: '2026-11-25T12:01:00Z' },
+      { body: renderBrief({ ...full, recommendation: 'Newer fresh' }), createdAt: '2026-11-25T12:02:00Z' },
+    ];
+    expect(findBrief(null, comments, since)!.recommendation).toBe('Newer fresh');
+    expect(findBrief(null, [{ body: renderBrief({ ...full, recommendation: 'No date' }) }], since)!.recommendation).toBe('No date');
+    expect(findBrief(null, [{ body: renderBrief({ ...full, recommendation: 'Bad date' }), createdAt: 'not-a-date' }], since)!.recommendation).toBe('Bad date');
+  });
 });
 
 describe('briefLines', () => {

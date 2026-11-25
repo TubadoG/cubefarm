@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — 2026-11-25
+
+- A PR's Decision room card never shows a brief written before its current decision started; the CEO writes a fresh one instead, so cards don't repeat facts that have since changed.
+
 ## Unreleased — 2026-11-23
 
 - A PR reaches the manager only when 5 fixes in a row fail; a fix that passes QA, or the manager's retry, resets the count.

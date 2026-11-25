@@ -10,6 +10,8 @@ export const NEEDS_INPUT = 'needs-input';
 export const DECIDED_DEFAULT = 'decided:default';
 /** Hidden in every comment the office posts, so the decision clock can tell them from the manager's replies. */
 export const OFFICE_MARK = '<!-- cubefarm -->';
+/** Briefs posted shortly before a decision clock starts still belong to that decision. */
+export const BRIEF_STALE_SLACK_MS = 10 * 60_000;
 
 /** How the manager answers a decision, under every brief's deadline. */
 export const HOW_TO_ANSWER = "Reply on the Decision room card or comment starting with 'Decision:' to answer.";
@@ -110,10 +112,13 @@ export function briefGaps(b: Brief): string[] {
 /** A brief the office can act on: it says what is decided and what it recommends. */
 export const usableBrief = (b: Brief | null): b is Brief => !!b && !!b.decision && !!b.recommendation;
 
-/** The newest brief on an issue or PR: the latest comment that has one, else the body. */
-export function findBrief(body: string | null | undefined, comments: readonly { body: string }[]): Brief | null {
+/** The newest brief on an issue or PR: the latest non-stale comment that has one, else the body. */
+export function findBrief(body: string | null | undefined, comments: readonly { body: string; createdAt?: string }[], since?: number | null): Brief | null {
   for (let i = comments.length - 1; i >= 0; i--) {
-    const b = parseBrief(comments[i].body);
+    const comment = comments[i];
+    const createdAt = comment.createdAt ? Date.parse(comment.createdAt) : NaN;
+    if (typeof since === 'number' && !Number.isNaN(createdAt) && createdAt < since - BRIEF_STALE_SLACK_MS) continue;
+    const b = parseBrief(comment.body);
     if (b) return b;
   }
   return parseBrief(body);
