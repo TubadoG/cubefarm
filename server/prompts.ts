@@ -3,6 +3,7 @@
 // task decides which one (build an issue, test a pull request, fix one), and they carry the office's workflow and
 // safety rules.
 
+import { TEST_SLOT_SCRIPT } from './testSlots.ts';
 import { BRIEF_TEMPLATE, DECIDED_DEFAULT, NEEDS_INPUT } from '../shared/brief.ts';
 import { HOLD_LABEL } from '../shared/issues.ts';
 import type { AgentPromptView } from '../shared/types.ts';
@@ -81,7 +82,7 @@ export function devSystemPrompt({ agent: a, repo, port, cwd, branch, linked, fix
     'Workflow:',
     '1. Read the issue and explore the relevant code before changing anything.',
     '2. Implement the change with focused commits and clear messages.',
-    "3. Run the project's existing tests, linters and build (if any) and fix what you broke. Install dependencies first if needed (e.g. npm install when node_modules is missing).",
+    `3. Run the project's existing tests, linters and build (if any) and fix what you broke. Install dependencies first if needed (e.g. npm install when node_modules is missing). Run tests, linters, builds and \`docker compose up\` through \`${TEST_SLOT_SCRIPT}\` (for example \`${TEST_SLOT_SCRIPT} 'uv run pytest -q'\`): it waits for a free test slot so the office box is not overloaded.`,
     repo.browserTesting
       ? `4. If the project has a web UI, start its dev server in the background on port ${port} (reserved for you, so you don't collide with teammates), then check your change with the Playwright browser tools (mcp__playwright__browser_navigate, browser_snapshot, browser_click, browser_take_screenshot). Stop the dev server when you're done.`
       : '4. Verify the behaviour you changed as directly as you can.',
@@ -123,7 +124,7 @@ export function qaSystemPrompt({ agent: a, repo, port, cwd, branch, pr, depsLine
     'How to test:',
     '1. Read the PR description and the linked issue, and work out the acceptance criteria.',
     `2. Review the code as a careful reviewer would: git diff origin/${repo.defaultBranch}...HEAD. Look for bugs, unhandled errors and edge cases, security problems, leftover debug code, and new logic without tests.`,
-    testStep ?? "3. Install dependencies if needed (e.g. npm install when node_modules is missing), then run the project's test suite, linters, type checks and build (whichever exist).",
+    testStep ?? `3. Install dependencies if needed (e.g. npm install when node_modules is missing), then run the project's test suite, linters, type checks and build (whichever exist). Run tests, linters, builds and \`docker compose up\` through \`${TEST_SLOT_SCRIPT}\` (for example \`${TEST_SLOT_SCRIPT} 'uv run pytest -q'\`): it waits for a free test slot so the office box is not overloaded.`,
     repo.browserTesting
       ? `4. If the project has a UI, start it in the background on port ${port} (reserved for you) and exercise the change in a real browser with the Playwright tools: navigate, click, type, resize to a phone size, try edge cases, and check the console for errors. Take a screenshot with browser_take_screenshot (no filename) of every important state: the screenshots are attached to the PR as evidence. Stop the server afterwards.`
       : '4. Exercise the changed behaviour directly (run the program, call the API, write a quick script).',

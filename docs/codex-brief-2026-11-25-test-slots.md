@@ -109,3 +109,5 @@ All must pass. Paste the vitest summary line into the final log entry.
 
 - 2026-11-25 17:05 EST — Task 3: wired SDK and live/idle CLI permissions; added runner tests and a Codex relay test (`agentRunner`, `cliRunner`, `clis` and their tests). TypeScript passed; focused vitest: 95 passed, 3 skipped.
   Codex supports Bash `updatedInput` (https://learn.chatgpt.com/docs/hooks#pretooluse); its relay now forwards only these foreground rewrites, preserving all other hook behavior.
+
+- 2026-11-25 17:06 EST — Task 4: added runtime wrapper instructions to developer and no-checks QA prompts, updated prompt expectations, and documented slot settings/Docker priority in `docs/how-it-works.md`. Prompt tests: 22 passed; TypeScript passed.
