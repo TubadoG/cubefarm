@@ -1,3 +1,4 @@
+import { TEST_SLOT_SCRIPT } from './testSlots.ts';
 import { describe, expect, it } from 'vitest';
 import { qaInstructions, type QaPromptInput } from './qaPrompt.ts';
 
@@ -19,7 +20,7 @@ const input = (i: Partial<QaPromptInput> = {}): QaPromptInput => ({
   ...i,
 });
 
-const TODAYS_STEP = "3. Install dependencies if needed (e.g. npm install when node_modules is missing), then run the project's test suite, linters, type checks and build (whichever exist).";
+const TODAYS_STEP = `3. Install dependencies if needed (e.g. npm install when node_modules is missing), then run the project's test suite, linters, type checks and build (whichever exist). Run tests, linters, builds and \`docker compose up\` through \`${TEST_SLOT_SCRIPT}\` (for example \`${TEST_SLOT_SCRIPT} 'uv run pytest -q'\`): it waits for a free test slot so the office box is not overloaded.`;
 
 describe('qaInstructions: GitHub checks', () => {
   it('passing: names them and says not to re-run what they cover', () => {

@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { resultTokens } from './agentRunner.ts';
+import { allowAll, resultTokens } from './agentRunner.ts';
+import { wrapHeavyCommand } from './testSlots.ts';
+
+describe('tool permissions', () => {
+  it.each([
+    ['Bash', { command: 'npm test', timeout: 1000 }],
+    ['Bash', { command: 'git status' }],
+    ['Read', { command: 'npm test', file_path: 'README.md' }],
+    ['Bash', { command: 'npm test', run_in_background: true }],
+    ['Bash', { command: 42 }],
+  ])('approves %s and only wraps foreground Bash tests (%j)', async (name, input) => {
+    const expected = name === 'Bash' && typeof input.command === 'string' && !('run_in_background' in input)
+      ? { ...input, command: wrapHeavyCommand(input.command) } : input;
+    expect(await allowAll(name, input, { signal: new AbortController().signal, toolUseID: 'test', requestId: 'test' })).toEqual({ behavior: 'allow', updatedInput: expected });
+  });
+});
 
 // A session's tokens from the SDK's result messages, for its timesheet (docs/kimai.md).
 describe('resultTokens', () => {

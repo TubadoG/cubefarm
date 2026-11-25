@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { lostConversation, resumableSession } from './cliRunner.ts';
+import { allowTool, lostConversation, resumableSession } from './cliRunner.ts';
+import { wrapHeavyCommand } from './testSlots.ts';
+
+describe('PreToolUse permissions', () => {
+  it('wraps heavy foreground Bash commands and preserves other input fields', () => {
+    const input = { command: 'cd app && uv run pytest -q', timeout: 1000 };
+    expect(allowTool({ tool_name: 'Bash', tool_input: input })).toEqual({ hookSpecificOutput: {
+      hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Approved by cubefarm',
+      updatedInput: { ...input, command: wrapHeavyCommand(input.command) },
+    } });
+  });
+
+  it.each([
+    { tool_name: 'Bash', tool_input: { command: 'git status' } },
+    { tool_name: 'Read', tool_input: { command: 'npm test' } },
+    { tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true } },
+    { tool_name: 'Bash', tool_input: { command: 42 } },
+  ])('keeps the original approval for %j', (event) => {
+    expect(allowTool(event)).toEqual({ hookSpecificOutput: {
+      hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Approved by cubefarm',
+    } });
+  });
+});
 
 describe('resumableSession', () => {
   const onDisk = (files: string[]) => (file: string) => files.includes(file);

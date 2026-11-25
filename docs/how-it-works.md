@@ -133,6 +133,10 @@ the CEO rewrites the brief with `write_brief` when your question shows it was un
 - QA's instructions tell the agent not to push, comment on, review, merge or edit PRs or issues: the office posts their report for them.
 - QA is automatic for every PR from a `swarm/` branch, whether or not auto-assign is on.
 
+## Test slots
+
+Heavy foreground test commands share 2 host-wide slots across floors (`SWARM_TEST_SLOTS`, minimum 1), with locks in `$HOME/.cubefarm/test-slots` (`SWARM_TEST_SLOT_DIR` overrides it); the wrapper lowers CPU and disk priority with `nice`/`ionice`, but Docker daemon containers do not inherit that priority, and without `flock` (such as on macOS) slots are off and only `nice` applies.
+
 ## The team
 
 Agents are interchangeable: no titles, job descriptions or specialties, and no QA lab. A floor has up to 10 of them (Settings → **Most agents per floor**, at most 15: the room has 12 desks in the open plan and 3 along the east wall). Connecting a repo puts one agent at a desk; the CEO sizes the team from there (see [Agents](agents.md)).

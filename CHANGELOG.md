@@ -3,6 +3,7 @@
 ## Unreleased — 2026-11-25
 
 - A PR's Decision room card never shows a brief written before its current decision started; the CEO writes a fresh one instead, so cards don't repeat facts that have since changed.
+- Agents' heavy test runs (test suites, linters, builds, compose stacks) wait for one of 2 shared test slots across all floors and run at low CPU and disk priority, so CI on the same box keeps running (`SWARM_TEST_SLOTS`).
 
 ## Unreleased — 2026-11-23
 

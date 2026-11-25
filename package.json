@@ -28,7 +28,8 @@
   "files": [
     "bin",
     "dist",
-    "dist-server"
+    "dist-server",
+    "scripts/test-slot.sh"
   ],
   "engines": {
     "node": ">=22"
