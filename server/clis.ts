@@ -412,16 +412,27 @@ if (event.type === 'agent-turn-complete') {
 }
 `;
 
-/** Codex's hook program: passes what Codex tells a hook on to the office and answers nothing, so Codex carries on as usual. */
-export const CODEX_HOOK_SOURCE = String.raw`// cubefarm: Codex's hooks. Tells the office what Codex is doing; never changes what it does.
+/** Codex's hook program: reports events and returns only the office's foreground Bash test-slot rewrites. */
+export const CODEX_HOOK_SOURCE = String.raw`// cubefarm: Codex's hooks. Reports events and wraps heavy foreground Bash commands.
 const url = process.env.CUBEFARM_HOOK_URL;
 const chunks = [];
 process.stdin.on('data', (c) => chunks.push(c));
 process.stdin.on('end', async () => {
+  let output = {};
   try {
-    if (url) await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: Buffer.concat(chunks), signal: AbortSignal.timeout(5000) });
+    if (url) {
+      const body = Buffer.concat(chunks);
+      const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(5000) });
+      const event = JSON.parse(body.toString());
+      if (response.ok && event.hook_event_name === 'PreToolUse' && event.tool_name === 'Bash' && event.tool_input?.run_in_background !== true) {
+        const hook = (await response.json()).hookSpecificOutput;
+        if (hook?.permissionDecision === 'allow' && typeof hook.updatedInput?.command === 'string') {
+          output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: hook.updatedInput } };
+        }
+      }
+    }
   } catch {}
-  process.stdout.write('{}');
+  process.stdout.write(JSON.stringify(output));
 });
 `;
 

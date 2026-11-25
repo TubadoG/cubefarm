@@ -10,6 +10,7 @@ import { CROSS_TURN_TOOLS, NO_SHELL, noShell } from './clis.ts';
 import { TEST_SLOTS, VERSION } from './config.ts';
 import type { SessionTokens } from './timesheets.ts';
 import type { TranscriptRef } from './transcript.ts';
+import { wrapHeavyCommand } from './testSlots.ts';
 
 // One Claude Code instance (via the Claude Agent SDK) on one task (building an issue, testing or fixing a PR) in its own git worktree.
 // The CEO runs through here too, with the office tools instead of a shell.
@@ -144,7 +145,12 @@ class InputQueue implements AsyncIterable<SDKUserMessage> {
 
 // Agents work like the manager's own CLI, but nobody may be watching to answer a permission question: every tool call
 // is approved. The office's rules (branches, pull requests, QA leaving GitHub alone) are in their instructions only.
-const allowAll: CanUseTool = async (_toolName, input) => ({ behavior: 'allow', updatedInput: input });
+export const allowAll: CanUseTool = async (toolName, input) => ({
+  behavior: 'allow',
+  updatedInput: toolName === 'Bash' && typeof input.command === 'string' && input.run_in_background !== true
+    ? { ...input, command: wrapHeavyCommand(input.command) }
+    : input,
+});
 
 /**
  * A Playwright screenshot saved to a file (browser_take_screenshot with a filename) comes back as a link, not an

@@ -1,9 +1,40 @@
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { CODEX_HOOK_EVENTS, codexHookCommand, CROSS_TURN_TOOLS, hookReviewKey, interruptions, launchArgs, oneAtATime, trustClaudeFolder, trustFolders, trustKey, unwrapCmdShim, type LaunchContext } from './clis.ts';
+import { CODEX_HOOK_EVENTS, CODEX_HOOK_SOURCE, codexHookCommand, CROSS_TURN_TOOLS, hookReviewKey, interruptions, launchArgs, oneAtATime, trustClaudeFolder, trustFolders, trustKey, unwrapCmdShim, type LaunchContext } from './clis.ts';
 import { describeOfficeTool, describeTool, newScreenshots, screenshotFile, summariseResult } from './agentRunner.ts';
+import { allowTool } from './cliRunner.ts';
+import { wrapHeavyCommand } from './testSlots.ts';
+
+describe('Codex test-slot hook relay', () => {
+  it.each([
+    { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } },
+    { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' } },
+    { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { command: 'npm test' } },
+    { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test', run_in_background: true } },
+    { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' } },
+  ])('relays only a foreground Bash rewrite for %j', async (event) => {
+    const handlers: Record<string, (chunk?: Buffer) => unknown> = {};
+    let output = '';
+    vm.runInNewContext(CODEX_HOOK_SOURCE, {
+      Buffer, AbortSignal,
+      process: {
+        env: { CUBEFARM_HOOK_URL: 'http://office.test/hook' },
+        stdin: { on: (name: string, handler: typeof handlers[string]) => { handlers[name] = handler; } },
+        stdout: { write: (value: string) => { output += value; } },
+      },
+      fetch: async (_url: string, options: { body: Buffer }) => ({ ok: true, json: async () => allowTool(JSON.parse(options.body.toString())) }),
+    });
+    handlers.data(Buffer.from(JSON.stringify(event)));
+    await handlers.end();
+    const heavy = event.hook_event_name === 'PreToolUse' && event.tool_name === 'Bash' && event.tool_input.command === 'npm test' && !event.tool_input.run_in_background;
+    expect(JSON.parse(output)).toEqual(heavy ? { hookSpecificOutput: {
+      hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { command: wrapHeavyCommand('npm test') },
+    } } : {});
+  });
+});
 
 const dir = path.join(os.tmpdir(), 'npm-global');
 

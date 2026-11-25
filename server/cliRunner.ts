@@ -26,6 +26,7 @@ import {
 import type { OfficeTools } from './ceo.ts';
 import type { AgentTerminal } from './terminal.ts';
 import type { AgentCli } from '../shared/types.ts';
+import { wrapHeavyCommand } from './testSlots.ts';
 
 // One agent session as the real CLI in a pseudo-terminal: the same contract as the Agent SDK runner (log lines, the
 // current tool, the final text, finished), so the rest of the office doesn't care which runtime an agent uses.
@@ -181,6 +182,16 @@ const ALLOW = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDec
 
 const toolInput = (b: Record<string, unknown>) => (b.tool_input && typeof b.tool_input === 'object' ? b.tool_input : {}) as Record<string, unknown>;
 
+/** Both active turns and idle CLI hooks give heavy foreground Bash commands a test slot. */
+export function allowTool(b: Record<string, unknown>) {
+  const input = toolInput(b);
+  if (b.tool_name === 'Bash' && typeof input.command === 'string' && input.run_in_background !== true) {
+    const command = wrapHeavyCommand(input.command);
+    if (command !== input.command) return { ...ALLOW, hookSpecificOutput: { ...ALLOW.hookSpecificOutput, updatedInput: { ...input, command } } };
+  }
+  return ALLOW;
+}
+
 /** The CLI has exited, or has had a few seconds to. */
 const exitOf = (p: Pty) =>
   new Promise<void>((resolve) => {
@@ -303,7 +314,7 @@ export async function releaseClis(restart: boolean): Promise<void> {
 function idleHook(live: LiveCli, b: Record<string, unknown>): Record<string, unknown> {
   switch (String(b.hook_event_name ?? '')) {
     case 'PreToolUse':
-      return ALLOW;
+      return allowTool(b);
     case 'UserPromptSubmit': {
       const text = String(b.prompt ?? '').trim();
       if (!text || live.term.onIdlePrompt?.(text)) return {};
@@ -483,7 +494,7 @@ export function startCliSession(opts: SessionOptions, callbacks: SessionCallback
           cb.tool(name);
           if (name === 'mcp__playwright__browser_navigate' && typeof input.url === 'string') cb.browserUrl(input.url);
         }
-        return ALLOW;
+        return allowTool(b);
       }
       case 'PostToolUse':
       case 'PostToolUseFailure': {
