@@ -6194,7 +6194,7 @@ export class Swarm {
           console.warn(`decision clock: could not read ${repo.fullName}#${d.number}: ${oneLine(err)}`);
           continue;
         }
-        const brief = findBrief(talk.body, talk.comments);
+        const brief = findBrief(talk.body, talk.comments, d.kind === 'pr' ? d.firstSeen : null);
         this.briefs.set(decisionKey(d), brief);
         if (usableBrief(brief) && (d.briefAt ?? null) === null) d.briefAt = now;
         if (d.answeredAt === null) d.answeredAt = managerReply(talk.comments, d.firstSeen);

@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { NEEDS_INPUT } from '../shared/brief.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { NEEDS_INPUT, renderBrief, type Brief } from '../shared/brief.ts';
 import { DECIDED_MANAGER, type DecisionView } from '../shared/decisions.ts';
+import type { PullInfo } from '../shared/types.ts';
+import { BRIEF_GRACE_MS, type DecisionRecord } from './decisionClock.ts';
 import { createDemoBackend } from './demo.ts';
 import { Swarm } from './swarm.ts';
 
@@ -9,8 +11,17 @@ import { Swarm } from './swarm.ts';
 type Internals = {
   ensureCeo(interrupted: unknown[]): void;
   decisionViews(): DecisionView[];
+  missingBriefs(): { floor: number; kind: 'issue' | 'pr'; number: number; title: string }[];
   decisionAnswered(job: { kind: 'decision'; repoId: string; prNumber: number; text: string; at: number }, text: string | null): Promise<void>;
-  state: { decisions: { number: number; answeredAt: number | null }[]; ceo: { queue: { kind: string; prNumber?: number; text?: string }[] } };
+  queueQa(repo: unknown, number: number, dev: null, issue: null): void;
+  repo(id: string): { floor: number };
+  repoRt: Map<string, { pulls: PullInfo[]; syncing?: boolean }>;
+  setQa(rec: object, patch: object): void;
+  state: {
+    decisions: DecisionRecord[];
+    qa: { repoId: string; prNumber: number; status: string; heldFor?: string | null }[];
+    ceo: { queue: { kind: string; prNumber?: number; text?: string }[] };
+  };
 };
 
 const REPO = 'demo-co/weather-api';
@@ -76,5 +87,63 @@ describe('the Decision room', () => {
     expect(last.startsWith('Decision:')).toBe(false); // the CEO's answer is not the manager's decision
     await swarm.decisionTick(Date.now());
     expect(card().answeredAt).toBeNull();
+  });
+
+  it('ignores a held PR brief from before its current decision and uses a fresh one', async () => {
+    const pr = 79;
+    const firstSeen = Date.parse('2026-11-25T12:00:00Z');
+    const pull: PullInfo = {
+      number: pr,
+      title: 'Visit schedule',
+      url: `https://github.com/${REPO}/pull/${pr}`,
+      headRefName: 'swarm/issue-12-kim',
+      state: 'OPEN',
+      isDraft: false,
+      mergeable: 'MERGEABLE',
+      reviewDecision: null,
+      closesIssues: [],
+      createdAt: new Date(firstSeen - H).toISOString(),
+      mergedAt: null,
+      additions: 30,
+      deletions: 4,
+      checks: 'passing',
+      headSha: 'held-head',
+      mergeState: 'CLEAN',
+      failedChecks: [],
+      pendingChecks: [],
+      labels: ['swarm:hold'],
+    };
+    const oldBrief: Brief = { background: 'Old facts.', decision: 'Merge?', options: ['Wait.'], recommendation: 'Wait.', risk: 'Delay.', ifNoReply: 'Wait.' };
+    const freshBrief: Brief = { ...oldBrief, background: 'Current facts.', recommendation: 'Merge it.' };
+    let comments = [{ body: renderBrief(oldBrief), createdAt: new Date(firstSeen - H).toISOString(), author: 'lead' }];
+    const backend = createDemoBackend();
+    Object.assign(backend, {
+      listIssues: async () => [],
+      listPulls: async () => [],
+      discussion: async () => ({ body: 'Implements the change.', comments }),
+    });
+    const swarm = new Swarm(backend);
+    const x = swarm as unknown as Internals;
+    const notify = vi.spyOn(swarm.notifier, 'notify');
+    await swarm.connectRepo(REPO);
+    const rt = x.repoRt.get(REPO)!;
+    while (rt.syncing) await Promise.resolve();
+    rt.pulls = [pull];
+    x.queueQa(x.repo(REPO), pr, null, null);
+    x.setQa(x.state.qa[0], { status: 'passed', heldFor: 'held by label' });
+
+    await swarm.decisionTick(firstSeen);
+    expect(x.state.decisions.find((d) => d.number === pr)?.firstSeen).toBe(firstSeen);
+    expect(x.decisionViews().find((d) => d.number === pr)?.brief).toBeNull();
+    expect(x.missingBriefs()).toContainEqual({ floor: 1, kind: 'pr', number: pr, title: 'Visit schedule' });
+
+    await swarm.decisionTick(firstSeen + BRIEF_GRACE_MS);
+    expect(x.state.decisions.find((d) => d.number === pr)?.alerted).toBe('no-brief');
+    expect(notify).toHaveBeenCalledWith('needsHuman', expect.any(String), expect.stringContaining('No decision brief yet'), expect.any(String), expect.any(String));
+
+    comments = [...comments, { body: renderBrief(freshBrief), createdAt: new Date(firstSeen + H).toISOString(), author: 'lead' }];
+    await swarm.decisionTick(firstSeen + BRIEF_GRACE_MS + 1);
+    expect(x.decisionViews().find((d) => d.number === pr)?.brief).toEqual(freshBrief);
+    expect(x.missingBriefs()).not.toContainEqual(expect.objectContaining({ kind: 'pr', number: pr }));
   });
 });
