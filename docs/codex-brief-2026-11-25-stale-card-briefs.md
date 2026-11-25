@@ -82,3 +82,4 @@ All must pass (`server/scale.test.ts` and `server/stateFile.test.ts` can flake u
 ## 6. Status log (Codex appends; Claude reads)
 
 - 2026-11-25 — Claude: brief written at main `c703071`. Waiting for Codex.
+- 2026-11-25 10:54 EST — Task 1: updated `shared/brief.ts` and `shared/brief.test.ts`; focused vitest 12/12 passed and `npx tsc --noEmit -p .` passed.
